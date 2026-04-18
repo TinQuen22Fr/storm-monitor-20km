@@ -88,3 +88,12 @@
 - P2 : PWA manifest + icon set (installable)
 - P2 : Dashboard admin pour gérer abonnés push
 - P2 : i18n (EN/ES pour pèlerins internationaux)
+
+## Phase 4 Implemented (2026-04-18)
+- ✅ **Curseur de rayon de surveillance** (20 → 70 km, pas de 10 km, défaut 20 km) : Slider Shadcn + 6 boutons presets (20/30/40/50/60/70). La carte ajuste automatiquement son zoom (11→9) et redessine le cercle en pointillés. Tous les flux (zones, foudre, PDF, alertes) utilisent le rayon choisi
+- ✅ **Grille adaptative** : `sampling_grid` passe de 5×5 (25 pts) à 7×7 (45 pts) pour les rayons > 25 km, step_km = radius/4
+- ✅ **Cache TTL** pour tous les endpoints Open-Meteo (current 60s / forecast 120s / history 300s / history-days 600s / zones 90s) — évite les 429 et rend les interactions quasi instantanées
+
+## Test Results (iteration_4)
+- Backend: 40/40 tests OK (100%)
+- Frontend: tous flux Phase 4 OK
