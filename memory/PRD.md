@@ -114,3 +114,14 @@
 - Page historique : `/historique`
 - Clé API upload : `lourdes-storm-upload-2026-xV7p9Qm3RtA8Ks` (header `X-API-Key`)
 - Compte test : `test@lourdes.fr` / `storm123`
+
+## Phase 7 Implemented (2026-04-18)
+- ✅ **Couche "Nuages"** (NASA GIBS MODIS Terra, gratuit sans clé) : imagerie satellite vraie-couleur animée sur les **5 derniers jours** pour voir l'évolution des masses nuageuses
+- ✅ **Couche "Pluie"** (RainViewer radar, gratuit sans clé) : radar de précipitations animé sur les **2 dernières heures**
+- ✅ **Panneau de contrôle flottant** bottom-right carte : 2 boutons de toggle (exclusifs) + play/pause + slider temporel + timestamp du frame courant + crédit source
+- ✅ **Fix responsive** : carte maintenant visible sur écrans < 1024px (h-[60vh] en haut + sidebar dessous au lieu de h-full sur row auto qui s'écrasait à 0px)
+- ✅ Pane Leaflet dédié `weatherPane` z-index 350 pour que les overlays soient entre la base map et les marqueurs
+
+## Test Results (iteration_6)
+- Frontend: 100% des flux Phase 7 OK
+- Testé sur viewports desktop (1920px) et mobile (800px)
