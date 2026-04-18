@@ -3,6 +3,11 @@ import { Circle, MapContainer, Marker, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import { Crosshair, Maximize2, Minimize2 } from "lucide-react";
 import { LOURDES } from "@/lib/api";
+import {
+  WeatherTileLayer,
+  WeatherLayersPanel,
+  useWeatherLayersState,
+} from "@/components/WeatherLayers";
 
 delete L.Icon.Default.prototype._getIconUrl;
 
@@ -117,6 +122,7 @@ export default function MapPanel({
   };
 
   const now = Date.now() / 1000;
+  const wx = useWeatherLayersState();
 
   return (
     <div className="relative h-full w-full" data-testid="map-panel">
@@ -133,6 +139,7 @@ export default function MapPanel({
           attribution='&copy; <a href="https://carto.com/attributions">CARTO</a> &copy; OpenStreetMap'
           url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
         />
+        <WeatherTileLayer url={wx.url} showClouds={wx.showClouds} showRain={wx.showRain} />
         <FitToRadius center={centerLL} radiusKm={radiusKm} />
         <InvalidateOnResize trigger={fullscreen} />
         <Circle
@@ -239,7 +246,7 @@ export default function MapPanel({
       )}
 
       {strikes.length > 0 && (
-        <div className="absolute bottom-6 right-6 z-[500] bg-white border border-red-200 px-4 py-3 shadow-[0_2px_16px_rgba(0,0,0,0.04)]" data-testid="strikes-badge">
+        <div className="absolute top-32 right-6 z-[500] bg-white border border-red-200 px-4 py-3 shadow-[0_2px_16px_rgba(0,0,0,0.04)]" data-testid="strikes-badge">
           <div className="flex items-center gap-3">
             <span className="live-dot" />
             <div>
@@ -251,6 +258,8 @@ export default function MapPanel({
           </div>
         </div>
       )}
+
+      <WeatherLayersPanel {...wx} />
     </div>
   );
 }
