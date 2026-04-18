@@ -199,6 +199,80 @@ async def fetch_history_24h(lat: float = LOURDES_LAT, lon: float = LOURDES_LON) 
     return {"hourly": out}
 
 
+async def fetch_history_days(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, days: int = 7) -> Dict[str, Any]:
+    """Multi-day daily aggregated history using Open-Meteo past_days.
+
+    Returns a list of daily summaries with: precipitation total, max CAPE,
+    storm hours count, max wind gust, max lightning_potential.
+    """
+    days = max(1, min(int(days), 60))
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "hourly": ",".join([
+            "precipitation",
+            "weather_code",
+            "cape",
+            "lightning_potential",
+            "wind_gusts_10m",
+            "temperature_2m",
+        ]),
+        "timezone": "Europe/Paris",
+        "past_days": days,
+        "forecast_days": 1,
+    }
+    async with httpx.AsyncClient(timeout=20) as client:
+        r = await client.get(OPEN_METEO_BASE, params=params)
+        r.raise_for_status()
+        data = r.json()
+    hourly = data.get("hourly", {})
+    times = hourly.get("time", [])
+
+    # Group by date
+    by_day: Dict[str, Dict[str, Any]] = {}
+    for i, t in enumerate(times):
+        day = t.split("T")[0]
+        b = by_day.setdefault(day, {
+            "date": day,
+            "precipitation_total": 0.0,
+            "max_cape": 0.0,
+            "max_lightning_potential": 0.0,
+            "max_wind_gust": 0.0,
+            "max_temperature": None,
+            "min_temperature": None,
+            "storm_hours": 0,
+        })
+        p = hourly.get("precipitation", [0])[i] or 0
+        cape = hourly.get("cape", [0])[i] or 0
+        lp = hourly.get("lightning_potential", [0])[i] or 0
+        gust = hourly.get("wind_gusts_10m", [0])[i] or 0
+        code = hourly.get("weather_code", [None])[i]
+        temp = hourly.get("temperature_2m", [None])[i]
+
+        b["precipitation_total"] += float(p)
+        b["max_cape"] = max(b["max_cape"], float(cape))
+        b["max_lightning_potential"] = max(b["max_lightning_potential"], float(lp))
+        b["max_wind_gust"] = max(b["max_wind_gust"], float(gust))
+        if code in THUNDERSTORM_CODES:
+            b["storm_hours"] += 1
+        if temp is not None:
+            b["max_temperature"] = temp if b["max_temperature"] is None else max(b["max_temperature"], temp)
+            b["min_temperature"] = temp if b["min_temperature"] is None else min(b["min_temperature"], temp)
+
+    out = sorted(by_day.values(), key=lambda d: d["date"])
+    # Round
+    for d in out:
+        d["precipitation_total"] = round(d["precipitation_total"], 1)
+        d["max_cape"] = round(d["max_cape"], 0)
+        d["max_lightning_potential"] = round(d["max_lightning_potential"], 1)
+        d["max_wind_gust"] = round(d["max_wind_gust"], 0)
+        if d["max_temperature"] is not None:
+            d["max_temperature"] = round(d["max_temperature"], 1)
+        if d["min_temperature"] is not None:
+            d["min_temperature"] = round(d["min_temperature"], 1)
+    return {"days": out}
+
+
 async def fetch_storm_zones(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM) -> Dict[str, Any]:
     """Sample the grid for active storm/convective zones around Lourdes."""
     points = sampling_grid(lat, lon, radius_km, step_km=7.0)

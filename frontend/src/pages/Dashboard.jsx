@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, BellOff, RefreshCw, Zap } from "lucide-react";
+import { Bell, BellOff, Download, RefreshCw, Zap } from "lucide-react";
 import MapPanel from "@/components/MapPanel";
 import AlertBanner from "@/components/AlertBanner";
 import CurrentConditions from "@/components/CurrentConditions";
 import CapeGauge from "@/components/CapeGauge";
 import HistoryChart from "@/components/HistoryChart";
+import HistoryDaysChart from "@/components/HistoryDaysChart";
 import ForecastChart from "@/components/ForecastChart";
 import AuthDialog from "@/components/AuthDialog";
 import FavoritesList from "@/components/FavoritesList";
-import { getCurrent, getForecast, getHistory, getStrikes, getZones, LOURDES } from "@/lib/api";
+import { API, getCurrent, getForecast, getHistory, getStrikes, getZones, LOURDES } from "@/lib/api";
 import * as notif from "@/lib/notifications";
+import * as push from "@/lib/push";
 
 const REFRESH_MS = 120_000; // 2 min for weather
 const STRIKES_MS = 15_000; // 15 s for lightning
@@ -27,6 +29,7 @@ export default function Dashboard() {
   const [error, setError] = useState(null);
   const [fullscreen, setFullscreen] = useState(false);
   const [notifEnabled, setNotifEnabled] = useState(notif.isEnabled());
+  const [pushEnabled, setPushEnabled] = useState(push.isPushEnabled());
 
   const prevStormActive = useRef(false);
   const seenStrikeTs = useRef(new Set());
@@ -103,6 +106,21 @@ export default function Dashboard() {
     }
   };
 
+  const togglePush = async () => {
+    if (pushEnabled) {
+      await push.unsubscribePush();
+      setPushEnabled(false);
+    } else {
+      const ok = await push.subscribePush();
+      setPushEnabled(ok);
+    }
+  };
+
+  const downloadPdf = () => {
+    const url = `${API}/reports/bulletin.pdf?lat=${center.lat}&lon=${center.lon}&radius_km=${LOURDES.radius}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 h-screen w-full overflow-hidden bg-slate-50" data-testid="dashboard-root">
       {/* Sidebar */}
@@ -176,7 +194,7 @@ export default function Dashboard() {
             <span className="flex items-center gap-2">
               {notifEnabled ? <Bell className="w-4 h-4" strokeWidth={1.8} /> : <BellOff className="w-4 h-4" strokeWidth={1.8} />}
               <span className="font-mono text-[10px] uppercase tracking-[0.2em]">
-                {notifEnabled ? "Alertes actives" : "Activer les alertes"}
+                {notifEnabled ? "Alertes in-app actives" : "Alertes in-app"}
               </span>
             </span>
             <span
@@ -190,6 +208,45 @@ export default function Dashboard() {
                 }`}
               />
             </span>
+          </button>
+
+          {/* Push toggle (server-sent, works when tab is closed) */}
+          <button
+            onClick={togglePush}
+            className={`mt-2 w-full flex items-center justify-between px-4 h-10 border transition-colors ${
+              pushEnabled
+                ? "bg-red-600 text-white border-red-600"
+                : "bg-white text-slate-900 border-slate-300 hover:border-red-600"
+            }`}
+            data-testid="toggle-push"
+          >
+            <span className="flex items-center gap-2">
+              <Bell className="w-4 h-4" strokeWidth={1.8} />
+              <span className="font-mono text-[10px] uppercase tracking-[0.2em]">
+                {pushEnabled ? "Push serveur actif" : "Push serveur (même fermé)"}
+              </span>
+            </span>
+            <span
+              className={`w-8 h-4 rounded-full relative transition-colors ${
+                pushEnabled ? "bg-white/20" : "bg-slate-200"
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 w-3 h-3 rounded-full transition-all ${
+                  pushEnabled ? "left-[18px] bg-white" : "left-0.5 bg-slate-400"
+                }`}
+              />
+            </span>
+          </button>
+
+          {/* PDF bulletin */}
+          <button
+            onClick={downloadPdf}
+            className="mt-2 w-full flex items-center justify-center gap-2 px-4 h-10 border border-slate-300 bg-white text-slate-900 hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-colors font-mono text-[10px] uppercase tracking-[0.2em]"
+            data-testid="download-bulletin-pdf"
+          >
+            <Download className="w-4 h-4" strokeWidth={1.8} />
+            Bulletin PDF
           </button>
 
           {error && (
@@ -213,6 +270,7 @@ export default function Dashboard() {
           />
 
           <HistoryChart hourly={history?.hourly || []} />
+          <HistoryDaysChart days={7} />
           <ForecastChart hourly={forecast?.hourly || []} />
 
           <div className="space-y-4">

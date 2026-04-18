@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import List, Optional
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, FastAPI, HTTPException
+from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException
+from fastapi.responses import Response
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from starlette.middleware.cors import CORSMiddleware
@@ -17,6 +18,7 @@ from starlette.middleware.cors import CORSMiddleware
 from auth import (
     create_token,
     get_current_user,
+    get_current_user_optional,
     hash_password,
     verify_password,
 )
@@ -27,9 +29,13 @@ from weather import (
     fetch_current,
     fetch_forecast,
     fetch_history_24h,
+    fetch_history_days,
     fetch_storm_zones,
 )
 import lightning as lightning_mod
+import push as push_mod
+import reports as reports_mod
+import asyncio
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -162,6 +168,11 @@ async def weather_history(lat: float = LOURDES_LAT, lon: float = LOURDES_LON):
     return await fetch_history_24h(lat, lon)
 
 
+@api_router.get("/weather/history-days")
+async def weather_history_days(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, days: int = 7):
+    return await fetch_history_days(lat, lon, days)
+
+
 @api_router.get("/storms/zones")
 async def storm_zones(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM):
     return await fetch_storm_zones(lat, lon, radius_km)
@@ -190,6 +201,70 @@ async def lightning_status():
     return lightning_mod.status()
 
 
+# ---------- Web Push (VAPID) ----------
+class PushSubscription(BaseModel):
+    endpoint: str
+    keys: dict
+
+
+@api_router.get("/push/vapid-public-key")
+async def push_vapid_public_key():
+    return {"key": push_mod.vapid_public_key()}
+
+
+@api_router.post("/push/subscribe")
+async def push_subscribe(
+    subscription: PushSubscription,
+    user=Depends(get_current_user_optional),
+):
+    saved = await push_mod.save_subscription(
+        db,
+        subscription.model_dump(),
+        user_id=user["id"] if user else None,
+    )
+    return {"ok": True, "id": saved["id"]}
+
+
+@api_router.post("/push/unsubscribe")
+async def push_unsubscribe(payload: dict = Body(...)):
+    endpoint = payload.get("endpoint")
+    if not endpoint:
+        raise HTTPException(status_code=400, detail="endpoint required")
+    n = await push_mod.remove_subscription(db, endpoint)
+    return {"removed": n}
+
+
+@api_router.post("/push/test")
+async def push_test(user=Depends(get_current_user)):
+    result = await push_mod.send_to_all(
+        db,
+        title="Test · Alerte orage",
+        body="Ceci est un test de notification push — tout fonctionne.",
+        url="/",
+    )
+    return result
+
+
+# ---------- PDF bulletin ----------
+@api_router.get("/reports/bulletin.pdf")
+async def bulletin_pdf(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM):
+    current, forecast, history, zones = await asyncio.gather(
+        fetch_current(lat, lon),
+        fetch_forecast(lat, lon),
+        fetch_history_24h(lat, lon),
+        fetch_storm_zones(lat, lon, radius_km),
+    )
+    strikes_data = await lightning_mod.store.recent(lat, lon, radius_km, since_ts=None)
+    strikes_data.sort(key=lambda s: s["ts"], reverse=True)
+    pdf = reports_mod.build_bulletin_pdf(current, zones, history, forecast, strikes_data[:50])
+    filename = f"bulletin-orage-lourdes-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M')}.pdf"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
 app.include_router(api_router)
 
 app.add_middleware(
@@ -211,6 +286,54 @@ async def _start_lightning_listener():
         logger.info("Lightning listener started")
     except Exception as e:
         logger.warning("Could not start lightning listener: %s", e)
+
+    # Alert watcher: push notifications on storm transitions + new strikes in radius
+    asyncio.create_task(_alert_watcher())
+    logger.info("Alert watcher started")
+
+
+# Shared state for alerter
+_alerter_state = {
+    "storm_active": False,
+    "last_strike_ts": 0.0,
+}
+
+
+async def _alert_watcher():
+    """Every 45s, check storm status + recent strikes inside 20km and fire push notifications on transitions."""
+    while True:
+        try:
+            await asyncio.sleep(45)
+            zones = await fetch_storm_zones(LOURDES_LAT, LOURDES_LON, RADIUS_KM)
+            storm_now = bool(zones.get("storm_active"))
+            was_storm = _alerter_state["storm_active"]
+            if storm_now and not was_storm:
+                await push_mod.send_to_all(
+                    db,
+                    title="Alerte orage · Lourdes",
+                    body=f"Activité orageuse détectée (CAPE {int(zones.get('max_cape') or 0)} J/kg).",
+                    url="/",
+                    tag="storm-active",
+                )
+            _alerter_state["storm_active"] = storm_now
+
+            # Fresh strikes in radius
+            strikes = await lightning_mod.store.recent(LOURDES_LAT, LOURDES_LON, RADIUS_KM, since_ts=_alerter_state["last_strike_ts"] or None)
+            new_strikes = [s for s in strikes if s["ts"] > _alerter_state["last_strike_ts"]]
+            if new_strikes:
+                closest = min(new_strikes, key=lambda s: s["distance_km"])
+                await push_mod.send_to_all(
+                    db,
+                    title=f"⚡ {len(new_strikes)} impact(s) de foudre",
+                    body=f"Le plus proche à {closest['distance_km']:.1f} km de Lourdes.",
+                    url="/",
+                    tag="lightning-strike",
+                )
+                _alerter_state["last_strike_ts"] = max(s["ts"] for s in new_strikes)
+        except asyncio.CancelledError:
+            return
+        except Exception as e:
+            logger.warning("Alert watcher error: %s", e)
 
 
 @app.on_event("shutdown")

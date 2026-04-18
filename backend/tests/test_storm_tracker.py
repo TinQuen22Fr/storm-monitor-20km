@@ -321,6 +321,193 @@ class TestPreCreatedTestUser:
                 print("⚠ Test user may already exist with different password")
 
 
+class TestHistoryDaysEndpoint:
+    """Test multi-day history endpoint (PHASE 3 FEATURE)"""
+    
+    def test_history_days_default_7(self):
+        """GET /api/weather/history-days returns ~8 entries (7 past + today)"""
+        response = requests.get(f"{BASE_URL}/api/weather/history-days")
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert "days" in data
+        assert isinstance(data["days"], list)
+        assert len(data["days"]) >= 7, f"Expected ~8 entries, got {len(data['days'])}"
+        
+        # Check day structure
+        day = data["days"][0]
+        assert "date" in day
+        assert "precipitation_total" in day
+        assert "max_cape" in day
+        assert "max_lightning_potential" in day
+        assert "max_wind_gust" in day
+        assert "max_temperature" in day
+        assert "min_temperature" in day
+        assert "storm_hours" in day
+        print(f"✓ History days (default 7): {len(data['days'])} entries")
+    
+    def test_history_days_14(self):
+        """GET /api/weather/history-days?days=14 returns ~15 entries"""
+        response = requests.get(f"{BASE_URL}/api/weather/history-days", params={"days": 14})
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert "days" in data
+        assert len(data["days"]) >= 14, f"Expected ~15 entries, got {len(data['days'])}"
+        print(f"✓ History days (14): {len(data['days'])} entries")
+    
+    def test_history_days_clamps_invalid(self):
+        """GET /api/weather/history-days clamps invalid days to [1, 60]"""
+        # Test days=0 (should clamp to 1)
+        response = requests.get(f"{BASE_URL}/api/weather/history-days", params={"days": 0})
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["days"]) >= 1, "days=0 should clamp to 1"
+        
+        # Test days=-5 (should clamp to 1)
+        response = requests.get(f"{BASE_URL}/api/weather/history-days", params={"days": -5})
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["days"]) >= 1, "days=-5 should clamp to 1"
+        
+        # Test days=100 (should clamp to 60)
+        response = requests.get(f"{BASE_URL}/api/weather/history-days", params={"days": 100})
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["days"]) <= 62, "days=100 should clamp to 60"
+        print("✓ History days clamps invalid values correctly")
+
+
+class TestPushEndpoints:
+    """Test Web Push VAPID endpoints (PHASE 3 FEATURE)"""
+    
+    def test_vapid_public_key(self):
+        """GET /api/push/vapid-public-key returns valid VAPID key"""
+        response = requests.get(f"{BASE_URL}/api/push/vapid-public-key")
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert "key" in data
+        assert isinstance(data["key"], str)
+        assert len(data["key"]) > 40, "VAPID key should be substantial"
+        assert data["key"].startswith("BG"), "VAPID public key should start with BG"
+        print(f"✓ VAPID public key: {data['key'][:30]}...")
+    
+    def test_push_subscribe_idempotent(self):
+        """POST /api/push/subscribe is idempotent (no duplicates)"""
+        endpoint = f"https://test-endpoint.example.com/push/{uuid.uuid4().hex}"
+        payload = {
+            "endpoint": endpoint,
+            "keys": {"p256dh": "test-p256dh", "auth": "test-auth"}
+        }
+        
+        # First subscribe
+        response1 = requests.post(f"{BASE_URL}/api/push/subscribe", json=payload)
+        assert response1.status_code == 200
+        data1 = response1.json()
+        assert data1["ok"] is True
+        assert "id" in data1
+        
+        # Second subscribe (same endpoint) - should be idempotent
+        response2 = requests.post(f"{BASE_URL}/api/push/subscribe", json=payload)
+        assert response2.status_code == 200
+        data2 = response2.json()
+        assert data2["ok"] is True
+        
+        # Cleanup
+        requests.post(f"{BASE_URL}/api/push/unsubscribe", json={"endpoint": endpoint})
+        print("✓ Push subscribe is idempotent")
+    
+    def test_push_unsubscribe(self):
+        """POST /api/push/unsubscribe removes subscription"""
+        endpoint = f"https://test-endpoint.example.com/push/{uuid.uuid4().hex}"
+        
+        # Subscribe first
+        requests.post(f"{BASE_URL}/api/push/subscribe", json={
+            "endpoint": endpoint,
+            "keys": {"p256dh": "test-p256dh", "auth": "test-auth"}
+        })
+        
+        # Unsubscribe
+        response = requests.post(f"{BASE_URL}/api/push/unsubscribe", json={"endpoint": endpoint})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["removed"] == 1
+        
+        # Unsubscribe again (should return 0)
+        response2 = requests.post(f"{BASE_URL}/api/push/unsubscribe", json={"endpoint": endpoint})
+        assert response2.status_code == 200
+        data2 = response2.json()
+        assert data2["removed"] == 0
+        print("✓ Push unsubscribe works correctly")
+    
+    def test_push_test_requires_auth(self):
+        """POST /api/push/test returns 401 without token"""
+        response = requests.post(f"{BASE_URL}/api/push/test")
+        assert response.status_code == 401
+        print("✓ Push test requires authentication")
+    
+    def test_push_test_with_auth(self):
+        """POST /api/push/test returns {sent, removed, errors, total} when authenticated"""
+        # Login
+        login_response = requests.post(f"{BASE_URL}/api/auth/login", json={
+            "email": TEST_EMAIL,
+            "password": TEST_PASSWORD
+        })
+        if login_response.status_code != 200:
+            # Create user if not exists
+            reg_response = requests.post(f"{BASE_URL}/api/auth/register", json={
+                "email": TEST_EMAIL,
+                "password": TEST_PASSWORD,
+                "name": "Storm Tester"
+            })
+            token = reg_response.json().get("token")
+        else:
+            token = login_response.json().get("token")
+        
+        assert token, "Failed to get auth token"
+        
+        # Call push test
+        response = requests.post(
+            f"{BASE_URL}/api/push/test",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert "sent" in data
+        assert "removed" in data
+        assert "errors" in data
+        assert "total" in data
+        assert isinstance(data["sent"], int)
+        assert isinstance(data["total"], int)
+        print(f"✓ Push test with auth: sent={data['sent']}, total={data['total']}")
+
+
+class TestPDFBulletin:
+    """Test PDF bulletin export (PHASE 3 FEATURE)"""
+    
+    def test_bulletin_pdf_returns_pdf(self):
+        """GET /api/reports/bulletin.pdf returns application/pdf with content"""
+        response = requests.get(f"{BASE_URL}/api/reports/bulletin.pdf")
+        assert response.status_code == 200
+        
+        # Check content type
+        content_type = response.headers.get("Content-Type", "")
+        assert "application/pdf" in content_type, f"Expected application/pdf, got {content_type}"
+        
+        # Check content disposition
+        content_disp = response.headers.get("Content-Disposition", "")
+        assert "bulletin" in content_disp.lower(), f"Expected bulletin in filename, got {content_disp}"
+        
+        # Check PDF content (should be >1KB)
+        assert len(response.content) > 1024, f"PDF too small: {len(response.content)} bytes"
+        
+        # Check PDF magic bytes
+        assert response.content[:4] == b'%PDF', "Content doesn't start with PDF magic bytes"
+        print(f"✓ PDF bulletin: {len(response.content)} bytes, valid PDF")
+
+
 class TestLightningEndpoints:
     """Test Blitzortung lightning strike endpoints (NEW FEATURE)"""
     
