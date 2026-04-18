@@ -29,6 +29,7 @@ from weather import (
     fetch_history_24h,
     fetch_storm_zones,
 )
+import lightning as lightning_mod
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -166,6 +167,29 @@ async def storm_zones(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius
     return await fetch_storm_zones(lat, lon, radius_km)
 
 
+# ---------- Lightning (Blitzortung) ----------
+@api_router.get("/lightning/strikes")
+async def lightning_strikes(
+    lat: float = LOURDES_LAT,
+    lon: float = LOURDES_LON,
+    radius_km: float = RADIUS_KM,
+    since: float | None = None,
+):
+    """Return recent lightning strikes within radius_km. `since` is epoch seconds."""
+    strikes = await lightning_mod.store.recent(lat, lon, radius_km, since_ts=since)
+    strikes.sort(key=lambda s: s["ts"], reverse=True)
+    return {
+        "count": len(strikes),
+        "strikes": strikes[:500],
+        "server_time": datetime.now(timezone.utc).timestamp(),
+    }
+
+
+@api_router.get("/lightning/status")
+async def lightning_status():
+    return lightning_mod.status()
+
+
 app.include_router(api_router)
 
 app.add_middleware(
@@ -180,6 +204,19 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 
+@app.on_event("startup")
+async def _start_lightning_listener():
+    try:
+        lightning_mod.start()
+        logger.info("Lightning listener started")
+    except Exception as e:
+        logger.warning("Could not start lightning listener: %s", e)
+
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    try:
+        lightning_mod.stop()
+    except Exception:
+        pass
     client.close()

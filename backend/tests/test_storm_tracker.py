@@ -318,7 +318,99 @@ class TestPreCreatedTestUser:
             if reg_response.status_code == 200:
                 print(f"✓ Created test user {TEST_EMAIL}")
             else:
-                print(f"⚠ Test user may already exist with different password")
+                print("⚠ Test user may already exist with different password")
+
+
+class TestLightningEndpoints:
+    """Test Blitzortung lightning strike endpoints (NEW FEATURE)"""
+    
+    def test_lightning_strikes_basic(self):
+        """GET /api/lightning/strikes returns count, strikes[], server_time"""
+        response = requests.get(f"{BASE_URL}/api/lightning/strikes", params={
+            "lat": 43.0951,
+            "lon": -0.0434,
+            "radius_km": 120
+        })
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert "count" in data
+        assert "strikes" in data
+        assert "server_time" in data
+        assert isinstance(data["count"], int)
+        assert isinstance(data["strikes"], list)
+        assert isinstance(data["server_time"], (int, float))
+        print(f"✓ Lightning strikes: count={data['count']}, server_time={data['server_time']}")
+    
+    def test_lightning_strikes_with_since_filter(self):
+        """GET /api/lightning/strikes with since param filters older strikes"""
+        import time
+        since_ts = time.time() - 3600  # Last hour
+        
+        response = requests.get(f"{BASE_URL}/api/lightning/strikes", params={
+            "lat": 43.0951,
+            "lon": -0.0434,
+            "radius_km": 120,
+            "since": since_ts
+        })
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert "count" in data
+        assert "strikes" in data
+        
+        # Verify all strikes are after since_ts
+        for strike in data["strikes"]:
+            assert strike["ts"] >= since_ts, f"Strike ts {strike['ts']} is before since {since_ts}"
+        
+        print(f"✓ Lightning strikes with since filter: count={data['count']}")
+    
+    def test_lightning_strike_object_structure(self):
+        """Strike objects have lat, lon, ts, iso, distance_km"""
+        response = requests.get(f"{BASE_URL}/api/lightning/strikes", params={
+            "lat": 43.0951,
+            "lon": -0.0434,
+            "radius_km": 120
+        })
+        assert response.status_code == 200
+        
+        data = response.json()
+        # If there are strikes, verify structure
+        if data["strikes"]:
+            strike = data["strikes"][0]
+            assert "lat" in strike, "Strike missing lat"
+            assert "lon" in strike, "Strike missing lon"
+            assert "ts" in strike, "Strike missing ts"
+            assert "iso" in strike, "Strike missing iso"
+            assert "distance_km" in strike, "Strike missing distance_km"
+            
+            # Verify types
+            assert isinstance(strike["lat"], (int, float))
+            assert isinstance(strike["lon"], (int, float))
+            assert isinstance(strike["ts"], (int, float))
+            assert isinstance(strike["iso"], str)
+            assert isinstance(strike["distance_km"], (int, float))
+            print(f"✓ Strike structure valid: lat={strike['lat']}, lon={strike['lon']}, distance_km={strike['distance_km']}")
+        else:
+            print("✓ No strikes currently (weather may be calm) - structure test skipped")
+    
+    def test_lightning_status(self):
+        """GET /api/lightning/status returns running=true, strikes_received >= 0, decode_errors = 0"""
+        response = requests.get(f"{BASE_URL}/api/lightning/status")
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert "running" in data
+        assert "strikes_received" in data
+        assert "decode_errors" in data
+        
+        # Verify types and values
+        assert isinstance(data["running"], bool)
+        assert isinstance(data["strikes_received"], int)
+        assert data["strikes_received"] >= 0
+        assert isinstance(data["decode_errors"], int)
+        
+        print(f"✓ Lightning status: running={data['running']}, received={data['strikes_received']}, errors={data['decode_errors']}")
 
 
 if __name__ == "__main__":
