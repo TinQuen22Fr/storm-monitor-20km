@@ -142,12 +142,29 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 h-screen w-full overflow-hidden bg-slate-50" data-testid="dashboard-root">
+    <div className="grid grid-cols-1 lg:grid-cols-12 lg:h-screen w-full lg:overflow-hidden bg-slate-50" data-testid="dashboard-root">
+      {/* Map area — visible at top on mobile, right column on desktop */}
+      <section
+        className={`${
+          fullscreen ? "lg:col-span-12" : "lg:col-span-8"
+        } col-span-1 order-1 lg:order-2 h-[60vh] lg:h-full relative z-0`}
+        data-testid="map-area"
+      >
+        <MapPanel
+          zones={zones?.zones || []}
+          strikes={strikes}
+          center={center}
+          radiusKm={radius}
+          fullscreen={fullscreen}
+          onToggleFullscreen={() => setFullscreen((v) => !v)}
+        />
+      </section>
+
       {/* Sidebar */}
       <aside
         className={`${
-          fullscreen ? "hidden" : "col-span-1 lg:col-span-4"
-        } h-full overflow-y-auto bg-white border-r border-slate-200 relative z-10 flex flex-col`}
+          fullscreen ? "hidden" : "lg:col-span-4"
+        } col-span-1 order-2 lg:order-1 lg:h-full lg:overflow-y-auto bg-white lg:border-r border-t lg:border-t-0 border-slate-200 relative z-10 flex flex-col`}
         data-testid="sidebar"
       >
         <AlertBanner
@@ -349,21 +366,6 @@ export default function Dashboard() {
           </footer>
         </div>
       </aside>
-
-      {/* Map area */}
-      <section
-        className={`${fullscreen ? "col-span-1 lg:col-span-12" : "col-span-1 lg:col-span-8"} h-full relative z-0`}
-        data-testid="map-area"
-      >
-        <MapPanel
-          zones={zones?.zones || []}
-          strikes={strikes}
-          center={center}
-          radiusKm={radius}
-          fullscreen={fullscreen}
-          onToggleFullscreen={() => setFullscreen((v) => !v)}
-        />
-      </section>
     </div>
   );
 }
