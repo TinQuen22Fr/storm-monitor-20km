@@ -1,0 +1,111 @@
+{
+  "project_name": "Lourdes Live Thunderstorm Tracker",
+  "theme": "light",
+  "archetype": "Archetype 4: Swiss & High-Contrast (Refined Editorial & Scientific)",
+  "emotional_tone": "Objective, authoritative, spacious, and highly legible. It feels like a high-end European meteorology tool.",
+  "typography": {
+    "fonts": {
+      "headings": "Cabinet Grotesk",
+      "body": "Outfit",
+      "data_and_metrics": "IBM Plex Mono"
+    },
+    "hierarchy": {
+      "h1_hero": "text-4xl md:text-5xl font-black tracking-tighter text-slate-900 leading-none",
+      "h2_section": "text-2xl md:text-3xl font-bold tracking-tight text-slate-900",
+      "h3_widget": "text-sm font-semibold tracking-[0.2em] uppercase text-slate-500",
+      "data_value": "text-3xl md:text-4xl font-medium font-mono text-slate-900 tracking-tight",
+      "body": "text-base font-normal text-slate-600 leading-relaxed",
+      "labels": "text-xs font-medium uppercase tracking-wider text-slate-400"
+    },
+    "rules": [
+      "Never use Inter or Roboto.",
+      "Use IBM Plex Mono specifically for coordinates, timestamps, metrics (temperature, CAPE), and map overlays.",
+      "Headlines must use tight letter spacing (tracking-tight)."
+    ]
+  },
+  "colors": {
+    "background": {
+      "app": "#F8FAFC",
+      "panel": "#FFFFFF",
+      "glass": "rgba(255, 255, 255, 0.7)"
+    },
+    "text": {
+      "primary": "#0F172A",
+      "secondary": "#64748B",
+      "muted": "#94A3B8",
+      "inverse": "#FFFFFF"
+    },
+    "border": {
+      "default": "#E2E8F0",
+      "focus": "#94A3B8"
+    },
+    "semantic": {
+      "alert_storm": "#DC2626",
+      "alert_storm_bg": "rgba(220, 38, 38, 0.1)",
+      "warning": "#D97706",
+      "safe": "#10B981",
+      "cape_low": "#FCD34D",
+      "cape_high": "#DC2626"
+    }
+  },
+  "layout_and_spacing": {
+    "structure": "Asymmetric Dashboard. Left Sidebar (Data) + Right Main Area (Map).",
+    "grid_system": {
+      "container": "grid grid-cols-1 lg:grid-cols-12 h-screen w-full overflow-hidden",
+      "sidebar": "col-span-1 lg:col-span-4 h-full overflow-y-auto bg-white border-r border-slate-200 shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-10 relative",
+      "map_area": "col-span-1 lg:col-span-8 h-full relative z-0"
+    },
+    "spacing_scale": {
+      "widget_padding": "p-6 md:p-8",
+      "section_gap": "gap-8",
+      "item_gap": "gap-4"
+    },
+    "widget_surface": "bg-white border border-slate-200 rounded-none shadow-none. Brutalist/Swiss clean lines. No heavy dropshadows, rely on 1px borders."
+  },
+  "components": {
+    "map": {
+      "library": "react-leaflet",
+      "tile_layer": "Use CartoDB Positron (Light) tiles for a stark, high-contrast base so colored lightning strikes pop out.",
+      "radius_circle": "20km radius centered on Lourdes (Lat: 43.0915, Lng: -0.0457). Stroke: 2px dashed #0F172A, Fill: rgba(15, 23, 42, 0.05).",
+      "markers": "Lightning strikes represented by #DC2626 dots with an absolute positioned ping animation layer."
+    },
+    "alert_banner": {
+      "style": "Glassmorphism sticky header inside sidebar. backdrop-blur-xl bg-red-600/10 border-b border-red-600/20. Text is dark red.",
+      "typography": "IBM Plex Mono for the timestamp and Cabinet Grotesk for the alert message."
+    },
+    "history_chart": {
+      "library": "recharts",
+      "style": "Minimalist line chart or bar chart representing strikes over 24h. No grid lines, minimal axes. Color: #0F172A. Tooltips must use strict square corners and Mono font."
+    },
+    "cape_gauge": {
+      "style": "A custom linear gradient bar (Yellow to Red) with a sharp black indicator tick mark representing Convective Available Potential Energy."
+    },
+    "current_conditions": {
+      "layout": "2x2 Bento grid within the sidebar. Each cell has a 1px border. Values in bold Mono font."
+    }
+  },
+  "motion_and_interaction": {
+    "live_indicators": "Any live data point (e.g., 'EN DIRECT') must feature a tiny pulsing dot (bg-red-500 animate-pulse).",
+    "lightning_strikes": "Map markers must use CSS `animate-ping` for a ripple effect when appearing.",
+    "hover_states": "Buttons and list items darken background slightly (hover:bg-slate-50). Border colors shift from slate-200 to slate-400."
+  },
+  "image_urls": [
+    {
+      "category": "sidebar_header_background",
+      "url": "https://images.unsplash.com/photo-1751398695966-6d04816633b6?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODF8MHwxfHNlYXJjaHwxfHx3aGl0ZSUyMGNsb3VkcyUyMG1pbmltYWxpc3R8ZW58MHx8fHwxNzc2NTIxMDczfDA&ixlib=rb-4.1.0&q=85",
+      "description": "Minimalist cloud texture used for the top branding section of the sidebar, applying low opacity to maintain high contrast with text overlay."
+    }
+  ],
+  "accessibility_and_testing": {
+    "contrast": "Ensure all text against the map or colored banners meets APCA guidelines.",
+    "testing_attributes": "All interactive buttons (login, save favorite, map controls) MUST include `data-testid` attributes with kebab-case, role-based names (e.g., `data-testid=\"login-button\"`)."
+  },
+  "instructions_to_main_agent": [
+    "Build the dashboard using pure HTML/Tailwind for the structural layout (grid-cols-12).",
+    "Use standard Shadcn components for forms/dialogs (JWT login) if needed, but strip rounding (rounded-none) to match the Swiss/Editorial aesthetic.",
+    "Install the required fonts via Google Fonts: Cabinet Grotesk (from Fontshare or local webfont setup if available, otherwise use a high-end alternative like Outfit for headings if Cabinet Grotesk fails), Outfit, and IBM Plex Mono.",
+    "Implement react-leaflet for the map. Use standard Leaflet CSS.",
+    "All text must be in French as per the problem statement.",
+    "Ensure `data-testid` is added to all actionable UI elements."
+  ]
+}
