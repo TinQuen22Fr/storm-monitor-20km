@@ -97,3 +97,20 @@
 ## Test Results (iteration_4)
 - Backend: 40/40 tests OK (100%)
 - Frontend: tous flux Phase 4 OK
+
+## Phase 6 Implemented (2026-04-18)
+- ✅ **API sécurisée `/api/upload_storm`** : accepte `{distance, energy, timestamp}` en POST JSON, exige header `X-API-Key`. 401 sinon. Clé dans `.env` : `UPLOAD_API_KEY`
+- ✅ **Stockage local persistant** : fichier `/app/backend/storm_data.json` (async-safe via asyncio.Lock, écriture atomique via tmp+rename). Endpoint `GET /api/storm_uploads?limit=N` pour lecture publique
+- ✅ **Page Historique** (`/historique`) : 4 tuiles stats (événements / énergie totale / énergie max / distance moy) + 3 graphiques Recharts (aire Énergie/temps, scatter Distance×Énergie, histogramme par tranche 10km) + tableau des 25 derniers événements
+- ✅ **Navigation** : `NavTabs` segmented control (Direct | Historique) monté en haut de la sidebar du moniteur live et dans le header de la page Historique. Routes React Router v7
+
+## Test Results (iteration_5)
+- Backend: 49/49 tests OK (100%)
+- Frontend: tous flux Phase 6 OK
+
+## Clés & URLs
+- App : https://storm-monitor-20km.preview.emergentagent.com
+- Page live : `/`
+- Page historique : `/historique`
+- Clé API upload : `lourdes-storm-upload-2026-xV7p9Qm3RtA8Ks` (header `X-API-Key`)
+- Compte test : `test@lourdes.fr` / `storm123`
