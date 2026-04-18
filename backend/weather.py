@@ -1,9 +1,11 @@
 """Open-Meteo client for thunderstorm tracking around Lourdes."""
 from __future__ import annotations
 
+import asyncio
 import math
+import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Callable, Coroutine, Dict, List
 
 import httpx
 
@@ -18,6 +20,26 @@ THUNDERSTORM_CODES = {95, 96, 99}
 RAIN_CODES = {51, 53, 55, 61, 63, 65, 80, 81, 82}
 
 OPEN_METEO_BASE = "https://api.open-meteo.com/v1/forecast"
+
+
+# ---------- Simple async TTL cache ----------
+_cache: Dict[str, tuple[float, Any]] = {}
+_cache_locks: Dict[str, asyncio.Lock] = {}
+
+
+async def _cached(key: str, ttl: float, fn: Callable[[], Coroutine[Any, Any, Any]]) -> Any:
+    now = time.time()
+    hit = _cache.get(key)
+    if hit and hit[0] > now:
+        return hit[1]
+    lock = _cache_locks.setdefault(key, asyncio.Lock())
+    async with lock:
+        hit = _cache.get(key)
+        if hit and hit[0] > now:
+            return hit[1]
+        value = await fn()
+        _cache[key] = (now + ttl, value)
+        return value
 
 
 def km_to_deg_lat(km: float) -> float:
@@ -37,14 +59,22 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * r * math.asin(math.sqrt(a))
 
 
-def sampling_grid(lat: float, lon: float, radius_km: float, step_km: float = 7.0) -> List[Dict[str, float]]:
-    """Return a list of lat/lon points in a grid within the given radius."""
+def sampling_grid(lat: float, lon: float, radius_km: float, step_km: float | None = None) -> List[Dict[str, float]]:
+    """Return a list of lat/lon points in a grid within the given radius.
+
+    Grid density adapts to the radius so large areas (up to ~70 km) are still
+    sampled reasonably without breaking the 49-point Open-Meteo limit.
+    """
+    if step_km is None:
+        # Scale step with radius so we always fit roughly 7x7 points = 49
+        step_km = max(4.0, radius_km / 4.0)
     points: List[Dict[str, float]] = []
     dlat = km_to_deg_lat(step_km)
     dlon = km_to_deg_lon(step_km, lat)
-    # 5x5 grid
-    for i in range(-2, 3):
-        for j in range(-2, 3):
+    # Up to 7x7 = 49 points (Open-Meteo multi-coord limit is 100, we stay well under)
+    half = 3 if radius_km > 25 else 2
+    for i in range(-half, half + 1):
+        for j in range(-half, half + 1):
             plat = lat + i * dlat
             plon = lon + j * dlon
             if haversine_km(lat, lon, plat, plon) <= radius_km:
@@ -53,6 +83,10 @@ def sampling_grid(lat: float, lon: float, radius_km: float, step_km: float = 7.0
 
 
 async def fetch_current(lat: float = LOURDES_LAT, lon: float = LOURDES_LON) -> Dict[str, Any]:
+    return await _cached(f"current:{lat}:{lon}", 60.0, lambda: _fetch_current_impl(lat, lon))
+
+
+async def _fetch_current_impl(lat: float, lon: float) -> Dict[str, Any]:
     params = {
         "latitude": lat,
         "longitude": lon,
@@ -108,6 +142,10 @@ async def fetch_current(lat: float = LOURDES_LAT, lon: float = LOURDES_LON) -> D
 
 
 async def fetch_forecast(lat: float = LOURDES_LAT, lon: float = LOURDES_LON) -> Dict[str, Any]:
+    return await _cached(f"forecast:{lat}:{lon}", 120.0, lambda: _fetch_forecast_impl(lat, lon))
+
+
+async def _fetch_forecast_impl(lat: float, lon: float) -> Dict[str, Any]:
     """Short term 24h forecast with precipitation, CAPE, lightning potential."""
     params = {
         "latitude": lat,
@@ -155,6 +193,10 @@ async def fetch_forecast(lat: float = LOURDES_LAT, lon: float = LOURDES_LON) -> 
 
 
 async def fetch_history_24h(lat: float = LOURDES_LAT, lon: float = LOURDES_LON) -> Dict[str, Any]:
+    return await _cached(f"history24:{lat}:{lon}", 300.0, lambda: _fetch_history_24h_impl(lat, lon))
+
+
+async def _fetch_history_24h_impl(lat: float, lon: float) -> Dict[str, Any]:
     """Past 24h hourly data for storm history timeline."""
     params = {
         "latitude": lat,
@@ -200,12 +242,16 @@ async def fetch_history_24h(lat: float = LOURDES_LAT, lon: float = LOURDES_LON) 
 
 
 async def fetch_history_days(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, days: int = 7) -> Dict[str, Any]:
+    days = max(1, min(int(days), 60))
+    return await _cached(f"historyD:{lat}:{lon}:{days}", 600.0, lambda: _fetch_history_days_impl(lat, lon, days))
+
+
+async def _fetch_history_days_impl(lat: float, lon: float, days: int) -> Dict[str, Any]:
     """Multi-day daily aggregated history using Open-Meteo past_days.
 
     Returns a list of daily summaries with: precipitation total, max CAPE,
     storm hours count, max wind gust, max lightning_potential.
     """
-    days = max(1, min(int(days), 60))
     params = {
         "latitude": lat,
         "longitude": lon,
@@ -275,7 +321,7 @@ async def fetch_history_days(lat: float = LOURDES_LAT, lon: float = LOURDES_LON,
 
 async def fetch_storm_zones(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM) -> Dict[str, Any]:
     """Sample the grid for active storm/convective zones around Lourdes."""
-    points = sampling_grid(lat, lon, radius_km, step_km=7.0)
+    points = sampling_grid(lat, lon, radius_km)
 
     # Batch all points into single Open-Meteo request (supports comma-sep lat/lon)
     lats = ",".join(str(p["lat"]) for p in points)

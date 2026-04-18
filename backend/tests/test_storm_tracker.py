@@ -508,6 +508,179 @@ class TestPDFBulletin:
         print(f"✓ PDF bulletin: {len(response.content)} bytes, valid PDF")
 
 
+class TestStormZonesRadiusVariations:
+    """Test storm zones endpoint with different radius values (PHASE 4 FEATURE)"""
+    
+    def test_zones_radius_20_returns_25_zones(self):
+        """GET /api/storms/zones?radius_km=20 returns ~25 zones (5x5 grid)"""
+        import time
+        time.sleep(1)  # Avoid rate limiting
+        response = requests.get(f"{BASE_URL}/api/storms/zones", params={"radius_km": 20})
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert "zones" in data
+        zone_count = len(data["zones"])
+        # 5x5 grid = 25 points, some may be filtered if outside circle
+        assert 20 <= zone_count <= 25, f"Expected ~25 zones for 20km, got {zone_count}"
+        assert data["radius_km"] == 20
+        print(f"✓ Storm zones (20km): {zone_count} zones")
+    
+    def test_zones_radius_30_returns_more_zones(self):
+        """GET /api/storms/zones?radius_km=30 returns ~45 zones (7x7 grid adaptive)"""
+        import time
+        time.sleep(1)  # Avoid rate limiting
+        response = requests.get(f"{BASE_URL}/api/storms/zones", params={"radius_km": 30})
+        assert response.status_code == 200
+        
+        data = response.json()
+        zone_count = len(data["zones"])
+        # 7x7 grid = 49 points, filtered to ~45 within circle
+        assert 35 <= zone_count <= 49, f"Expected ~45 zones for 30km, got {zone_count}"
+        assert data["radius_km"] == 30
+        print(f"✓ Storm zones (30km): {zone_count} zones")
+    
+    def test_zones_radius_70_returns_45_zones(self):
+        """GET /api/storms/zones?radius_km=70 returns ~45 zones (7x7 grid)"""
+        import time
+        time.sleep(1)  # Avoid rate limiting
+        response = requests.get(f"{BASE_URL}/api/storms/zones", params={"radius_km": 70})
+        assert response.status_code == 200
+        
+        data = response.json()
+        zone_count = len(data["zones"])
+        # 7x7 grid = 49 points, filtered to ~45 within circle
+        assert 35 <= zone_count <= 49, f"Expected ~45 zones for 70km, got {zone_count}"
+        assert data["radius_km"] == 70
+        print(f"✓ Storm zones (70km): {zone_count} zones")
+    
+    def test_zones_cached_fast_response(self):
+        """Subsequent identical calls to /api/storms/zones return fast (<500ms, cached 90s)"""
+        import time
+        # First call (may hit Open-Meteo)
+        time.sleep(1)
+        requests.get(f"{BASE_URL}/api/storms/zones", params={"radius_km": 20})
+        
+        # Second call (should be cached)
+        start = time.time()
+        response = requests.get(f"{BASE_URL}/api/storms/zones", params={"radius_km": 20})
+        elapsed = time.time() - start
+        
+        assert response.status_code == 200
+        # Cached response should be fast (< 1s, accounting for network latency)
+        assert elapsed < 1.0, f"Cached response took {elapsed:.2f}s, expected <1.0s"
+        print(f"✓ Cached zones response: {elapsed*1000:.0f}ms")
+
+
+class TestWeatherCaching:
+    """Test TTL caching for weather endpoints (PHASE 4 FEATURE)"""
+    
+    def test_current_weather_cached(self):
+        """GET /api/weather/current is cached (TTL 60s)"""
+        import time
+        # First call
+        time.sleep(1)
+        requests.get(f"{BASE_URL}/api/weather/current")
+        
+        # Second call (should be cached)
+        start = time.time()
+        response = requests.get(f"{BASE_URL}/api/weather/current")
+        elapsed = time.time() - start
+        
+        assert response.status_code == 200
+        assert elapsed < 0.3, f"Cached current weather took {elapsed:.2f}s"
+        print(f"✓ Cached current weather: {elapsed*1000:.0f}ms")
+    
+    def test_forecast_cached(self):
+        """GET /api/weather/forecast is cached (TTL 120s)"""
+        import time
+        # First call
+        time.sleep(1)
+        requests.get(f"{BASE_URL}/api/weather/forecast")
+        
+        # Second call (should be cached)
+        start = time.time()
+        response = requests.get(f"{BASE_URL}/api/weather/forecast")
+        elapsed = time.time() - start
+        
+        assert response.status_code == 200
+        assert elapsed < 0.3, f"Cached forecast took {elapsed:.2f}s"
+        print(f"✓ Cached forecast: {elapsed*1000:.0f}ms")
+    
+    def test_history_cached(self):
+        """GET /api/weather/history is cached (TTL 300s)"""
+        import time
+        # First call
+        time.sleep(1)
+        requests.get(f"{BASE_URL}/api/weather/history")
+        
+        # Second call (should be cached)
+        start = time.time()
+        response = requests.get(f"{BASE_URL}/api/weather/history")
+        elapsed = time.time() - start
+        
+        assert response.status_code == 200
+        assert elapsed < 0.3, f"Cached history took {elapsed:.2f}s"
+        print(f"✓ Cached history: {elapsed*1000:.0f}ms")
+    
+    def test_history_days_cached(self):
+        """GET /api/weather/history-days is cached (TTL 600s)"""
+        import time
+        # First call
+        time.sleep(1)
+        requests.get(f"{BASE_URL}/api/weather/history-days", params={"days": 7})
+        
+        # Second call (should be cached)
+        start = time.time()
+        response = requests.get(f"{BASE_URL}/api/weather/history-days", params={"days": 7})
+        elapsed = time.time() - start
+        
+        assert response.status_code == 200
+        assert elapsed < 0.3, f"Cached history-days took {elapsed:.2f}s"
+        print(f"✓ Cached history-days: {elapsed*1000:.0f}ms")
+
+
+class TestLightningWithRadius:
+    """Test lightning strikes with radius parameter (PHASE 4 FEATURE)"""
+    
+    def test_lightning_strikes_radius_70(self):
+        """GET /api/lightning/strikes?radius_km=70 returns strikes within 70km"""
+        response = requests.get(f"{BASE_URL}/api/lightning/strikes", params={
+            "lat": 43.0951,
+            "lon": -0.0434,
+            "radius_km": 70
+        })
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert "count" in data
+        assert "strikes" in data
+        assert isinstance(data["count"], int)
+        
+        # Verify all strikes are within 70km
+        for strike in data["strikes"]:
+            assert strike["distance_km"] <= 70, f"Strike at {strike['distance_km']}km exceeds 70km radius"
+        
+        print(f"✓ Lightning strikes (70km): count={data['count']}")
+
+
+class TestPDFBulletinWithRadius:
+    """Test PDF bulletin with radius parameter (PHASE 4 FEATURE)"""
+    
+    def test_bulletin_pdf_with_radius_70(self):
+        """GET /api/reports/bulletin.pdf?radius_km=70 returns valid PDF"""
+        import time
+        time.sleep(2)  # Allow cache to populate
+        response = requests.get(f"{BASE_URL}/api/reports/bulletin.pdf", params={"radius_km": 70})
+        assert response.status_code == 200
+        
+        content_type = response.headers.get("Content-Type", "")
+        assert "application/pdf" in content_type
+        assert len(response.content) > 1024
+        assert response.content[:4] == b'%PDF'
+        print(f"✓ PDF bulletin (70km): {len(response.content)} bytes")
+
+
 class TestLightningEndpoints:
     """Test Blitzortung lightning strike endpoints (NEW FEATURE)"""
     

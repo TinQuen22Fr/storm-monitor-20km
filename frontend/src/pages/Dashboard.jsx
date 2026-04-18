@@ -9,16 +9,20 @@ import HistoryDaysChart from "@/components/HistoryDaysChart";
 import ForecastChart from "@/components/ForecastChart";
 import AuthDialog from "@/components/AuthDialog";
 import FavoritesList from "@/components/FavoritesList";
+import { Slider } from "@/components/ui/slider";
 import { API, getCurrent, getForecast, getHistory, getStrikes, getZones, LOURDES } from "@/lib/api";
 import * as notif from "@/lib/notifications";
 import * as push from "@/lib/push";
 
-const REFRESH_MS = 120_000; // 2 min for weather
-const STRIKES_MS = 15_000; // 15 s for lightning
-const STRIKES_WINDOW_S = 3600; // keep last 60 min strikes on map
+const REFRESH_MS = 120_000;
+const STRIKES_MS = 15_000;
+const STRIKES_WINDOW_S = 3600;
+const RADIUS_STEPS = [20, 30, 40, 50, 60, 70];
+const DEFAULT_RADIUS = 20;
 
 export default function Dashboard() {
   const [center, setCenter] = useState({ lat: LOURDES.lat, lon: LOURDES.lon, name: "Lourdes" });
+  const [radius, setRadius] = useState(DEFAULT_RADIUS);
   const [current, setCurrent] = useState(null);
   const [forecast, setForecast] = useState(null);
   const [history, setHistory] = useState(null);
@@ -42,7 +46,7 @@ export default function Dashboard() {
         getCurrent(center.lat, center.lon),
         getForecast(center.lat, center.lon),
         getHistory(center.lat, center.lon),
-        getZones(center.lat, center.lon, LOURDES.radius),
+        getZones(center.lat, center.lon, radius),
       ]);
       setCurrent(c);
       setForecast(f);
@@ -50,7 +54,6 @@ export default function Dashboard() {
       setZones(z);
       setLastFetch(new Date().toISOString());
 
-      // Notification on storm activation
       if (z.storm_active && !prevStormActive.current) {
         notif.notify("Alerte orage — Lourdes", `Activité orageuse détectée (CAPE ${Math.round(z.max_cape || 0)} J/kg)`);
       }
@@ -60,15 +63,14 @@ export default function Dashboard() {
     } finally {
       setRefreshing(false);
     }
-  }, [center.lat, center.lon]);
+  }, [center.lat, center.lon, radius]);
 
   const loadStrikes = useCallback(async () => {
     try {
       const since = Date.now() / 1000 - STRIKES_WINDOW_S;
-      const data = await getStrikes(center.lat, center.lon, LOURDES.radius, since);
+      const data = await getStrikes(center.lat, center.lon, radius, since);
       setStrikes(data.strikes || []);
 
-      // Notify on fresh strikes (new since last poll)
       const fresh = (data.strikes || []).filter((s) => !seenStrikeTs.current.has(s.ts));
       if (fresh.length > 0 && seenStrikeTs.current.size > 0) {
         const closest = fresh.reduce((m, s) => (s.distance_km < m.distance_km ? s : m), fresh[0]);
@@ -78,12 +80,11 @@ export default function Dashboard() {
         );
       }
       for (const s of data.strikes || []) seenStrikeTs.current.add(s.ts);
-      // Trim set
       if (seenStrikeTs.current.size > 2000) {
         seenStrikeTs.current = new Set([...seenStrikeTs.current].slice(-1000));
       }
     } catch { /* silent */ }
-  }, [center.lat, center.lon]);
+  }, [center.lat, center.lon, radius]);
 
   useEffect(() => {
     loadWeather();
@@ -117,7 +118,7 @@ export default function Dashboard() {
   };
 
   const downloadPdf = () => {
-    const url = `${API}/reports/bulletin.pdf?lat=${center.lat}&lon=${center.lon}&radius_km=${LOURDES.radius}`;
+    const url = `${API}/reports/bulletin.pdf?lat=${center.lat}&lon=${center.lon}&radius_km=${radius}`;
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
@@ -161,8 +162,43 @@ export default function Dashboard() {
           </h1>
           <p className="text-sm text-slate-500 mt-4 leading-relaxed max-w-xs">
             Surveillance de l'activité électrique et convective dans un rayon
-            de <span className="font-mono text-slate-900">20&nbsp;km</span> autour de Lourdes.
+            de <span className="font-mono text-slate-900">{radius}&nbsp;km</span> autour de Lourdes.
           </p>
+
+          {/* Radius slider */}
+          <div className="mt-6" data-testid="radius-control">
+            <div className="flex items-baseline justify-between mb-3">
+              <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400">
+                Rayon de surveillance
+              </span>
+              <span className="font-mono text-sm font-medium text-slate-900 tabular-nums">
+                {radius}&nbsp;km
+              </span>
+            </div>
+            <Slider
+              data-testid="radius-slider"
+              value={[radius]}
+              min={20}
+              max={70}
+              step={10}
+              onValueChange={(v) => setRadius(v[0])}
+              className="mt-1"
+            />
+            <div className="flex justify-between font-mono text-[9px] uppercase tracking-wider text-slate-400 mt-2">
+              {RADIUS_STEPS.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setRadius(s)}
+                  className={`transition-colors ${
+                    s === radius ? "text-slate-900 font-semibold" : "hover:text-slate-700"
+                  }`}
+                  data-testid={`radius-preset-${s}`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div className="mt-6 flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400">
             <button
@@ -294,7 +330,7 @@ export default function Dashboard() {
           zones={zones?.zones || []}
           strikes={strikes}
           center={center}
-          radiusKm={LOURDES.radius}
+          radiusKm={radius}
           fullscreen={fullscreen}
           onToggleFullscreen={() => setFullscreen((v) => !v)}
         />

@@ -60,11 +60,13 @@ function buildStrikeIcon(ageSec) {
   });
 }
 
-function Recenter({ center }) {
+function FitToRadius({ center, radiusKm }) {
   const map = useMap();
   useEffect(() => {
-    map.setView(center, map.getZoom(), { animate: true });
-  }, [center, map]);
+    // Choose a reasonable zoom level for the given radius so the circle fits
+    const zoomForRadius = radiusKm >= 60 ? 9 : radiusKm >= 40 ? 10 : 11;
+    map.setView(center, zoomForRadius, { animate: true });
+  }, [center, radiusKm, map]);
   return null;
 }
 
@@ -131,7 +133,7 @@ export default function MapPanel({
           attribution='&copy; <a href="https://carto.com/attributions">CARTO</a> &copy; OpenStreetMap'
           url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
         />
-        <Recenter center={centerLL} />
+        <FitToRadius center={centerLL} radiusKm={radiusKm} />
         <InvalidateOnResize trigger={fullscreen} />
         <Circle
           center={centerLL}
@@ -200,7 +202,7 @@ export default function MapPanel({
       <div className="absolute top-6 left-6 z-[500] bg-white/90 backdrop-blur-md border border-slate-200 px-5 py-3">
         <div className="text-[10px] font-mono uppercase tracking-[0.3em] text-slate-400">Zone surveillée</div>
         <div className="font-heading text-lg font-bold text-slate-900 leading-tight">
-          Lourdes · 20 km
+          Lourdes · {radiusKm} km
         </div>
         <div className="font-mono text-[10px] text-slate-500 mt-1">
           43.0951°N · -0.0434°E
