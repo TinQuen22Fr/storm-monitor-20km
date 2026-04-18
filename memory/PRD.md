@@ -69,3 +69,22 @@
 - Export PDF bulletin orage
 - PWA installable + Web Push serveur (persistent, même app fermée)
 - Historique comparatif multi-jours
+
+## Phase 3 Implemented (2026-04-18)
+- ✅ **Export PDF "bulletin orage"** : endpoint `/api/reports/bulletin.pdf` (ReportLab) avec conditions actuelles, historique 24h, prévision 12h, impacts foudre récents. Bouton "Bulletin PDF" dans la sidebar
+- ✅ **Historique multi-jours** : endpoint `/api/weather/history-days?days=N` avec agrégation quotidienne (précipitations, CAPE max, heures orageuses, rafales max, T° min/max). Composant `HistoryDaysChart` avec barres colorées (rouge=orage, noir=pluie, gris=sec)
+- ✅ **Web Push serveur (VAPID)** : 
+  - `pywebpush` + VAPID keys en `.env`
+  - Service worker `public/sw.js` gère push/notificationclick
+  - Endpoints `/api/push/{vapid-public-key,subscribe,unsubscribe,test}`
+  - Tâche de fond `_alert_watcher` (toutes les 45s) envoie push sur transition storm_active + impacts foudre nouveaux dans le rayon
+  - Deux toggles distincts dans la sidebar : "Alertes in-app" (Notification API seule) vs "Push serveur (même fermé)"
+
+## Test Results (iteration_3)
+- Backend: 30/30 tests OK (100%)
+- Frontend: tous flux Phase 3 OK
+
+## Roadmap
+- P2 : PWA manifest + icon set (installable)
+- P2 : Dashboard admin pour gérer abonnés push
+- P2 : i18n (EN/ES pour pèlerins internationaux)
