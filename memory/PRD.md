@@ -52,3 +52,20 @@
 - Internationalisation (EN/ES)
 - Source supplémentaire (Blitzortung pour vrais impacts)
 - PWA installable
+
+## Phase 2 Implemented (2026-04-18)
+- ✅ **Blitzortung WebSocket** temps réel : écoute wss://ws{1-8}.blitzortung.org, décodeur LZW custom, filtre strikes dans 120km autour de Lourdes, stockage en mémoire (deque 5000 max), endpoint `/api/lightning/strikes` + `/api/lightning/status`
+- ✅ **Notifications navigateur** : toggle "Activer les alertes" dans la sidebar, demande permission, déclenche `Notification(...)` sur détection d'orage ou impacts foudre fraîchement arrivés
+- ✅ **Plein écran carte** : bouton top-right qui masque la sidebar (map col-span-12)
+- ✅ **Géolocalisation** : bouton crosshair top-right qui recentre sur la position de l'utilisateur (Geolocation API)
+- ✅ **Marqueurs foudre** sur la carte avec animation ping sur impacts récents (<60s)
+- ✅ Badge "Impacts 1h" en bas-droite de la carte quand strikes présents
+
+## Test Results (iteration_2)
+- Backend: 21/21 tests OK (100%)
+- Frontend: tous flux nouveaux OK
+
+## P1 Backlog restant
+- Export PDF bulletin orage
+- PWA installable + Web Push serveur (persistent, même app fermée)
+- Historique comparatif multi-jours
