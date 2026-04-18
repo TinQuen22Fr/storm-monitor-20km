@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException
+from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import Response
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -30,11 +30,14 @@ from weather import (
     fetch_forecast,
     fetch_history_24h,
     fetch_history_days,
+    fetch_storm_risk_forecast,
     fetch_storm_zones,
 )
 import lightning as lightning_mod
 import push as push_mod
 import reports as reports_mod
+import analysis as analysis_mod
+import uploads as uploads_mod
 import asyncio
 
 ROOT_DIR = Path(__file__).parent
@@ -201,6 +204,52 @@ async def lightning_status():
     return lightning_mod.status()
 
 
+@api_router.get("/storms/approach")
+async def storms_approach(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = 100.0):
+    """Analyze approach of lightning strikes toward the center."""
+    strikes = await lightning_mod.store.recent(lat, lon, radius_km, since_ts=None)
+    result = analysis_mod.analyze_approach(lat, lon, strikes)
+    result["radius_analyzed_km"] = radius_km
+    return result
+
+
+@api_router.get("/forecast/storm-risk")
+async def forecast_storm_risk(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, days: int = 7):
+    """Daily storm risk forecast for the next N days."""
+    return await fetch_storm_risk_forecast(lat, lon, days)
+
+
+# ---------- Storm upload (secured with API key header) ----------
+class StormUploadInput(BaseModel):
+    distance: float = Field(..., description="Distance in km")
+    energy: float = Field(..., description="Energy (kA, kJ or arbitrary)")
+    timestamp: Optional[str] = None
+
+
+def _require_upload_api_key(request: Request) -> None:
+    expected = os.environ.get("UPLOAD_API_KEY")
+    if not expected:
+        raise HTTPException(status_code=500, detail="UPLOAD_API_KEY not configured on server")
+    received = request.headers.get("X-API-Key") or request.headers.get("x-api-key")
+    if not received or received != expected:
+        raise HTTPException(status_code=401, detail="Clé API invalide ou manquante")
+
+
+@api_router.post("/upload_storm")
+async def upload_storm(payload: StormUploadInput, request: Request):
+    """Upload a storm data point. Requires header 'X-API-Key'."""
+    _require_upload_api_key(request)
+    record = await uploads_mod.append(payload.distance, payload.energy, payload.timestamp)
+    return {"ok": True, "record": record}
+
+
+@api_router.get("/storm_uploads")
+async def list_storm_uploads(limit: Optional[int] = None):
+    """Public: list all uploaded storm records from storm_data.json."""
+    items = await uploads_mod.list_all(limit)
+    return {"count": len(items), "items": items}
+
+
 # ---------- Web Push (VAPID) ----------
 class PushSubscription(BaseModel):
     endpoint: str
@@ -296,6 +345,7 @@ async def _start_lightning_listener():
 _alerter_state = {
     "storm_active": False,
     "last_strike_ts": 0.0,
+    "approach_active": False,
 }
 
 
@@ -330,6 +380,25 @@ async def _alert_watcher():
                     tag="lightning-strike",
                 )
                 _alerter_state["last_strike_ts"] = max(s["ts"] for s in new_strikes)
+
+            # Storm approach detection (wider 100km radius)
+            approach_strikes = await lightning_mod.store.recent(LOURDES_LAT, LOURDES_LON, 100.0, since_ts=None)
+            approach = analysis_mod.analyze_approach(LOURDES_LAT, LOURDES_LON, approach_strikes)
+            if approach.get("approaching") and not _alerter_state["approach_active"]:
+                eta = approach.get("eta_min")
+                speed = approach.get("speed_kmh")
+                body = (
+                    f"Distance {approach.get('min_distance_km')} km · vitesse {speed} km/h · "
+                    f"arrivée estimée {int(eta)} min · direction {approach.get('from_compass')}"
+                )
+                await push_mod.send_to_all(
+                    db,
+                    title="⚠ Orage en approche de Lourdes",
+                    body=body,
+                    url="/",
+                    tag="storm-approach",
+                )
+            _alerter_state["approach_active"] = bool(approach.get("approaching"))
         except asyncio.CancelledError:
             return
         except Exception as e:

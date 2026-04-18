@@ -319,7 +319,104 @@ async def _fetch_history_days_impl(lat: float, lon: float, days: int) -> Dict[st
     return {"days": out}
 
 
+async def fetch_storm_risk_forecast(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, days: int = 7) -> Dict[str, Any]:
+    days = max(1, min(int(days), 14))
+    return await _cached(f"risk:{lat}:{lon}:{days}", 900.0, lambda: _fetch_storm_risk_impl(lat, lon, days))
+
+
+async def _fetch_storm_risk_impl(lat: float, lon: float, days: int) -> Dict[str, Any]:
+    """Daily storm risk forecast using Open-Meteo upcoming days.
+
+    Aggregates CAPE, lightning_potential, precipitation_probability and
+    thunderstorm hours per day, then assigns a 0-100 risk score.
+    """
+    from analysis import _risk_score  # local import to avoid cycle at module load
+
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "hourly": ",".join([
+            "temperature_2m",
+            "precipitation",
+            "precipitation_probability",
+            "weather_code",
+            "cape",
+            "lightning_potential",
+            "wind_gusts_10m",
+        ]),
+        "timezone": "Europe/Paris",
+        "forecast_days": days,
+    }
+    async with httpx.AsyncClient(timeout=20) as client:
+        r = await client.get(OPEN_METEO_BASE, params=params)
+        r.raise_for_status()
+        data = r.json()
+    hourly = data.get("hourly", {})
+    times = hourly.get("time", [])
+
+    by_day: Dict[str, Dict[str, Any]] = {}
+    for i, t in enumerate(times):
+        day = t.split("T")[0]
+        b = by_day.setdefault(day, {
+            "date": day,
+            "max_cape": 0.0,
+            "max_lightning_potential": 0.0,
+            "peak_precip_probability": 0.0,
+            "precipitation_total": 0.0,
+            "max_wind_gust": 0.0,
+            "max_temperature": None,
+            "min_temperature": None,
+            "thunder_hours": 0,
+            "peak_hour": None,
+            "_peak_score_tmp": -1.0,
+        })
+        cape = hourly.get("cape", [0])[i] or 0
+        lp = hourly.get("lightning_potential", [0])[i] or 0
+        prob = hourly.get("precipitation_probability", [0])[i] or 0
+        precip = hourly.get("precipitation", [0])[i] or 0
+        gust = hourly.get("wind_gusts_10m", [0])[i] or 0
+        temp = hourly.get("temperature_2m", [None])[i]
+        code = hourly.get("weather_code", [None])[i]
+
+        b["max_cape"] = max(b["max_cape"], float(cape))
+        b["max_lightning_potential"] = max(b["max_lightning_potential"], float(lp))
+        b["peak_precip_probability"] = max(b["peak_precip_probability"], float(prob))
+        b["precipitation_total"] += float(precip)
+        b["max_wind_gust"] = max(b["max_wind_gust"], float(gust))
+        if code in THUNDERSTORM_CODES:
+            b["thunder_hours"] += 1
+        if temp is not None:
+            b["max_temperature"] = temp if b["max_temperature"] is None else max(b["max_temperature"], temp)
+            b["min_temperature"] = temp if b["min_temperature"] is None else min(b["min_temperature"], temp)
+
+        # Track peak hour by local convective intensity
+        inst = float(cape) + float(lp) * 20 + float(prob) * 2
+        if inst > b["_peak_score_tmp"]:
+            b["_peak_score_tmp"] = inst
+            b["peak_hour"] = t.split("T")[1][:5]
+
+    out = sorted(by_day.values(), key=lambda d: d["date"])
+    for d in out:
+        d.pop("_peak_score_tmp", None)
+        risk = _risk_score(d)
+        d["risk"] = risk
+        d["max_cape"] = round(d["max_cape"], 0)
+        d["max_lightning_potential"] = round(d["max_lightning_potential"], 1)
+        d["peak_precip_probability"] = round(d["peak_precip_probability"], 0)
+        d["precipitation_total"] = round(d["precipitation_total"], 1)
+        d["max_wind_gust"] = round(d["max_wind_gust"], 0)
+        if d["max_temperature"] is not None:
+            d["max_temperature"] = round(d["max_temperature"], 1)
+        if d["min_temperature"] is not None:
+            d["min_temperature"] = round(d["min_temperature"], 1)
+    return {"days": out}
+
+
 async def fetch_storm_zones(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM) -> Dict[str, Any]:
+    return await _cached(f"zones:{lat}:{lon}:{radius_km}", 90.0, lambda: _fetch_storm_zones_impl(lat, lon, radius_km))
+
+
+async def _fetch_storm_zones_impl(lat: float, lon: float, radius_km: float) -> Dict[str, Any]:
     """Sample the grid for active storm/convective zones around Lourdes."""
     points = sampling_grid(lat, lon, radius_km)
 

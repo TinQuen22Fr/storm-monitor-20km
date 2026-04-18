@@ -2,15 +2,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Bell, BellOff, Download, RefreshCw, Zap } from "lucide-react";
 import MapPanel from "@/components/MapPanel";
 import AlertBanner from "@/components/AlertBanner";
+import ApproachAlert from "@/components/ApproachAlert";
+import NavTabs from "@/components/NavTabs";
 import CurrentConditions from "@/components/CurrentConditions";
 import CapeGauge from "@/components/CapeGauge";
 import HistoryChart from "@/components/HistoryChart";
 import HistoryDaysChart from "@/components/HistoryDaysChart";
 import ForecastChart from "@/components/ForecastChart";
+import StormRiskDialog from "@/components/StormRiskDialog";
 import AuthDialog from "@/components/AuthDialog";
 import FavoritesList from "@/components/FavoritesList";
 import { Slider } from "@/components/ui/slider";
-import { API, getCurrent, getForecast, getHistory, getStrikes, getZones, LOURDES } from "@/lib/api";
+import { api, API, getCurrent, getForecast, getHistory, getStrikes, getZones, LOURDES } from "@/lib/api";
 import * as notif from "@/lib/notifications";
 import * as push from "@/lib/push";
 
@@ -34,6 +37,7 @@ export default function Dashboard() {
   const [fullscreen, setFullscreen] = useState(false);
   const [notifEnabled, setNotifEnabled] = useState(notif.isEnabled());
   const [pushEnabled, setPushEnabled] = useState(push.isPushEnabled());
+  const [approach, setApproach] = useState(null);
 
   const prevStormActive = useRef(false);
   const seenStrikeTs = useRef(new Set());
@@ -83,8 +87,23 @@ export default function Dashboard() {
       if (seenStrikeTs.current.size > 2000) {
         seenStrikeTs.current = new Set([...seenStrikeTs.current].slice(-1000));
       }
+
+      // Approach analysis (use a wider radius, independent of UI radius)
+      try {
+        const app = await api.get("/storms/approach", {
+          params: { lat: center.lat, lon: center.lon, radius_km: 100 },
+        });
+        const prev = approach?.approaching;
+        setApproach(app.data);
+        if (app.data?.approaching && !prev) {
+          notif.notify(
+            "⚠ Orage en approche",
+            `Distance ${app.data.min_distance_km} km · ${app.data.speed_kmh} km/h · arrivée ~${Math.round(app.data.eta_min)} min`
+          );
+        }
+      } catch { /* ignore */ }
     } catch { /* silent */ }
-  }, [center.lat, center.lon, radius]);
+  }, [center.lat, center.lon, radius, approach?.approaching]);
 
   useEffect(() => {
     loadWeather();
@@ -138,8 +157,15 @@ export default function Dashboard() {
           fetchedAt={lastFetch}
         />
 
+        {approach?.approaching && (
+          <div className="px-6 pt-4">
+            <ApproachAlert approach={approach} />
+          </div>
+        )}
+
         <div className="px-6 pt-8 pb-6 border-b border-slate-100 grain relative shrink-0">
-          <div className="flex items-start justify-between mb-4">
+          <NavTabs variant="inline" />
+          <div className="flex items-start justify-between mb-4 mt-5">
             <div className="flex items-center gap-2">
               <Zap className="w-4 h-4 text-slate-900" strokeWidth={2.5} />
               <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-slate-500 font-semibold">
@@ -284,6 +310,9 @@ export default function Dashboard() {
             <Download className="w-4 h-4" strokeWidth={1.8} />
             Bulletin PDF
           </button>
+
+          {/* Storm risk forecast dialog */}
+          <StormRiskDialog lat={center.lat} lon={center.lon} />
 
           {error && (
             <div className="mt-4 p-3 bg-red-50 border border-red-200 text-xs text-red-800 font-mono" data-testid="error-banner">

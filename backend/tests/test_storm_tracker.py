@@ -681,6 +681,177 @@ class TestPDFBulletinWithRadius:
         print(f"✓ PDF bulletin (70km): {len(response.content)} bytes")
 
 
+class TestStormUploadEndpoints:
+    """Test secured storm upload API (PHASE 6 FEATURE)"""
+    
+    UPLOAD_API_KEY = "lourdes-storm-upload-2026-xV7p9Qm3RtA8Ks"
+    
+    def test_upload_storm_missing_api_key(self):
+        """POST /api/upload_storm without X-API-Key returns 401"""
+        response = requests.post(f"{BASE_URL}/api/upload_storm", json={
+            "distance": 5.0,
+            "energy": 20.0
+        })
+        assert response.status_code == 401
+        
+        data = response.json()
+        assert data["detail"] == "Clé API invalide ou manquante"
+        print("✓ Upload without API key returns 401 with correct message")
+    
+    def test_upload_storm_wrong_api_key(self):
+        """POST /api/upload_storm with wrong X-API-Key returns 401"""
+        response = requests.post(
+            f"{BASE_URL}/api/upload_storm",
+            json={"distance": 5.0, "energy": 20.0},
+            headers={"X-API-Key": "wrong-key-12345"}
+        )
+        assert response.status_code == 401
+        
+        data = response.json()
+        assert data["detail"] == "Clé API invalide ou manquante"
+        print("✓ Upload with wrong API key returns 401")
+    
+    def test_upload_storm_valid_key_creates_record(self):
+        """POST /api/upload_storm with valid key returns {ok:true, record:{...}}"""
+        import time
+        timestamp = f"2026-01-{int(time.time()) % 28 + 1:02d}T12:00:00Z"
+        
+        response = requests.post(
+            f"{BASE_URL}/api/upload_storm",
+            json={
+                "distance": 7.5,
+                "energy": 33.2,
+                "timestamp": timestamp
+            },
+            headers={"X-API-Key": self.UPLOAD_API_KEY}
+        )
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert data["ok"] is True
+        assert "record" in data
+        
+        record = data["record"]
+        assert "id" in record
+        assert record["distance"] == 7.5
+        assert record["energy"] == 33.2
+        assert record["timestamp"] == timestamp
+        assert "received_at" in record
+        print(f"✓ Upload with valid key: id={record['id']}, distance={record['distance']}, energy={record['energy']}")
+    
+    def test_upload_storm_auto_fills_timestamp(self):
+        """POST /api/upload_storm without timestamp auto-fills it"""
+        response = requests.post(
+            f"{BASE_URL}/api/upload_storm",
+            json={
+                "distance": 2.1,
+                "energy": 15.0
+            },
+            headers={"X-API-Key": self.UPLOAD_API_KEY}
+        )
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert data["ok"] is True
+        record = data["record"]
+        
+        # Timestamp should be auto-filled (ISO format)
+        assert "timestamp" in record
+        assert record["timestamp"] is not None
+        assert "T" in record["timestamp"]  # ISO format check
+        print(f"✓ Auto-filled timestamp: {record['timestamp']}")
+    
+    def test_upload_storm_persists_to_file(self):
+        """POST /api/upload_storm persists data (verify via GET)"""
+        import time
+        unique_distance = 99.0 + (time.time() % 1)  # Unique value
+        
+        # Upload
+        response = requests.post(
+            f"{BASE_URL}/api/upload_storm",
+            json={
+                "distance": unique_distance,
+                "energy": 88.8,
+                "timestamp": "2026-01-15T10:00:00Z"
+            },
+            headers={"X-API-Key": self.UPLOAD_API_KEY}
+        )
+        assert response.status_code == 200
+        record_id = response.json()["record"]["id"]
+        
+        # Verify via GET
+        get_response = requests.get(f"{BASE_URL}/api/storm_uploads")
+        assert get_response.status_code == 200
+        
+        items = get_response.json()["items"]
+        found = any(item["id"] == record_id for item in items)
+        assert found, f"Record {record_id} not found in storm_uploads"
+        print(f"✓ Upload persisted and verified via GET: id={record_id}")
+
+
+class TestStormUploadsListEndpoint:
+    """Test GET /api/storm_uploads endpoint (PHASE 6 FEATURE)"""
+    
+    def test_list_storm_uploads_returns_count_and_items(self):
+        """GET /api/storm_uploads returns {count, items[]}"""
+        response = requests.get(f"{BASE_URL}/api/storm_uploads")
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert "count" in data
+        assert "items" in data
+        assert isinstance(data["count"], int)
+        assert isinstance(data["items"], list)
+        assert data["count"] == len(data["items"])
+        print(f"✓ Storm uploads list: count={data['count']}")
+    
+    def test_list_storm_uploads_sorted_newest_first(self):
+        """GET /api/storm_uploads returns items sorted by timestamp descending"""
+        response = requests.get(f"{BASE_URL}/api/storm_uploads")
+        assert response.status_code == 200
+        
+        items = response.json()["items"]
+        if len(items) >= 2:
+            # Verify descending order by timestamp
+            for i in range(len(items) - 1):
+                ts_current = items[i]["timestamp"]
+                ts_next = items[i + 1]["timestamp"]
+                assert ts_current >= ts_next, f"Items not sorted: {ts_current} < {ts_next}"
+            print(f"✓ Storm uploads sorted newest first ({len(items)} items)")
+        else:
+            print("✓ Storm uploads sorted (not enough items to verify order)")
+    
+    def test_list_storm_uploads_with_limit(self):
+        """GET /api/storm_uploads?limit=5 returns at most 5 items"""
+        response = requests.get(f"{BASE_URL}/api/storm_uploads", params={"limit": 5})
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert len(data["items"]) <= 5
+        print(f"✓ Storm uploads with limit=5: returned {len(data['items'])} items")
+    
+    def test_list_storm_uploads_item_structure(self):
+        """Storm upload items have id, distance, energy, timestamp, received_at"""
+        response = requests.get(f"{BASE_URL}/api/storm_uploads")
+        assert response.status_code == 200
+        
+        items = response.json()["items"]
+        if items:
+            item = items[0]
+            assert "id" in item
+            assert "distance" in item
+            assert "energy" in item
+            assert "timestamp" in item
+            assert "received_at" in item
+            
+            assert isinstance(item["distance"], (int, float))
+            assert isinstance(item["energy"], (int, float))
+            assert isinstance(item["timestamp"], str)
+            print(f"✓ Item structure valid: id={item['id']}, distance={item['distance']}, energy={item['energy']}")
+        else:
+            print("✓ No items to verify structure (empty list)")
+
+
 class TestLightningEndpoints:
     """Test Blitzortung lightning strike endpoints (NEW FEATURE)"""
     
