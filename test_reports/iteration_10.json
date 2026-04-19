@@ -1,0 +1,84 @@
+{
+  "summary": "Iteration 10 testing complete: MeteoAlarm primary vigilance source and trajectory spatial-clustering both validated end-to-end. Live MeteoAlarm endpoint returns 'Vigilance jaune orages' for all 7 target depts (65, 64, 32, 31, 09, 66, 40) — matching official vigilance.meteofrance.fr. Frontend VigilanceBanner displays yellow (#FFFBEB bg) with correct per-phenomenon colors and MeteoAlarm disclaimer. Trajectory clustering unit-tested with 6 scenarios (not_enough / stationary / noise / happy / no_dominant_cluster / signal_from_noise). All 64 backend tests pass (59 integration + 5 new trajectory units including 2 new clustering tests). All frontend critical selectors present and no JS errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/storms/approach", "issue": "analyze_approach NOT updated with spatial clustering like predict_trajectory — live response shows VITESSE=795 km/h, ETA=5 min on the 'Orage en approche' banner, which is the same dispersion-noise problem the trajectory endpoint now guards against. Consider applying _find_dominant_cluster (or equivalent) to analyze_approach or gating alerts on a plausibility check (speed<=120)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Main sidebar", "issues": ["'ORAGE EN APPROCHE' banner still shows implausible speed (795 km/h) because /api/storms/approach isn't clustered — main agent may want to hide or clamp alerts when approach speed >120 km/h, mirroring predict_trajectory noise_too_high guard."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_storm_tracker.py",
+    "/app/backend/tests/test_trajectory_unit.py",
+    "/app/test_reports/pytest/pytest_results_iter10.xml"
+  ],
+  "action_items": [
+    "Consider applying the same spatial-clustering + speed-plausibility guard used in predict_trajectory to analyze_approach — live UI currently shows ETA '5 min / 795 km/h' which is the same noise problem the trajectory fix addresses."
+  ],
+  "critical_code_review_comments": [
+    "vigilance.py: _fetch_meteoalarm correctly caches for 15 min via _cached helper (matches TTL comment in server.py _alert_watcher). NUTS3 mapping is correct (FR626=Hautes-Pyrénées verified via live MeteoAlarm feed). Language filter 'fr-FR' de-duplicates multi-language alert info blocks — good.",
+    "vigilance.py: _parse_awareness_level uses split(';') and clamps to 1-4 — safe. _parse_iso uses datetime.fromisoformat which is Python3.11+ only; /root/.venv is 3.11 so OK but flag if downgrade.",
+    "vigilance.py: Fallback chain (meteoalarm → open-meteo-fallback → raise) is defensive. _compute_from_openmeteo_fallback has a subtle bug: passes `_do` (coroutine fn) directly to `if callable(_do) else []` then awaits it — simplifies to always calling `_do()`; code works but logic is redundant. Minor.",
+    "analysis.py _find_dominant_cluster: 0.25° grid + 9-cell neighbourhood = ~83km box. Correctly rejects fully-dispersed 10-strike noise (test_no_dominant_cluster) AND extracts dominant signal from mixed noise (test_dominant_cluster_extracts_signal_from_noise). Good.",
+    "analysis.py predict_trajectory: speed_kmh>120 / <3 guards still fire AFTER clustering, which is correct belt-and-suspenders. Live app confirms: trajectory endpoint returns reason='noise_too_high' with ~18009 km/h in current storm activity — badge renders 'Dispersion trop élevée' correctly.",
+    "GAP: analyze_approach() in analysis.py still uses naive median-split strategy without clustering — its output currently drives the 'Orage en approche' red banner which shows VITESSE 795 KM/H. Same noise problem as trajectory had pre-iteration-10. Recommend applying _find_dominant_cluster or a plausibility clamp before displaying to users.",
+    "server.py /api/weather/vigilance unchanged signature, backward-compatible with VigilanceBanner.jsx (which consumes departements[].phenomena[] and overall_*). Good.",
+    "VigilanceBanner renders all 8 phenomena correctly (ORAGES, VENT VIOLENT, PLUIE-INONDATION, CANICULE, GRAND FROID, NEIGE-VERGLAS, BROUILLARD, AVALANCHES) when expanded — previous iteration only had 6.",
+    "Disclaimer text 'Vigilance officielle Météo-France agrégée par MeteoAlarm (EUMETNET)' visible in expanded view — user-facing attribution is correct."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_storm_tracker.py (updated TestVigilance: 7 depts instead of 5, 8 phenomena instead of 6, source='meteoalarm'|'open-meteo-fallback', added test_vigilance_meta_arrays, added source_label/source_url/updated_at assertions)",
+    "/app/backend/tests/test_trajectory_unit.py (added test_no_dominant_cluster and test_dominant_cluster_extracts_signal_from_noise; adjusted test_noise_too_high to reflect clustering-first behaviour; tightened happy-path strike spacing to fit a single 0.25° cell cluster)"
+  ],
+  "success_rate": {
+    "backend": "100% (64/64 tests passing)",
+    "frontend": "100% (VigilanceBanner yellow state + 8 phenomena + neighbouring depts + disclaimer + all regression selectors present; no JS errors)"
+  },
+  "test_credentials": {
+    "email": "test@lourdes.fr",
+    "password": "storm123",
+    "upload_api_key": "from /app/backend/.env UPLOAD_API_KEY"
+  },
+  "seed_data_creation": "",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "ITER-10 VALIDATED: (1) /api/weather/vigilance now returns source='meteoalarm', source_label='Météo-France (via MeteoAlarm)', 7 depts (09/31/32/40/64/65/66) with NUTS3 codes, 8 phenomena per dept (orage/vent/pluie/canicule/grand-froid/neige/brouillard/avalanche). Live response shows all 7 depts at level=2 'jaune' for orage — matches official vigilance.meteofrance.fr. Fallback path returns source='open-meteo-fallback' (verified by code review). (2) predict_trajectory uses _find_dominant_cluster (0.25° grid + 9-cell neighbourhood, min_points=4) before linear regression. Rejection reasons: not_enough_strikes (<4), no_dominant_cluster (<4 in best cell), static_centroid, noise_too_high (>120 km/h), stationary (<3 km/h). Happy path detects coherent cluster moving at plausible speed. (3) Frontend VigilanceBanner (testid=vigilance-banner) renders yellow bg #FFFBEB when overall=jaune, expand button (testid=vigilance-toggle) shows 8 phenomena + 6 neighbouring depts + disclaimer. (4) KNOWN GAP: /api/storms/approach (analyze_approach) still naive — shows 795 km/h on live UI banner. Not part of this iteration's fix scope, flagged to main agent. (5) All regression selectors present: timeline-preset-0, toggle-clouds, toggle-rain, toggle-wind, toggle-trajectory, trajectory-badge. Test command: cd /app && REACT_APP_BACKEND_URL=https://storm-monitor-20km.preview.emergentagent.com python -m pytest backend/tests/ -v",
+  "rca_of_the_issue": "Previous iteration: vigilance mismatch between app (green) and Météo-France (jaune). RCA: app computed vigilance locally from Open-Meteo thresholds which lagged / diverged from official MF criteria. Mitigation (applied in this iteration): switched to MeteoAlarm feed (EUMETNET aggregator of official national services including MF). Verified live: all 7 target depts now show level 2 orage matching vigilance.meteofrance.fr. Open-Meteo is kept only as last-resort fallback.",
+  "features_tested": {
+    "backend_new": [
+      "/api/weather/vigilance source='meteoalarm' (live)",
+      "/api/weather/vigilance returns 7 depts (65/64/32/31/09/66/40) with NUTS3 codes",
+      "/api/weather/vigilance returns 8 phenomena per dept",
+      "/api/weather/vigilance phenomena_meta=8, levels_meta=4",
+      "/api/weather/vigilance caching <1s (TTL 15min)",
+      "predict_trajectory no_dominant_cluster branch (dispersed strikes)",
+      "predict_trajectory clustering extracts dominant signal from noise",
+      "predict_trajectory regression unchanged (not_enough/stationary/noise_too_high/happy)"
+    ],
+    "backend_regression": [
+      "All prior 54 tests still pass (service info, weather current/forecast/history, storm zones, auth, favorites, history-days, push, bulletin PDF, storm uploads, lightning, approach, forecast/storm-risk, trajectory endpoint)"
+    ],
+    "frontend_new": [
+      "VigilanceBanner yellow background (#FFFBEB) when overall=jaune",
+      "VigilanceBanner expanded view shows 8 phenomena",
+      "VigilanceBanner shows 6 neighbouring depts (64/32/31/09/66/40) in DÉPARTEMENTS VOISINS section",
+      "Disclaimer 'MeteoAlarm (EUMETNET)' rendered in expanded view"
+    ],
+    "frontend_regression": [
+      "timeline-preset-0 present",
+      "4 weather toggles present (toggle-clouds/rain/wind/trajectory)",
+      "trajectory-badge present",
+      "No JS errors"
+    ]
+  },
+  "mocked_apis": {
+    "has_mocked_apis": false,
+    "note": "All tests hit real MeteoAlarm + Open-Meteo + Blitzortung data. No mocks."
+  }
+}

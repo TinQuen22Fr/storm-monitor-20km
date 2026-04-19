@@ -1011,7 +1011,7 @@ class TestForecastStormRisk:
 
 
 class TestVigilance:
-    """Test /api/weather/vigilance endpoint (PHASE 9 - Météo-France-style vigilance)"""
+    """Test /api/weather/vigilance endpoint (PHASE 10 - MeteoAlarm primary source)"""
 
     def test_vigilance_basic_structure(self):
         """GET /api/weather/vigilance returns all required top-level keys"""
@@ -1019,39 +1019,60 @@ class TestVigilance:
         assert response.status_code == 200
         data = response.json()
         for key in ["overall_level", "overall_level_fr", "overall_color", "overall_label",
-                    "departements", "phenomena_meta", "levels_meta", "disclaimer", "source"]:
+                    "departements", "phenomena_meta", "levels_meta", "disclaimer", "source",
+                    "source_label", "source_url", "updated_at"]:
             assert key in data, f"Missing top-level key: {key}"
-        assert data["source"] == "open-meteo"
+        # Primary is meteoalarm; fallback is open-meteo-fallback
+        assert data["source"] in ("meteoalarm", "open-meteo-fallback"), f"Unexpected source: {data['source']}"
         assert data["overall_level_fr"] in ("vert", "jaune", "orange", "rouge")
         assert data["overall_color"].startswith("#")
         assert 1 <= data["overall_level"] <= 4
-        print(f"✓ Vigilance overall={data['overall_level']} ({data['overall_level_fr']}) color={data['overall_color']}")
+        # Source label must mention MeteoAlarm or Open-Meteo fallback
+        if data["source"] == "meteoalarm":
+            assert "MeteoAlarm" in data["source_label"] or "Météo-France" in data["source_label"]
+        print(f"✓ Vigilance source={data['source']} overall={data['overall_level']} ({data['overall_level_fr']})")
 
-    def test_vigilance_five_departements(self):
-        """Vigilance returns 5 departements (65, 64, 32, 31, 09)"""
+    def test_vigilance_seven_departements(self):
+        """Vigilance returns 7 departements (65, 64, 32, 31, 09, 66, 40)"""
         response = requests.get(f"{BASE_URL}/api/weather/vigilance")
         assert response.status_code == 200
         data = response.json()
         depts = data["departements"]
-        assert len(depts) == 5
+        assert len(depts) == 7, f"Expected 7 depts, got {len(depts)}"
         dept_ids = sorted([d["id"] for d in depts])
-        assert dept_ids == ["09", "31", "32", "64", "65"], f"Got {dept_ids}"
-        print(f"✓ Vigilance has 5 depts: {dept_ids}")
+        assert dept_ids == ["09", "31", "32", "40", "64", "65", "66"], f"Got {dept_ids}"
+        # Each dept must have nuts3 code
+        for d in depts:
+            assert "nuts3" in d and d["nuts3"].startswith("FR"), f"Dept {d['id']} missing NUTS3"
+        print(f"✓ Vigilance has 7 depts: {dept_ids}")
 
     def test_vigilance_phenomena_per_dept(self):
-        """Each dept has 6 phenomena (orage, vent, pluie, canicule, grand-froid, neige)"""
+        """Each dept has 8 phenomena (orage, vent, pluie, canicule, grand-froid, neige, brouillard, avalanche)"""
         response = requests.get(f"{BASE_URL}/api/weather/vigilance")
         data = response.json()
-        expected_keys = {"orage", "vent", "pluie", "canicule", "grand-froid", "neige"}
+        expected_keys = {"orage", "vent", "pluie", "canicule", "grand-froid", "neige", "brouillard", "avalanche"}
         for dept in data["departements"]:
             phen_keys = {p["key"] for p in dept["phenomena"]}
+            # fallback path still returns 8 via PHENOMENA_META
             assert phen_keys == expected_keys, f"Dept {dept['id']} has {phen_keys}"
             for p in dept["phenomena"]:
                 assert 1 <= p["level"] <= 4
                 assert p["level_fr"] in ("vert", "jaune", "orange", "rouge")
                 assert p["color"].startswith("#")
                 assert "today" in p and "tomorrow" in p
-        print("✓ All 5 depts have 6 phenomena with correct structure")
+        print("✓ All 7 depts have 8 phenomena with correct structure")
+
+    def test_vigilance_meta_arrays(self):
+        """phenomena_meta has 8 entries, levels_meta has 4 entries"""
+        response = requests.get(f"{BASE_URL}/api/weather/vigilance")
+        data = response.json()
+        assert len(data["phenomena_meta"]) == 8, f"Got {len(data['phenomena_meta'])}"
+        assert len(data["levels_meta"]) == 4, f"Got {len(data['levels_meta'])}"
+        for m in data["levels_meta"]:
+            assert "level" in m and "name" in m and "color" in m and "label" in m
+        for m in data["phenomena_meta"]:
+            assert "key" in m and "label" in m and "icon" in m
+        print("✓ phenomena_meta=8, levels_meta=4")
 
     def test_vigilance_cached_fast(self):
         """Second call to /api/weather/vigilance should be fast (cached TTL 15min)"""

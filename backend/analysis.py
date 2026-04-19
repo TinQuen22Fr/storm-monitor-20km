@@ -92,6 +92,48 @@ def analyze_approach(center_lat: float, center_lon: float, strikes: List[Dict[st
     }
 
 
+def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    r = 6371.0
+    p1 = math.radians(lat1)
+    p2 = math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def _find_dominant_cluster(strikes: List[Dict[str, Any]], eps_km: float = 25.0, min_points: int = 4) -> List[Dict[str, Any]]:
+    """Return the largest spatially-coherent cluster of strikes.
+
+    Simple DBSCAN-like grid clustering: assigns each strike to a 0.25°x0.25°
+    grid cell (~25 km), picks the cell with the most strikes PLUS its
+    immediate neighbours. This removes the "many dispersed cells" noise
+    problem that produces 4000 km/h fake trajectories.
+    """
+    if not strikes:
+        return []
+
+    # Bucket by 0.25° grid (~27 km at 43°N)
+    grid: Dict[tuple, List[Dict[str, Any]]] = {}
+    for s in strikes:
+        key = (round(float(s["lat"]) * 4) / 4, round(float(s["lon"]) * 4) / 4)
+        grid.setdefault(key, []).append(s)
+
+    # Pick most populated cell
+    best_key = max(grid, key=lambda k: len(grid[k]))
+    if len(grid[best_key]) < min_points:
+        return []
+
+    # Include neighbours (9-cell neighbourhood)
+    lat0, lon0 = best_key
+    cluster: List[Dict[str, Any]] = []
+    for dlat in (-0.25, 0, 0.25):
+        for dlon in (-0.25, 0, 0.25):
+            cluster.extend(grid.get((lat0 + dlat, lon0 + dlon), []))
+
+    return cluster
+
+
 def predict_trajectory(
     center_lat: float,
     center_lon: float,
@@ -99,26 +141,36 @@ def predict_trajectory(
     now: Optional[float] = None,
     project_minutes: int = 45,
 ) -> Dict[str, Any]:
-    """Linear-regression trajectory prediction of the storm centroid.
+    """Linear-regression trajectory prediction of the dominant storm cell.
 
-    Fits lat(t) and lon(t) over the last 60 minutes of strikes and projects
-    the centroid forward. Returns waypoints every 10 min up to project_minutes
-    and ETA for crossing within 10 km of the center.
+    Steps:
+      1. Keep strikes from last 60 min only.
+      2. Cluster spatially (0.25° grid + neighbours) → isolate the dominant cell.
+      3. Fit lat(t) & lon(t) linearly on the cluster.
+      4. Project forward, compute speed/bearing/ETA.
     """
     now = now or time.time()
     recent = [s for s in strikes if now - s["ts"] <= 3600]
     if len(recent) < 4:
         return {"detected": False, "reason": "not_enough_strikes", "count": len(recent)}
 
-    # Sort by time and pick the last 20 max to limit noise
-    recent.sort(key=lambda s: s["ts"])
-    recent = recent[-20:]
+    # Isolate dominant cluster to avoid dispersed-noise regressions
+    cluster = _find_dominant_cluster(recent, eps_km=25.0, min_points=4)
+    if len(cluster) < 4:
+        return {
+            "detected": False,
+            "reason": "no_dominant_cluster",
+            "count": len(recent),
+        }
 
-    ts = [float(s["ts"]) for s in recent]
-    lats = [float(s["lat"]) for s in recent]
-    lons = [float(s["lon"]) for s in recent]
+    # Sort by time and keep the last 20 to limit noise
+    cluster.sort(key=lambda s: s["ts"])
+    cluster = cluster[-20:]
 
-    # Normalize time axis (minutes since first)
+    ts = [float(s["ts"]) for s in cluster]
+    lats = [float(s["lat"]) for s in cluster]
+    lons = [float(s["lon"]) for s in cluster]
+
     t0 = ts[0]
     x = [(t - t0) / 60.0 for t in ts]
     n = len(x)
@@ -133,7 +185,6 @@ def predict_trajectory(
     slope_lat = sum((xi - mean_x) * (lat - mean_lat) for xi, lat in zip(x, lats)) / var_x
     slope_lon = sum((xi - mean_x) * (lon - mean_lon) for xi, lon in zip(x, lons)) / var_x
 
-    # Current projected centroid (at now minute)
     now_min = (now - t0) / 60.0
 
     def at(minute_offset: float) -> Dict[str, float]:
@@ -146,29 +197,16 @@ def predict_trajectory(
             "t_offset_min": minute_offset,
         }
 
-    # Current + projected path
     waypoints: List[Dict[str, float]] = [at(0)]
     for off in range(10, project_minutes + 1, 10):
         waypoints.append(at(off))
 
-    # Motion speed km/h
-    # Distance between waypoint(0) and waypoint(60 min) divided by 1 hour
     p1 = at(0)
     p2 = at(60)
-    import math as _m
-    def _hav(la1, lo1, la2, lo2):
-        r = 6371.0
-        p1 = _m.radians(la1); p2 = _m.radians(la2)
-        dp = _m.radians(la2 - la1)
-        dl = _m.radians(lo2 - lo1)
-        a = _m.sin(dp / 2) ** 2 + _m.cos(p1) * _m.cos(p2) * _m.sin(dl / 2) ** 2
-        return 2 * r * _m.asin(_m.sqrt(a))
-
-    hourly_km = _hav(p1["lat"], p1["lon"], p2["lat"], p2["lon"])
+    hourly_km = _haversine(p1["lat"], p1["lon"], p2["lat"], p2["lon"])
     speed_kmh = round(hourly_km, 1)
 
-    # Reject noisy regressions: real storm cells move 5-100 km/h. > 120 means
-    # the strikes are spatially dispersed and the linear fit is meaningless.
+    # Reject noisy regressions even after clustering
     if speed_kmh > 120.0:
         return {
             "detected": False,
@@ -177,7 +215,6 @@ def predict_trajectory(
             "count": n,
         }
     if speed_kmh < 3.0:
-        # Quasi-stationary → not a moving cell, don't draw a prediction line
         return {
             "detected": False,
             "reason": "stationary",
@@ -185,12 +222,11 @@ def predict_trajectory(
             "count": n,
         }
 
-    # Will it cross near the center (<=10 km)?
     eta_min: Optional[float] = None
-    min_distance: float = _hav(p1["lat"], p1["lon"], center_lat, center_lon)
+    min_distance: float = _haversine(p1["lat"], p1["lon"], center_lat, center_lon)
     for off in range(0, project_minutes + 1, 5):
         w = at(off)
-        d = _hav(w["lat"], w["lon"], center_lat, center_lon)
+        d = _haversine(w["lat"], w["lon"], center_lat, center_lon)
         if d < min_distance:
             min_distance = d
             if d <= 10.0 and eta_min is None:

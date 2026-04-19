@@ -1,30 +1,27 @@
-"""Compute a Météo-France-style "Vigilance" bulletin from Open-Meteo data.
+"""Official vigilance from Météo-France via MeteoAlarm feed.
 
-We cannot hit Météo-France public API from this sandbox (Akamai bot-wall +
-token required). So we compute our own 4-level color assessment for the
-standard Météo-France phenomena around Lourdes (dept 65 + neighbours):
+MeteoAlarm is the official European consortium aggregator of national weather
+services, including Météo-France. The feed at
+https://feeds.meteoalarm.org/api/v1/warnings/feeds-france returns the SAME
+vigilance data shown on https://vigilance.meteofrance.fr — fully open-data,
+no key required.
 
-  - Orages              (thunderstorm)
-  - Vent violent        (wind)
-  - Pluie-inondation    (rain-flood)
-  - Canicule            (heatwave)
-  - Grand froid         (extreme cold)
-  - Neige-verglas       (snow/ice)
-
-Levels match Météo-France colours:
-  1 = vert (no vigilance)
-  2 = jaune (be aware)
-  3 = orange (be very vigilant)
-  4 = rouge (absolute vigilance)
+If MeteoAlarm is unavailable, we fall back to a locally-computed Open-Meteo
+assessment so the banner is never empty.
 """
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any, Dict, List
 
 import httpx
 
 from weather import _cached, OPEN_METEO_BASE
+
+logger = logging.getLogger(__name__)
+
+METEOALARM_URL = "https://feeds.meteoalarm.org/api/v1/warnings/feeds-france"
 
 LEVELS_FR = {1: "vert", 2: "jaune", 3: "orange", 4: "rouge"}
 LEVEL_COLORS = {
@@ -40,70 +37,21 @@ LEVEL_LABELS = {
     4: "Vigilance absolue",
 }
 
-
-def _thunder_level(weather_codes: List[int], cape_max: float, wind_gusts: float) -> int:
-    thunder_hours = sum(1 for c in weather_codes if c in {95, 96, 99})
-    if thunder_hours >= 3 and cape_max >= 2500:
-        return 4
-    if thunder_hours >= 2 or (cape_max >= 2000 and thunder_hours >= 1):
-        return 3
-    if thunder_hours >= 1 or cape_max >= 1500:
-        return 2
-    return 1
-
-
-def _wind_level(gust_max: float) -> int:
-    if gust_max >= 130:
-        return 4
-    if gust_max >= 100:
-        return 3
-    if gust_max >= 70:
-        return 2
-    return 1
-
-
-def _rain_level(precip_sum_mm: float, precip_hours: int) -> int:
-    # Based on Météo-France broad criteria (cumulatives)
-    if precip_sum_mm >= 100 or (precip_sum_mm >= 60 and precip_hours >= 6):
-        return 4
-    if precip_sum_mm >= 50:
-        return 3
-    if precip_sum_mm >= 25:
-        return 2
-    return 1
-
-
-def _heat_level(t_max: float) -> int:
-    if t_max >= 40:
-        return 4
-    if t_max >= 36:
-        return 3
-    if t_max >= 32:
-        return 2
-    return 1
-
-
-def _cold_level(t_min: float) -> int:
-    if t_min <= -15:
-        return 4
-    if t_min <= -10:
-        return 3
-    if t_min <= -5:
-        return 2
-    return 1
-
-
-def _snow_level(snow_cm: float, weather_codes: List[int]) -> int:
-    ice_codes = {56, 57, 66, 67}
-    ice_hours = sum(1 for c in weather_codes if c in ice_codes)
-    if snow_cm >= 20 or ice_hours >= 4:
-        return 4
-    if snow_cm >= 10 or ice_hours >= 2:
-        return 3
-    if snow_cm >= 3 or ice_hours >= 1:
-        return 2
-    return 1
-
+# MeteoAlarm awareness_type code → our phenomenon key
+AWARENESS_TYPE_MAP = {
+    "1": "vent",             # Wind
+    "2": "neige",            # Snow/Ice
+    "3": "orage",            # Thunderstorm
+    "4": "brouillard",       # Fog
+    "5": "grand-froid",      # Extreme low temp
+    "6": "canicule",         # Extreme high temp
+    "7": "neige",            # Coastal event (partial)
+    "8": "pluie",             # Rain/flood
+    "9": "pluie",             # Flood
+    "10": "pluie",            # Rain
+    "11": "avalanche",       # Avalanche
+    "12": "vent",             # Strong wind on sea
+}
 
 PHENOMENA_META = [
     ("orage", "Orages", "⚡"),
@@ -112,139 +60,167 @@ PHENOMENA_META = [
     ("canicule", "Canicule", "🔥"),
     ("grand-froid", "Grand froid", "❄"),
     ("neige", "Neige-verglas", "🌨"),
+    ("brouillard", "Brouillard", "🌫"),
+    ("avalanche", "Avalanches", "🗻"),
 ]
 
-
-async def _fetch_open_meteo_multi(depts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Single request for all depts — Open-Meteo supports comma-separated coords."""
-    async def _do() -> List[Dict[str, Any]]:
-        lats = ",".join(f"{d['lat']}" for d in depts)
-        lons = ",".join(f"{d['lon']}" for d in depts)
-        params = {
-            "latitude": lats,
-            "longitude": lons,
-            "hourly": "weather_code,cape",
-            "daily": "weather_code,wind_gusts_10m_max,precipitation_sum,precipitation_hours,"
-                     "temperature_2m_max,temperature_2m_min,cape_max,snowfall_sum",
-            "forecast_days": 2,
-            "timezone": "auto",
-        }
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            r = await client.get(OPEN_METEO_BASE, params=params)
-            r.raise_for_status()
-            data = r.json()
-            # When multi-location is used, Open-Meteo returns a list
-            return data if isinstance(data, list) else [data]
-
-    key = "vigilance:multi:" + ",".join(d["id"] for d in depts)
-    return await _cached(key, ttl=900.0, fn=_do)
-
-
-def _day_levels(day_idx: int, data: Dict[str, Any]) -> Dict[str, int]:
-    """Compute per-phenomenon level for day day_idx (0 or 1)."""
-    daily = data.get("daily", {})
-    hourly = data.get("hourly", {})
-
-    # Extract the hourly slice for this day (24 entries per day)
-    h_codes = hourly.get("weather_code", [])[day_idx * 24 : (day_idx + 1) * 24]
-    h_cape = hourly.get("cape", [])[day_idx * 24 : (day_idx + 1) * 24]
-
-    t_max = float(daily.get("temperature_2m_max", [0, 0])[day_idx] or 0)
-    t_min = float(daily.get("temperature_2m_min", [0, 0])[day_idx] or 0)
-    gust_max = float(daily.get("wind_gusts_10m_max", [0, 0])[day_idx] or 0)
-    precip_sum = float(daily.get("precipitation_sum", [0, 0])[day_idx] or 0)
-    precip_hours = int(daily.get("precipitation_hours", [0, 0])[day_idx] or 0)
-    snow_cm = float(daily.get("snowfall_sum", [0, 0])[day_idx] or 0)
-    cape_max = float(daily.get("cape_max", [0, 0])[day_idx] or 0)
-    if not cape_max and h_cape:
-        cape_max = max([float(c or 0) for c in h_cape])
-
-    return {
-        "orage": _thunder_level(h_codes, cape_max, gust_max),
-        "vent": _wind_level(gust_max),
-        "pluie": _rain_level(precip_sum, precip_hours),
-        "canicule": _heat_level(t_max),
-        "grand-froid": _cold_level(t_min),
-        "neige": _snow_level(snow_cm, h_codes),
-    }
-
-
-def _day_values(day_idx: int, data: Dict[str, Any]) -> Dict[str, Any]:
-    daily = data.get("daily", {})
-    hourly = data.get("hourly", {})
-    h_cape = hourly.get("cape", [])[day_idx * 24 : (day_idx + 1) * 24]
-    cape_max = float(daily.get("cape_max", [0, 0])[day_idx] or 0)
-    if not cape_max and h_cape:
-        cape_max = max([float(c or 0) for c in h_cape])
-    return {
-        "t_max": float(daily.get("temperature_2m_max", [0, 0])[day_idx] or 0),
-        "t_min": float(daily.get("temperature_2m_min", [0, 0])[day_idx] or 0),
-        "gust_max_kmh": float(daily.get("wind_gusts_10m_max", [0, 0])[day_idx] or 0),
-        "precip_sum_mm": float(daily.get("precipitation_sum", [0, 0])[day_idx] or 0),
-        "precip_hours": int(daily.get("precipitation_hours", [0, 0])[day_idx] or 0),
-        "snow_cm": float(daily.get("snowfall_sum", [0, 0])[day_idx] or 0),
-        "cape_max": cape_max,
-    }
-
-
-# Dept Lourdes (65) + neighbours. "name" is the French département name.
+# Lourdes dept (65) + neighbours. NUTS3 codes come from MeteoAlarm (FRxxx).
 LOURDES_DEPTS = [
-    {"id": "65", "name": "Hautes-Pyrénées", "lat": 43.0951, "lon": 0.0},
-    {"id": "64", "name": "Pyrénées-Atlantiques", "lat": 43.18, "lon": -0.75},
-    {"id": "32", "name": "Gers", "lat": 43.65, "lon": 0.58},
-    {"id": "31", "name": "Haute-Garonne", "lat": 43.48, "lon": 1.2},
-    {"id": "09", "name": "Ariège", "lat": 42.95, "lon": 1.48},
+    {"id": "65", "name": "Hautes-Pyrénées", "nuts3": "FR626", "lat": 43.0951, "lon": 0.15},
+    {"id": "64", "name": "Pyrénées-Atlantiques", "nuts3": "FR615", "lat": 43.30, "lon": -0.75},
+    {"id": "32", "name": "Gers", "nuts3": "FR624", "lat": 43.65, "lon": 0.58},
+    {"id": "31", "name": "Haute-Garonne", "nuts3": "FR623", "lat": 43.48, "lon": 1.2},
+    {"id": "09", "name": "Ariège", "nuts3": "FR621", "lat": 42.95, "lon": 1.48},
+    {"id": "66", "name": "Pyrénées-Orientales", "nuts3": "FR815", "lat": 42.60, "lon": 2.55},
+    {"id": "40", "name": "Landes", "nuts3": "FR613", "lat": 43.95, "lon": -0.80},
 ]
 
+# Awareness_level: "1; green", "2; yellow", "3; orange", "4; red"
+def _parse_awareness_level(val: str) -> int:
+    if not val:
+        return 1
+    first = val.split(";")[0].strip()
+    try:
+        return max(1, min(4, int(first)))
+    except ValueError:
+        return 1
 
-async def compute_vigilance() -> Dict[str, Any]:
-    """Compute vigilance per phenomenon for Lourdes (65) and 4 neighbouring depts."""
-    all_data = await _fetch_open_meteo_multi(LOURDES_DEPTS)
 
-    def _one(dept: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, Any]:
-        today = _day_levels(0, data)
-        tomorrow = _day_levels(1, data)
-        merged = {k: max(today[k], tomorrow[k]) for k in today}
-        vals_today = _day_values(0, data)
-        vals_tomorrow = _day_values(1, data)
-        return {
+def _now_epoch() -> float:
+    return time.time()
+
+
+def _parse_iso(s: str) -> float:
+    """Parse ISO 8601 with timezone → epoch seconds."""
+    from datetime import datetime
+    try:
+        # Python 3.11+ accepts +02:00 directly
+        return datetime.fromisoformat(s).timestamp()
+    except Exception:
+        return 0.0
+
+
+async def _fetch_meteoalarm() -> Dict[str, Any]:
+    """Fetch and cache the MeteoAlarm France feed (TTL 15 min)."""
+    async def _do() -> Dict[str, Any]:
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            r = await client.get(
+                METEOALARM_URL,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Lourdes-Storm-Tracker)",
+                    "Accept": "application/json",
+                },
+            )
+            r.raise_for_status()
+            return r.json()
+
+    return await _cached("vigilance:meteoalarm", ttl=900.0, fn=_do)
+
+
+def _extract_dept_alerts(data: Dict[str, Any], nuts3: str) -> List[Dict[str, Any]]:
+    """Return per-phenomenon max level for a given NUTS3 dept, valid NOW or NEXT 24H."""
+    now = _now_epoch()
+    horizon = now + 24 * 3600
+
+    per_phen: Dict[str, Dict[str, Any]] = {}
+
+    for w in data.get("warnings", []):
+        alert = w.get("alert", {})
+        for info in alert.get("info", []):
+            # Only fr-FR to avoid duplicates
+            if info.get("language") != "fr-FR":
+                continue
+            # Check if this area applies
+            areas = info.get("area", [])
+            matches = False
+            for area in areas:
+                for g in area.get("geocode", []):
+                    if g.get("valueName") == "NUTS3" and g.get("value") == nuts3:
+                        matches = True
+                        break
+                if matches:
+                    break
+            if not matches:
+                continue
+
+            effective = _parse_iso(info.get("effective", ""))
+            expires = _parse_iso(info.get("expires", ""))
+            # Only keep alerts currently active or starting within 24h
+            if expires and expires < now:
+                continue
+            if effective and effective > horizon:
+                continue
+
+            params = {p["valueName"]: p["value"] for p in info.get("parameter", [])}
+            lvl = _parse_awareness_level(params.get("awareness_level", ""))
+            awareness_type = params.get("awareness_type", "").split(";")[0].strip()
+            phen_key = AWARENESS_TYPE_MAP.get(awareness_type)
+            if not phen_key:
+                continue
+
+            # Keep max level for this phenomenon
+            cur = per_phen.get(phen_key)
+            if not cur or lvl > cur["level"]:
+                per_phen[phen_key] = {
+                    "level": lvl,
+                    "event": info.get("event", ""),
+                    "description": info.get("description", ""),
+                    "effective": info.get("effective", ""),
+                    "expires": info.get("expires", ""),
+                }
+
+    return per_phen
+
+
+def _build_phenomena(per_phen: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    items = []
+    for key, label, icon in PHENOMENA_META:
+        data = per_phen.get(key, {"level": 1})
+        lvl = data.get("level", 1)
+        items.append({
+            "key": key,
+            "label": label,
+            "icon": icon,
+            "level": lvl,
+            "level_fr": LEVELS_FR[lvl],
+            "color": LEVEL_COLORS[lvl],
+            "today": lvl,  # MeteoAlarm active-now
+            "tomorrow": lvl,  # Same horizon window
+            "event": data.get("event"),
+            "description": data.get("description"),
+        })
+    return items
+
+
+async def _compute_from_meteoalarm() -> Dict[str, Any]:
+    data = await _fetch_meteoalarm()
+
+    results: List[Dict[str, Any]] = []
+    for dept in LOURDES_DEPTS:
+        per_phen = _extract_dept_alerts(data, dept["nuts3"])
+        phenomena = _build_phenomena(per_phen)
+        max_level = max((p["level"] for p in phenomena), default=1)
+        results.append({
             "id": dept["id"],
             "name": dept["name"],
+            "nuts3": dept["nuts3"],
             "lat": dept["lat"],
             "lon": dept["lon"],
-            "phenomena": [
-                {
-                    "key": k,
-                    "label": label,
-                    "icon": icon,
-                    "level": merged[k],
-                    "level_fr": LEVELS_FR[merged[k]],
-                    "color": LEVEL_COLORS[merged[k]],
-                    "today": today[k],
-                    "tomorrow": tomorrow[k],
-                }
-                for k, label, icon in PHENOMENA_META
-            ],
-            "max_level": max(merged.values()),
-            "max_level_fr": LEVELS_FR[max(merged.values())],
-            "max_color": LEVEL_COLORS[max(merged.values())],
-            "max_label": LEVEL_LABELS[max(merged.values())],
-            "values_today": vals_today,
-            "values_tomorrow": vals_tomorrow,
-        }
+            "phenomena": phenomena,
+            "max_level": max_level,
+            "max_level_fr": LEVELS_FR[max_level],
+            "max_color": LEVEL_COLORS[max_level],
+            "max_label": LEVEL_LABELS[max_level],
+        })
 
-    results = [_one(d, all_data[i]) for i, d in enumerate(LOURDES_DEPTS) if i < len(all_data)]
-    # Overall worst level among all depts
-    overall = max(r["max_level"] for r in results)
+    overall = max((r["max_level"] for r in results), default=1)
     return {
         "updated_at": int(time.time()),
-        "source": "open-meteo",
-        "disclaimer": "Vigilance calculée localement à partir des prévisions Open-Meteo. "
-                      "Pour la vigilance officielle, consultez vigilance.meteofrance.fr",
-        "phenomena_meta": [
-            {"key": k, "label": label, "icon": icon}
-            for k, label, icon in PHENOMENA_META
-        ],
+        "source": "meteoalarm",
+        "source_label": "Météo-France (via MeteoAlarm)",
+        "source_url": "https://vigilance.meteofrance.fr/",
+        "disclaimer": "Vigilance officielle Météo-France agrégée par MeteoAlarm (EUMETNET).",
+        "phenomena_meta": [{"key": k, "label": label, "icon": icon} for k, label, icon in PHENOMENA_META],
         "levels_meta": [
             {"level": lv, "name": LEVELS_FR[lv], "color": LEVEL_COLORS[lv], "label": LEVEL_LABELS[lv]}
             for lv in (1, 2, 3, 4)
@@ -255,3 +231,99 @@ async def compute_vigilance() -> Dict[str, Any]:
         "overall_color": LEVEL_COLORS[overall],
         "overall_label": LEVEL_LABELS[overall],
     }
+
+
+# ---------- Open-Meteo fallback (used only if MeteoAlarm fails) ----------
+
+def _thunder_level(weather_codes, cape_max, gust_max):
+    thunder_hours = sum(1 for c in weather_codes if c in {95, 96, 99})
+    if thunder_hours >= 3 and cape_max >= 2500:
+        return 4
+    if thunder_hours >= 2 or (cape_max >= 2000 and thunder_hours >= 1):
+        return 3
+    if thunder_hours >= 1 or cape_max >= 1500:
+        return 2
+    return 1
+
+
+async def _compute_from_openmeteo_fallback() -> Dict[str, Any]:
+    """Very simplified fallback; used only if MeteoAlarm is unreachable."""
+    async def _do():
+        lats = ",".join(f"{d['lat']}" for d in LOURDES_DEPTS)
+        lons = ",".join(f"{d['lon']}" for d in LOURDES_DEPTS)
+        params = {
+            "latitude": lats, "longitude": lons,
+            "hourly": "weather_code,cape",
+            "daily": "weather_code,wind_gusts_10m_max,cape_max",
+            "forecast_days": 1, "timezone": "auto",
+        }
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.get(OPEN_METEO_BASE, params=params)
+            r.raise_for_status()
+            return r.json() if not isinstance(r.json(), list) else r.json()
+
+    data_list = await _do() if callable(_do) else []
+    if isinstance(data_list, dict):
+        data_list = [data_list]
+
+    results = []
+    for i, dept in enumerate(LOURDES_DEPTS):
+        data = data_list[i] if i < len(data_list) else {}
+        hourly = data.get("hourly", {}).get("weather_code", [])[:24]
+        cape_h = data.get("hourly", {}).get("cape", [])[:24]
+        cape_max = max([float(c or 0) for c in cape_h], default=0)
+        gust_max = float((data.get("daily", {}).get("wind_gusts_10m_max") or [0])[0] or 0)
+        orage_lvl = _thunder_level(hourly, cape_max, gust_max)
+        phenomena = [
+            {
+                "key": k, "label": label, "icon": icon,
+                "level": orage_lvl if k == "orage" else 1,
+                "level_fr": LEVELS_FR[orage_lvl if k == "orage" else 1],
+                "color": LEVEL_COLORS[orage_lvl if k == "orage" else 1],
+                "today": orage_lvl if k == "orage" else 1,
+                "tomorrow": orage_lvl if k == "orage" else 1,
+            }
+            for k, label, icon in PHENOMENA_META
+        ]
+        max_level = max((p["level"] for p in phenomena), default=1)
+        results.append({
+            "id": dept["id"], "name": dept["name"], "nuts3": dept["nuts3"],
+            "lat": dept["lat"], "lon": dept["lon"],
+            "phenomena": phenomena,
+            "max_level": max_level,
+            "max_level_fr": LEVELS_FR[max_level],
+            "max_color": LEVEL_COLORS[max_level],
+            "max_label": LEVEL_LABELS[max_level],
+        })
+
+    overall = max((r["max_level"] for r in results), default=1)
+    return {
+        "updated_at": int(time.time()),
+        "source": "open-meteo-fallback",
+        "source_label": "Estimation locale Open-Meteo (fallback)",
+        "source_url": "https://vigilance.meteofrance.fr/",
+        "disclaimer": "Source officielle MeteoAlarm temporairement indisponible — estimation locale.",
+        "phenomena_meta": [{"key": k, "label": label, "icon": icon} for k, label, icon in PHENOMENA_META],
+        "levels_meta": [
+            {"level": lv, "name": LEVELS_FR[lv], "color": LEVEL_COLORS[lv], "label": LEVEL_LABELS[lv]}
+            for lv in (1, 2, 3, 4)
+        ],
+        "departements": results,
+        "overall_level": overall,
+        "overall_level_fr": LEVELS_FR[overall],
+        "overall_color": LEVEL_COLORS[overall],
+        "overall_label": LEVEL_LABELS[overall],
+    }
+
+
+async def compute_vigilance() -> Dict[str, Any]:
+    """Primary: MeteoAlarm (official MF). Fallback: Open-Meteo estimation."""
+    try:
+        return await _compute_from_meteoalarm()
+    except Exception as e:
+        logger.warning("MeteoAlarm fetch failed, falling back to Open-Meteo: %s", e)
+        try:
+            return await _compute_from_openmeteo_fallback()
+        except Exception as e2:
+            logger.error("Both vigilance sources failed: %s / %s", e, e2)
+            raise
