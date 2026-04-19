@@ -23,6 +23,32 @@ def compass_fr(bearing: float) -> str:
     return dirs[i]
 
 
+def _find_dominant_cluster(strikes: List[Dict[str, Any]], eps_km: float = 25.0, min_points: int = 4) -> List[Dict[str, Any]]:
+    """Return the largest spatially-coherent cluster of strikes.
+
+    Grid-based clustering: assigns each strike to a 0.25°x0.25° grid cell
+    (~27 km at 43°N), picks the most populated cell + its 8 neighbours.
+    """
+    if not strikes:
+        return []
+
+    grid: Dict[tuple, List[Dict[str, Any]]] = {}
+    for s in strikes:
+        key = (round(float(s["lat"]) * 4) / 4, round(float(s["lon"]) * 4) / 4)
+        grid.setdefault(key, []).append(s)
+
+    best_key = max(grid, key=lambda k: len(grid[k]))
+    if len(grid[best_key]) < min_points:
+        return []
+
+    lat0, lon0 = best_key
+    cluster: List[Dict[str, Any]] = []
+    for dlat in (-0.25, 0, 0.25):
+        for dlon in (-0.25, 0, 0.25):
+            cluster.extend(grid.get((lat0 + dlat, lon0 + dlon), []))
+    return cluster
+
+
 def analyze_approach(center_lat: float, center_lon: float, strikes: List[Dict[str, Any]], now: Optional[float] = None) -> Dict[str, Any]:
     """Detect whether strikes are approaching the center and compute ETA.
 
@@ -39,6 +65,11 @@ def analyze_approach(center_lat: float, center_lon: float, strikes: List[Dict[st
     recent = [s for s in strikes if now - s["ts"] <= 3600]
     if len(recent) < 3:
         return {"approaching": False, "reason": "not_enough_strikes", "count": len(recent)}
+
+    # Focus on the dominant cell to avoid dispersion noise (same logic as predict_trajectory)
+    cluster = _find_dominant_cluster(recent, eps_km=25.0, min_points=3)
+    if len(cluster) >= 3:
+        recent = cluster
 
     recent.sort(key=lambda s: s["ts"])  # oldest first
 
@@ -69,6 +100,15 @@ def analyze_approach(center_lat: float, center_lon: float, strikes: List[Dict[st
 
     approaching = approach_km >= 2.0 and speed_kmh > 5.0
 
+    # Plausibility guard: real storm cells don't exceed ~120 km/h. Anything
+    # beyond that is dispersion noise (different cells appearing at different
+    # distances in consecutive samples), not a coherent approach.
+    if approaching and speed_kmh > 120.0:
+        approaching = False
+        reason = "noise_too_high"
+    else:
+        reason = None
+
     eta_min: Optional[float] = None
     if approaching and speed_kmh > 0:
         eta_min = (min_distance / speed_kmh) * 60.0
@@ -77,7 +117,7 @@ def analyze_approach(center_lat: float, center_lon: float, strikes: List[Dict[st
     brg = _bearing_deg(float(closest["lat"]), float(closest["lon"]), center_lat, center_lon)
     from_brg = (brg + 180.0) % 360.0
 
-    return {
+    result = {
         "approaching": approaching,
         "count": n,
         "distance_old_km": round(d_old, 1),
@@ -90,6 +130,10 @@ def analyze_approach(center_lat: float, center_lon: float, strikes: List[Dict[st
         "from_bearing": round(from_brg, 1),
         "from_compass": compass_fr(from_brg),
     }
+    if reason:
+        result["reason"] = reason
+        result["computed_speed_kmh"] = round(speed_kmh, 1)
+    return result
 
 
 def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -100,38 +144,6 @@ def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     dl = math.radians(lon2 - lon1)
     a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
     return 2 * r * math.asin(math.sqrt(a))
-
-
-def _find_dominant_cluster(strikes: List[Dict[str, Any]], eps_km: float = 25.0, min_points: int = 4) -> List[Dict[str, Any]]:
-    """Return the largest spatially-coherent cluster of strikes.
-
-    Simple DBSCAN-like grid clustering: assigns each strike to a 0.25°x0.25°
-    grid cell (~25 km), picks the cell with the most strikes PLUS its
-    immediate neighbours. This removes the "many dispersed cells" noise
-    problem that produces 4000 km/h fake trajectories.
-    """
-    if not strikes:
-        return []
-
-    # Bucket by 0.25° grid (~27 km at 43°N)
-    grid: Dict[tuple, List[Dict[str, Any]]] = {}
-    for s in strikes:
-        key = (round(float(s["lat"]) * 4) / 4, round(float(s["lon"]) * 4) / 4)
-        grid.setdefault(key, []).append(s)
-
-    # Pick most populated cell
-    best_key = max(grid, key=lambda k: len(grid[k]))
-    if len(grid[best_key]) < min_points:
-        return []
-
-    # Include neighbours (9-cell neighbourhood)
-    lat0, lon0 = best_key
-    cluster: List[Dict[str, Any]] = []
-    for dlat in (-0.25, 0, 0.25):
-        for dlon in (-0.25, 0, 0.25):
-            cluster.extend(grid.get((lat0 + dlat, lon0 + dlon), []))
-
-    return cluster
 
 
 def predict_trajectory(

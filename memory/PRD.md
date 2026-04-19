@@ -196,3 +196,24 @@
 - Bulletin PDF multilingue (EN)
 - Si clé Météo-France officielle fournie, remplacer la vigilance locale
 
+
+## Phase 12 Implemented (2026-04-19) — Vigilance OFFICIELLE MF + clustering spatial
+- ✅ **Vigilance officielle Météo-France** via **MeteoAlarm** (https://feeds.meteoalarm.org/api/v1/warnings/feeds-france) : données officielles identiques au site vigilance.meteofrance.fr, open-data, sans clé. Mapping par code NUTS3 (FR626=Hautes-Pyrénées, FR615=Pyrénées-Atlantiques, FR624=Gers, FR623=Haute-Garonne, FR621=Ariège, FR815=Pyrénées-Orientales, FR613=Landes)
+- ✅ 7 départements suivis (65, 64, 32, 31, 09, 66, 40), 8 phénomènes (ajout Brouillard, Avalanches)
+- ✅ **Fallback gracieux** : si MeteoAlarm down, bascule sur estimation Open-Meteo locale avec disclaimer explicite
+- ✅ **Clustering spatial pour trajectoire** (`_find_dominant_cluster` dans analysis.py) : grille 0.25° + voisinage 9 cellules → isole la cellule orageuse dominante avant la régression linéaire. Élimine le bruit "4000 km/h" quand la foudre est dispersée en plusieurs cellules indépendantes
+- ✅ **Guard anti-bruit sur analyze_approach** : rejette les approches > 120 km/h avec `reason="noise_too_high"` + clustering appliqué en amont. Plus d'alerte ridicule "vitesse 795 km/h, ETA 5 min"
+- ✅ Source + disclaimer transparents dans la réponse : `source="meteoalarm"`, `source_label="Météo-France (via MeteoAlarm)"`, `source_url="https://vigilance.meteofrance.fr/"`
+
+## Test Results (iteration_10)
+- Backend 64/64 tests (5 nouveaux unitaires predict_trajectory dont 2 clustering)
+- Validé live : MeteoAlarm retourne "Vigilance jaune orages" pour 65, 64, 32, 31, 09, 66, 40 — correspondance parfaite avec le site officiel
+- Frontend 100% : bandeau jaune affiché, 8 phénomènes, disclaimer "Météo-France (via MeteoAlarm)" visible
+
+## Prochaines pistes / Backlog
+- Ancrer la prédiction de trajectoire sur `cursorTs` (rejouer le passé)
+- PWA installable + badge numérique
+- Partage URL horodatée
+- Bulletin PDF multilingue
+- Mode "Soirée orage" (plein écran sombre + son d'impact)
+
