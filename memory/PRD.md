@@ -236,3 +236,8 @@
 - Bulletin PDF multilingue (EN)
 - Vigilance officielle MF via clé API si fournie (actuellement MeteoAlarm — source officielle MF)
 
+
+## Hotfix (2026-04-19) — Horaires PDF en heure locale
+- ✅ `reports.py` : nouvelle fonction `_utc_to_local_str` qui convertit les timestamps UTC en Europe/Paris via zoneinfo. Header affiche `(HEURE LOCALE)`, tableau Prévision 12 h = "Heure locale", tableau Impacts foudre = "Heure locale"
+- ✅ Validé par extraction PDF : `BULLETIN ORAGE LOURDES · 19 apr 2026 · 21:49 (HEURE LOCALE)` et colonnes "Heure locale"
+

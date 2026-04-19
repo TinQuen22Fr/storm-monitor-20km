@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from io import BytesIO
 from typing import Any, Dict, List
+from zoneinfo import ZoneInfo
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -16,6 +17,26 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
+
+
+LOURDES_TZ = ZoneInfo("Europe/Paris")
+
+
+def _utc_to_local_str(iso_or_ts, fmt: str = "%d/%m/%Y · %H:%M") -> str:
+    """Convert an ISO UTC string (or epoch) to Europe/Paris formatted string."""
+    if iso_or_ts is None or iso_or_ts == "":
+        return ""
+    try:
+        if isinstance(iso_or_ts, (int, float)):
+            dt = datetime.fromtimestamp(float(iso_or_ts), tz=timezone.utc)
+        else:
+            s = str(iso_or_ts).replace("Z", "+00:00")
+            dt = datetime.fromisoformat(s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(LOURDES_TZ).strftime(fmt)
+    except Exception:
+        return str(iso_or_ts)
 
 
 SLATE_900 = colors.HexColor("#0F172A")
@@ -127,8 +148,8 @@ def build_bulletin_pdf(
     s = _styles()
     story: List[Any] = []
 
-    now_local = datetime.now(timezone.utc).astimezone()
-    kicker = f"Bulletin orage · Lourdes · {now_local.strftime('%d %b %Y · %H:%M')}"
+    now_local = datetime.now(LOURDES_TZ)
+    kicker = f"Bulletin orage · Lourdes · {now_local.strftime('%d %b %Y · %H:%M')} (heure locale)"
     story.append(Paragraph(kicker.upper(), s["kicker"]))
     story.append(Paragraph("Suivi d'orage en temps réel", s["h1"]))
     story.append(Paragraph(
@@ -196,7 +217,7 @@ def build_bulletin_pdf(
     hourly_fc = (forecast or {}).get("hourly", [])[:12]
     if hourly_fc:
         story.append(Paragraph("PRÉVISION 12 H", s["h2"]))
-        rows = [["Heure", "T°", "Précip.", "Prob.", "CAPE", "LPI"]]
+        rows = [["Heure locale", "T°", "Précip.", "Prob.", "CAPE", "LPI"]]
         for h in hourly_fc:
             ts = h.get("time", "").split("T")[-1][:5]
             rows.append([
@@ -225,10 +246,10 @@ def build_bulletin_pdf(
     # Recent strikes
     story.append(Paragraph("IMPACTS FOUDRE · DERNIÈRE HEURE", s["h2"]))
     if strikes:
-        rows = [["Heure UTC", "Lat", "Lon", "Distance"]]
+        rows = [["Heure locale", "Lat", "Lon", "Distance"]]
         for st in strikes[:20]:
             rows.append([
-                st.get("iso", "").replace("Z", ""),
+                _utc_to_local_str(st.get("ts") or st.get("iso", ""), "%d/%m %H:%M:%S"),
                 f"{st.get('lat'):.4f}",
                 f"{st.get('lon'):.4f}",
                 _fmt(st.get("distance_km"), " km", 1),
