@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { TileLayer, useMap } from "react-leaflet";
-import { Cloud, CloudRain, Pause, Play } from "lucide-react";
+import { Cloud, CloudRain, Pause, Play, Wind } from "lucide-react";
 
 const RAINVIEWER_API = "https://api.rainviewer.com/public/weather-maps.json";
 const FRAME_DURATION_MS = 800;
@@ -22,7 +22,9 @@ function buildCloudsUrl(dateStr) {
 }
 
 function buildRadarUrl(host, path) {
-  return `${host}${path}/256/{z}/{x}/{y}/2/1_1.png`;
+  // Color 4 = The Weather Channel style (professional pro radar look)
+  // Options: smooth=1, snow=1 (distinguish snow)
+  return `${host}${path}/256/{z}/{x}/{y}/4/1_1.png`;
 }
 
 function cloudFrames() {
@@ -40,6 +42,8 @@ export function useWeatherLayersState() {
   const [rvData, setRvData] = useState(null);
   const [showClouds, setShowClouds] = useState(false);
   const [showRain, setShowRain] = useState(false);
+  const [showWind, setShowWind] = useState(false);
+  const [windMaxSpeed, setWindMaxSpeed] = useState(null);
   const [frame, setFrame] = useState(0);
   const [playing, setPlaying] = useState(true);
   const tickRef = useRef(null);
@@ -93,6 +97,7 @@ export function useWeatherLayersState() {
       if (next) setShowClouds(false);
       return next;
     });
+  const toggleWind = () => setShowWind((v) => !v);
 
   const currentFrame = activeFrames[frame];
   let url = null;
@@ -116,8 +121,12 @@ export function useWeatherLayersState() {
     url,
     showClouds,
     showRain,
+    showWind,
     toggleClouds,
     toggleRain,
+    toggleWind,
+    windMaxSpeed,
+    setWindMaxSpeed,
     activeFrames,
     frame,
     setFrame,
@@ -153,24 +162,30 @@ export function WeatherTileLayer({ url, showClouds, showRain }) {
 export function WeatherLayersPanel({
   showClouds,
   showRain,
+  showWind,
   toggleClouds,
   toggleRain,
+  toggleWind,
+  windMaxSpeed,
   activeFrames,
   frame,
   setFrame,
   playing,
   setPlaying,
   frameLabel,
+  isMobile = false,
 }) {
   return (
     <div
-      className="absolute bottom-20 right-6 z-[600] bg-white border border-slate-200 shadow-[0_2px_24px_rgba(0,0,0,0.06)] flex flex-col"
+      className={`absolute z-[600] bg-white border border-slate-200 shadow-[0_2px_24px_rgba(0,0,0,0.06)] flex flex-col ${
+        isMobile ? "bottom-4 left-4 right-4" : "bottom-20 right-6"
+      }`}
       data-testid="weather-layers-panel"
     >
       <div className="flex">
         <button
           onClick={toggleClouds}
-          className={`flex items-center gap-2 px-4 h-11 border-r border-slate-200 transition-colors font-mono text-[10px] uppercase tracking-[0.2em] ${
+          className={`flex-1 flex items-center justify-center gap-2 px-3 h-11 border-r border-slate-200 transition-colors font-mono text-[10px] uppercase tracking-[0.2em] ${
             showClouds
               ? "bg-slate-900 text-white"
               : "bg-white text-slate-700 hover:text-slate-900"
@@ -183,7 +198,7 @@ export function WeatherLayersPanel({
         </button>
         <button
           onClick={toggleRain}
-          className={`flex items-center gap-2 px-4 h-11 transition-colors font-mono text-[10px] uppercase tracking-[0.2em] ${
+          className={`flex-1 flex items-center justify-center gap-2 px-3 h-11 border-r border-slate-200 transition-colors font-mono text-[10px] uppercase tracking-[0.2em] ${
             showRain
               ? "bg-slate-900 text-white"
               : "bg-white text-slate-700 hover:text-slate-900"
@@ -194,13 +209,31 @@ export function WeatherLayersPanel({
           <CloudRain className="w-4 h-4" strokeWidth={1.8} />
           Pluie
         </button>
+        <button
+          onClick={toggleWind}
+          className={`flex-1 flex items-center justify-center gap-2 px-3 h-11 transition-colors font-mono text-[10px] uppercase tracking-[0.2em] ${
+            showWind
+              ? "bg-slate-900 text-white"
+              : "bg-white text-slate-700 hover:text-slate-900"
+          }`}
+          data-testid="toggle-wind"
+          title="Vecteurs de vent (Open-Meteo)"
+        >
+          <Wind className="w-4 h-4" strokeWidth={1.8} />
+          Vent
+          {showWind && windMaxSpeed !== null && (
+            <span className="ml-1 font-mono text-[9px] opacity-80">
+              {Math.round(windMaxSpeed)}
+            </span>
+          )}
+        </button>
       </div>
 
       {(showClouds || showRain) && activeFrames.length > 0 && (
-        <div className="border-t border-slate-200 px-4 py-3 flex items-center gap-3 min-w-[320px]">
+        <div className="border-t border-slate-200 px-4 py-3 flex items-center gap-3">
           <button
             onClick={() => setPlaying((p) => !p)}
-            className="w-7 h-7 border border-slate-300 hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-colors flex items-center justify-center"
+            className="w-7 h-7 border border-slate-300 hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-colors flex items-center justify-center shrink-0"
             data-testid="play-pause-frames"
             aria-label={playing ? "Pause" : "Lecture"}
           >
@@ -224,9 +257,13 @@ export function WeatherLayersPanel({
         </div>
       )}
 
-      {(showClouds || showRain) && (
+      {(showClouds || showRain || showWind) && (
         <div className="border-t border-slate-200 px-4 py-2 font-mono text-[9px] uppercase tracking-[0.2em] text-slate-400">
-          {showClouds ? "Source · NASA MODIS Terra" : "Source · RainViewer"}
+          {showClouds
+            ? "Source · NASA MODIS Terra"
+            : showRain
+            ? "Source · RainViewer radar"
+            : "Source · Open-Meteo vent"}
         </div>
       )}
     </div>

@@ -8,6 +8,8 @@ import {
   WeatherLayersPanel,
   useWeatherLayersState,
 } from "@/components/WeatherLayers";
+import WindLayer from "@/components/WindLayer";
+import { useIsMobile } from "@/lib/useIsMobile";
 
 delete L.Icon.Default.prototype._getIconUrl;
 
@@ -65,13 +67,16 @@ function buildStrikeIcon(ageSec) {
   });
 }
 
-function FitToRadius({ center, radiusKm }) {
+function FitToRadius({ center, radiusKm, override }) {
   const map = useMap();
   useEffect(() => {
-    // Choose a reasonable zoom level for the given radius so the circle fits
+    if (override) {
+      map.setView(center, override, { animate: true });
+      return;
+    }
     const zoomForRadius = radiusKm >= 60 ? 9 : radiusKm >= 40 ? 10 : 11;
     map.setView(center, zoomForRadius, { animate: true });
-  }, [center, radiusKm, map]);
+  }, [center, radiusKm, override, map]);
   return null;
 }
 
@@ -123,24 +128,36 @@ export default function MapPanel({
 
   const now = Date.now() / 1000;
   const wx = useWeatherLayersState();
+  const isMobile = useIsMobile();
+  // Auto-zoom to 7 when Rain is active (to see broader storm context beyond 20-70km)
+  const zoomOverride = wx.showRain ? 7 : null;
 
   return (
     <div className="relative h-full w-full" data-testid="map-panel">
       <MapContainer
         center={centerLL}
         zoom={zoom}
-        minZoom={8}
-        maxZoom={16}
+        minZoom={2}
+        maxZoom={18}
         scrollWheelZoom
         zoomControl
+        worldCopyJump
         style={{ height: "100%", width: "100%" }}
       >
         <TileLayer
           attribution='&copy; <a href="https://carto.com/attributions">CARTO</a> &copy; OpenStreetMap'
           url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+          minZoom={2}
+          maxZoom={20}
         />
         <WeatherTileLayer url={wx.url} showClouds={wx.showClouds} showRain={wx.showRain} />
-        <FitToRadius center={centerLL} radiusKm={radiusKm} />
+        <WindLayer
+          center={center}
+          radiusKm={radiusKm}
+          enabled={wx.showWind}
+          onMaxSpeedChange={wx.setWindMaxSpeed}
+        />
+        <FitToRadius center={centerLL} radiusKm={radiusKm} override={zoomOverride} />
         <InvalidateOnResize trigger={fullscreen} />
         <Circle
           center={centerLL}
@@ -259,7 +276,7 @@ export default function MapPanel({
         </div>
       )}
 
-      <WeatherLayersPanel {...wx} />
+      <WeatherLayersPanel {...wx} isMobile={isMobile} />
     </div>
   );
 }

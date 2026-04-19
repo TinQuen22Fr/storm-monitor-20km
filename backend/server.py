@@ -32,6 +32,7 @@ from weather import (
     fetch_history_days,
     fetch_storm_risk_forecast,
     fetch_storm_zones,
+    fetch_wind_grid,
 )
 import lightning as lightning_mod
 import push as push_mod
@@ -179,6 +180,11 @@ async def weather_history_days(lat: float = LOURDES_LAT, lon: float = LOURDES_LO
 @api_router.get("/storms/zones")
 async def storm_zones(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM):
     return await fetch_storm_zones(lat, lon, radius_km)
+
+
+@api_router.get("/weather/wind-grid")
+async def weather_wind_grid(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM):
+    return await fetch_wind_grid(lat, lon, radius_km)
 
 
 # ---------- Lightning (Blitzortung) ----------

@@ -416,6 +416,54 @@ async def fetch_storm_zones(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, 
     return await _cached(f"zones:{lat}:{lon}:{radius_km}", 90.0, lambda: _fetch_storm_zones_impl(lat, lon, radius_km))
 
 
+async def fetch_wind_grid(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM) -> Dict[str, Any]:
+    return await _cached(f"wind:{lat}:{lon}:{radius_km}", 300.0, lambda: _fetch_wind_grid_impl(lat, lon, radius_km))
+
+
+async def _fetch_wind_grid_impl(lat: float, lon: float, radius_km: float) -> Dict[str, Any]:
+    """Sample wind speed + direction at grid points to draw vector arrows."""
+    points = sampling_grid(lat, lon, radius_km)
+    lats = ",".join(str(p["lat"]) for p in points)
+    lons = ",".join(str(p["lon"]) for p in points)
+    params = {
+        "latitude": lats,
+        "longitude": lons,
+        "current": "wind_speed_10m,wind_direction_10m,wind_gusts_10m",
+        "timezone": "Europe/Paris",
+        "forecast_days": 1,
+    }
+    async with httpx.AsyncClient(timeout=20) as client:
+        r = await client.get(OPEN_METEO_BASE, params=params)
+        r.raise_for_status()
+        raw = r.json()
+
+    responses = raw if isinstance(raw, list) else [raw]
+    arrows: List[Dict[str, Any]] = []
+    max_speed = 0.0
+    for i, resp in enumerate(responses):
+        p = points[i] if i < len(points) else {"lat": lat, "lon": lon}
+        current = resp.get("current", {})
+        speed = float(current.get("wind_speed_10m") or 0)
+        direction = float(current.get("wind_direction_10m") or 0)
+        gust = float(current.get("wind_gusts_10m") or 0)
+        arrows.append({
+            "lat": p["lat"],
+            "lon": p["lon"],
+            "speed": round(speed, 1),
+            "direction": round(direction, 0),
+            "gust": round(gust, 1),
+        })
+        if speed > max_speed:
+            max_speed = speed
+    return {
+        "center": {"lat": lat, "lon": lon},
+        "radius_km": radius_km,
+        "arrows": arrows,
+        "max_speed": round(max_speed, 1),
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 async def _fetch_storm_zones_impl(lat: float, lon: float, radius_km: float) -> Dict[str, Any]:
     """Sample the grid for active storm/convective zones around Lourdes."""
     points = sampling_grid(lat, lon, radius_km)

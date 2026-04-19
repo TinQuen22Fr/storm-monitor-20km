@@ -13,6 +13,7 @@ import StormRiskDialog from "@/components/StormRiskDialog";
 import AuthDialog from "@/components/AuthDialog";
 import FavoritesList from "@/components/FavoritesList";
 import { Slider } from "@/components/ui/slider";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { api, API, getCurrent, getForecast, getHistory, getStrikes, getZones, LOURDES } from "@/lib/api";
 import * as notif from "@/lib/notifications";
 import * as push from "@/lib/push";
@@ -38,6 +39,7 @@ export default function Dashboard() {
   const [notifEnabled, setNotifEnabled] = useState(notif.isEnabled());
   const [pushEnabled, setPushEnabled] = useState(push.isPushEnabled());
   const [approach, setApproach] = useState(null);
+  const isMobile = useIsMobile();
 
   const prevStormActive = useRef(false);
   const seenStrikeTs = useRef(new Set());
@@ -147,7 +149,7 @@ export default function Dashboard() {
       <section
         className={`${
           fullscreen ? "lg:col-span-12" : "lg:col-span-8"
-        } col-span-1 order-1 lg:order-2 h-[60vh] lg:h-full relative z-0`}
+        } col-span-1 order-1 lg:order-2 h-[70vh] lg:h-full relative z-0`}
         data-testid="map-area"
       >
         <MapPanel

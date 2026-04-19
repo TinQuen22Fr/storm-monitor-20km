@@ -125,3 +125,15 @@
 ## Test Results (iteration_6)
 - Frontend: 100% des flux Phase 7 OK
 - Testé sur viewports desktop (1920px) et mobile (800px)
+
+## Phase 8 Implemented (2026-04-19)
+- ✅ **Couche "Vent"** (Open-Meteo hourly wind_speed_10m + wind_direction_10m) : endpoint `/api/weather/wind-grid` + composant `WindLayer` avec flèches SVG rotées (rotation = direction, couleur = vitesse, taille = intensité, chiffre affiché au centre)
+- ✅ **Détection mobile** : hook `useIsMobile` (breakpoint 768px). Panneau de couches météo : full-width en bas sur mobile (bottom-4 left-4 right-4), compact bottom-right sur desktop
+- ✅ **Zoom sans limite** : `minZoom={2}` sur la carte et la tuile base (on peut dézoomer jusqu'au monde entier sur mobile)
+- ✅ **Auto-zoom sur Pluie** : quand on active "Pluie", la carte se recentre automatiquement au niveau 7 (vue sud-ouest France + nord Espagne) pour voir les bandes pluvieuses au-delà du rayon 20km
+- ✅ **Radar pro "Foudre Pro"** : color scheme RainViewer passé de 2 (universal blue) à 4 (The Weather Channel — couleurs pro jaune/orange/rouge), smooth=1 + snow=1
+- ✅ **Hauteur carte mobile** passée de 60vh → 70vh pour une meilleure visibilité
+
+## Test Results
+- Backend `/api/weather/wind-grid` : 25 arrows OK (max_speed 6.2 km/h actuellement)
+- Frontend : toutes les 3 couches (Nuages, Pluie, Vent) fonctionnent avec auto-zoom pluie confirmé
