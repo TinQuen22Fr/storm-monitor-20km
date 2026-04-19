@@ -137,3 +137,22 @@
 ## Test Results
 - Backend `/api/weather/wind-grid` : 25 arrows OK (max_speed 6.2 km/h actuellement)
 - Frontend : toutes les 3 couches (Nuages, Pluie, Vent) fonctionnent avec auto-zoom pluie confirmé
+
+## Phase 9 Implemented (2026-04-19) — Timeline 24h unifiée + Trajectoire prédite
+- ✅ **Timeline 24h unifiée** (`/app/frontend/src/components/Timeline.jsx`) : slider 24h avec play/pause, badge "● EN DIRECT" ⇄ "↺ Rejeu · il y a X min", bouton "Retour au direct", tick marks -24h/-12h/-6h/-3h/now
+- ✅ **Synchronisation tuiles météo** : `useWeatherLayersState({cursorTs,isLive})` choisit automatiquement la frame Nuages (NASA GIBS) ou Pluie (RainViewer) la plus proche de cursorTs ; auto-play suspendu quand on scrub
+- ✅ **Filtrage des impacts** : `Dashboard.jsx` fetch les impacts sur 24h (`STRIKES_WINDOW_S = 24*3600`) et filtre l'affichage dans une fenêtre 1h centrée sur cursorTs (`DISPLAY_WINDOW_S = 3600`)
+- ✅ **TrajectoryLayer** (`/app/frontend/src/components/TrajectoryLayer.jsx`) : polyline rouge + point de départ + tête sur la position prédite, alimentée par `/api/storms/trajectory` (régression linéaire lat/lon sur les 60 min récentes, projection jusqu'à +45 min par pas de 10 min)
+- ✅ **Toggle Trajet** ajouté au panneau des couches météo (activé par défaut) ; panneau interne "frame-slider" masqué via prop `timelineDriven`
+
+## Test Results (iteration_7)
+- Backend : 53/53 tests passent (nouveau `/api/storms/trajectory` inclus, toutes régressions OK)
+- Frontend : Timeline rend bien, scrub → badge Rejeu, reset-live OK, 4 toggles Nuages/Pluie/Vent/Trajet, frame-slider masqué quand `timelineDriven`
+- Aucune action-item en attente, aucun retest nécessaire
+
+## Prochaines pistes / Backlog
+- Badge flottant vitesse/cap/ETA de la trajectoire au-dessus de la carte
+- Option : ancrer la prédiction de trajectoire sur cursorTs (actuellement toujours "live") — pour voir ce que le modèle prévoyait il y a X minutes
+- Export bulletin PDF multilingue (EN)
+- PWA installable + badge icon number pour impacts en cours
+
