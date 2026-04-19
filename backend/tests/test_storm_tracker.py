@@ -944,5 +944,71 @@ class TestLightningEndpoints:
         print(f"✓ Lightning status: running={data['running']}, received={data['strikes_received']}, errors={data['decode_errors']}")
 
 
+class TestStormTrajectory:
+    """Test /api/storms/trajectory endpoint (PHASE 8 FEATURE)"""
+
+    def test_trajectory_endpoint_basic(self):
+        """GET /api/storms/trajectory returns valid JSON with detected field"""
+        response = requests.get(f"{BASE_URL}/api/storms/trajectory", params={
+            "lat": 43.0951,
+            "lon": -0.0434,
+            "project_minutes": 45
+        })
+        assert response.status_code == 200
+
+        data = response.json()
+        assert "detected" in data
+        assert isinstance(data["detected"], bool)
+        if not data["detected"]:
+            # Legitimate response when not enough strikes
+            assert "reason" in data
+            print(f"✓ Trajectory detected=false: reason={data['reason']}, count={data.get('count', 0)}")
+        else:
+            # Full response
+            for field in ["count", "waypoints", "speed_kmh", "bearing_deg", "compass", "closest_distance_km"]:
+                assert field in data, f"Missing field: {field}"
+            assert isinstance(data["waypoints"], list)
+            assert len(data["waypoints"]) > 0
+            print(f"✓ Trajectory detected: waypoints={len(data['waypoints'])}, speed={data['speed_kmh']}km/h, compass={data['compass']}")
+
+    def test_trajectory_default_params(self):
+        """GET /api/storms/trajectory works without params (uses Lourdes defaults)"""
+        response = requests.get(f"{BASE_URL}/api/storms/trajectory")
+        assert response.status_code == 200
+        data = response.json()
+        assert "detected" in data
+        print(f"✓ Trajectory with defaults: detected={data['detected']}")
+
+
+class TestStormApproach:
+    """Regression test /api/storms/approach (PHASE 8)"""
+
+    def test_approach_still_works(self):
+        response = requests.get(f"{BASE_URL}/api/storms/approach", params={
+            "lat": 43.0951, "lon": -0.0434, "radius_km": 100
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert "approaching" in data
+        assert isinstance(data["approaching"], bool)
+        assert "radius_analyzed_km" in data
+        print(f"✓ Approach: approaching={data['approaching']}")
+
+
+class TestForecastStormRisk:
+    """Regression test /api/forecast/storm-risk (PHASE 8)"""
+
+    def test_storm_risk_returns_days(self):
+        response = requests.get(f"{BASE_URL}/api/forecast/storm-risk", params={"days": 7})
+        assert response.status_code == 200
+        data = response.json()
+        assert "days" in data
+        assert isinstance(data["days"], list)
+        assert len(data["days"]) >= 5
+        day = data["days"][0]
+        assert "score" in day or "risk" in day or "date" in day
+        print(f"✓ Storm risk forecast: {len(data['days'])} days")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

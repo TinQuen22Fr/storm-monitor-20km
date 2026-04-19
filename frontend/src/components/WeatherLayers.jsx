@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { TileLayer, useMap } from "react-leaflet";
-import { Cloud, CloudRain, Pause, Play, Wind } from "lucide-react";
+import { Activity, Cloud, CloudRain, Pause, Play, Wind } from "lucide-react";
 
 const RAINVIEWER_API = "https://api.rainviewer.com/public/weather-maps.json";
 const FRAME_DURATION_MS = 800;
@@ -38,11 +38,12 @@ function cloudFrames() {
   return frames;
 }
 
-export function useWeatherLayersState() {
+export function useWeatherLayersState({ cursorTs = null, isLive = true } = {}) {
   const [rvData, setRvData] = useState(null);
   const [showClouds, setShowClouds] = useState(false);
   const [showRain, setShowRain] = useState(false);
   const [showWind, setShowWind] = useState(false);
+  const [showTrajectory, setShowTrajectory] = useState(true);
   const [windMaxSpeed, setWindMaxSpeed] = useState(null);
   const [frame, setFrame] = useState(0);
   const [playing, setPlaying] = useState(true);
@@ -70,6 +71,11 @@ export function useWeatherLayersState() {
   const activeFrames = showRain ? radarFrames : showClouds ? cloudsFrames : [];
 
   useEffect(() => {
+    // When a global timeline cursor is driving and not live, disable auto-play
+    if (!isLive) {
+      clearInterval(tickRef.current);
+      return;
+    }
     if (!playing || activeFrames.length === 0 || (!showRain && !showClouds)) {
       clearInterval(tickRef.current);
       return;
@@ -78,10 +84,25 @@ export function useWeatherLayersState() {
       setFrame((f) => (f + 1) % activeFrames.length);
     }, FRAME_DURATION_MS);
     return () => clearInterval(tickRef.current);
-  }, [playing, activeFrames.length, showRain, showClouds]);
+  }, [playing, activeFrames.length, showRain, showClouds, isLive]);
+
+  // When cursor is set (non-live), snap frame to closest timestamp
+  useEffect(() => {
+    if (isLive || cursorTs == null || activeFrames.length === 0) return;
+    let best = 0;
+    let bestDiff = Infinity;
+    for (let i = 0; i < activeFrames.length; i++) {
+      const d = Math.abs(activeFrames[i].time - cursorTs);
+      if (d < bestDiff) {
+        bestDiff = d;
+        best = i;
+      }
+    }
+    setFrame(best);
+  }, [cursorTs, isLive, activeFrames]);
 
   useEffect(() => {
-    if (activeFrames.length > 0) setFrame(activeFrames.length - 1);
+    if (activeFrames.length > 0 && isLive) setFrame(activeFrames.length - 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showRain, showClouds, activeFrames.length]);
 
@@ -98,6 +119,7 @@ export function useWeatherLayersState() {
       return next;
     });
   const toggleWind = () => setShowWind((v) => !v);
+  const toggleTrajectory = () => setShowTrajectory((v) => !v);
 
   const currentFrame = activeFrames[frame];
   let url = null;
@@ -122,9 +144,11 @@ export function useWeatherLayersState() {
     showClouds,
     showRain,
     showWind,
+    showTrajectory,
     toggleClouds,
     toggleRain,
     toggleWind,
+    toggleTrajectory,
     windMaxSpeed,
     setWindMaxSpeed,
     activeFrames,
@@ -163,9 +187,11 @@ export function WeatherLayersPanel({
   showClouds,
   showRain,
   showWind,
+  showTrajectory,
   toggleClouds,
   toggleRain,
   toggleWind,
+  toggleTrajectory,
   windMaxSpeed,
   activeFrames,
   frame,
@@ -174,6 +200,7 @@ export function WeatherLayersPanel({
   setPlaying,
   frameLabel,
   isMobile = false,
+  timelineDriven = false,
 }) {
   return (
     <div
@@ -211,7 +238,7 @@ export function WeatherLayersPanel({
         </button>
         <button
           onClick={toggleWind}
-          className={`flex-1 flex items-center justify-center gap-2 px-3 h-11 transition-colors font-mono text-[10px] uppercase tracking-[0.2em] ${
+          className={`flex-1 flex items-center justify-center gap-2 px-3 h-11 border-r border-slate-200 transition-colors font-mono text-[10px] uppercase tracking-[0.2em] ${
             showWind
               ? "bg-slate-900 text-white"
               : "bg-white text-slate-700 hover:text-slate-900"
@@ -227,9 +254,22 @@ export function WeatherLayersPanel({
             </span>
           )}
         </button>
+        <button
+          onClick={toggleTrajectory}
+          className={`flex-1 flex items-center justify-center gap-2 px-3 h-11 transition-colors font-mono text-[10px] uppercase tracking-[0.2em] ${
+            showTrajectory
+              ? "bg-red-600 text-white"
+              : "bg-white text-slate-700 hover:text-slate-900"
+          }`}
+          data-testid="toggle-trajectory"
+          title="Trajectoire prédite de l'orage (régression linéaire)"
+        >
+          <Activity className="w-4 h-4" strokeWidth={1.8} />
+          Trajet
+        </button>
       </div>
 
-      {(showClouds || showRain) && activeFrames.length > 0 && (
+      {!timelineDriven && (showClouds || showRain) && activeFrames.length > 0 && (
         <div className="border-t border-slate-200 px-4 py-3 flex items-center gap-3">
           <button
             onClick={() => setPlaying((p) => !p)}

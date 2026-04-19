@@ -3,6 +3,7 @@ import { Bell, BellOff, Download, RefreshCw, Zap } from "lucide-react";
 import MapPanel from "@/components/MapPanel";
 import AlertBanner from "@/components/AlertBanner";
 import ApproachAlert from "@/components/ApproachAlert";
+import Timeline from "@/components/Timeline";
 import NavTabs from "@/components/NavTabs";
 import CurrentConditions from "@/components/CurrentConditions";
 import CapeGauge from "@/components/CapeGauge";
@@ -20,7 +21,8 @@ import * as push from "@/lib/push";
 
 const REFRESH_MS = 120_000;
 const STRIKES_MS = 15_000;
-const STRIKES_WINDOW_S = 3600;
+const STRIKES_WINDOW_S = 24 * 3600;
+const DISPLAY_WINDOW_S = 3600;
 const RADIUS_STEPS = [20, 30, 40, 50, 60, 70];
 const DEFAULT_RADIUS = 20;
 
@@ -39,7 +41,26 @@ export default function Dashboard() {
   const [notifEnabled, setNotifEnabled] = useState(notif.isEnabled());
   const [pushEnabled, setPushEnabled] = useState(push.isPushEnabled());
   const [approach, setApproach] = useState(null);
+  const [cursorTs, setCursorTs] = useState(() => Math.floor(Date.now() / 1000));
+  const [playing, setPlaying] = useState(false);
   const isMobile = useIsMobile();
+
+  // "Live" when cursor is within 60s of now
+  const nowSec = Math.floor(Date.now() / 1000);
+  const isLive = nowSec - cursorTs < 60;
+
+  // Tick cursor forward while live so tiles & strikes stay current
+  useEffect(() => {
+    if (!isLive) return;
+    const t = setInterval(() => setCursorTs(Math.floor(Date.now() / 1000)), 15_000);
+    return () => clearInterval(t);
+  }, [isLive]);
+
+  // Filter strikes by cursor window for display
+  const displayedStrikes = (strikes || []).filter((s) => {
+    if (isLive) return nowSec - s.ts <= DISPLAY_WINDOW_S;
+    return s.ts <= cursorTs && s.ts >= cursorTs - DISPLAY_WINDOW_S;
+  });
 
   const prevStormActive = useRef(false);
   const seenStrikeTs = useRef(new Set());
@@ -154,11 +175,27 @@ export default function Dashboard() {
       >
         <MapPanel
           zones={zones?.zones || []}
-          strikes={strikes}
+          strikes={displayedStrikes}
           center={center}
           radiusKm={radius}
           fullscreen={fullscreen}
           onToggleFullscreen={() => setFullscreen((v) => !v)}
+          cursorTs={cursorTs}
+          isLive={isLive}
+          timelineChildren={
+            <Timeline
+              cursorTs={cursorTs}
+              onCursorChange={setCursorTs}
+              playing={playing}
+              setPlaying={setPlaying}
+              isLive={isLive}
+              onResetLive={() => {
+                setPlaying(false);
+                setCursorTs(Math.floor(Date.now() / 1000));
+              }}
+              isMobile={isMobile}
+            />
+          }
         />
       </section>
 

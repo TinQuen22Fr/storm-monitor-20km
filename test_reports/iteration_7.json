@@ -1,0 +1,78 @@
+{
+  "summary": "PHASE 8 testing complete: Unified 24h Timeline + predictive TrajectoryLayer integration. All 53 backend tests pass (including new /api/storms/trajectory). Frontend Timeline scrubs over 24h, play/pause + reset-live work, WeatherLayersPanel shows 4 toggles (Nuages, Pluie, Vent, Trajet) with Trajet default ON, internal frame-slider hidden when timelineDriven. All regression endpoints still working.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Historique page",
+        "issues": ["Recharts warnings 'width(-1) and height(-1) of chart should be greater than 0' on initial render - non-blocking, charts do render (170 chart elements found). Pre-existing issue from earlier iterations."]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_storm_tracker.py",
+    "/app/test_reports/pytest/pytest_results_iter7.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Timeline.jsx uses useEffect auto-advance loop that depends on cursorTs, recreating the interval every tick (400ms) – works but slightly wasteful. Low priority.",
+    "TrajectoryLayer.jsx calls /api/storms/trajectory every 30s regardless of timeline cursor – it always shows prediction anchored to live time, even when user scrubs back. If desired, wire cursorTs into trajectory fetch to reflect historical predictions. Product-level decision, not a bug.",
+    "analysis.predict_trajectory local import 'import math as _m' inside function body – minor code smell, could be moved to top of file."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_storm_tracker.py (added TestStormTrajectory, TestStormApproach, TestForecastStormRisk classes)"
+  ],
+  "success_rate": {
+    "backend": "100% (53/53 tests passing)",
+    "frontend": "100% (all Phase 8 features verified)"
+  },
+  "test_credentials": {
+    "email": "test@lourdes.fr",
+    "password": "storm123",
+    "upload_api_key": "from /app/backend/.env UPLOAD_API_KEY"
+  },
+  "seed_data_creation": "",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "PHASE 8 FEATURES VALIDATED: (1) Backend GET /api/storms/trajectory returns {detected, count, waypoints[], speed_kmh, bearing_deg, compass, eta_min, closest_distance_km}. When no strikes, returns {detected:false, reason:'not_enough_strikes', count:0} - this is correct PASS behavior. (2) /api/storms/approach, /api/forecast/storm-risk, /api/weather/* and /api/lightning/* all regressing clean. (3) Timeline (data-testid='timeline') renders at bottom of map with slider, play/pause, 24h range. Scrubbing changes badge from '● EN DIRECT' to '↺ REJEU · IL Y A X MIN' and shows 'timeline-reset-live' button. Clicking reset-live removes button. (4) WeatherLayersPanel shows 4 toggles: toggle-clouds, toggle-rain, toggle-wind, toggle-trajectory. Trajet default ON. (5) Internal frame-slider inside WeatherLayersPanel is HIDDEN when timelineDriven=true (frame-slider selector returned null, confirming timelineDriven works). (6) Clouds/Rain mutual exclusivity confirmed via toggle class observation. (7) Radius slider (20-70), push toggles and bulletin PDF link present and functional. (8) /historique page loads and renders 170+ chart elements. Test command: REACT_APP_BACKEND_URL=https://storm-monitor-20km.preview.emergentagent.com python -m pytest backend/tests/test_storm_tracker.py -v",
+  "features_tested": {
+    "backend_new": [
+      "GET /api/storms/trajectory basic (returns detected field)",
+      "GET /api/storms/trajectory with default params"
+    ],
+    "backend_regression": [
+      "GET /api/storms/approach",
+      "GET /api/forecast/storm-risk",
+      "GET /api/weather/current, /forecast, /history, /history-days",
+      "GET /api/storms/zones (20km, 30km, 70km)",
+      "GET /api/lightning/strikes, /status",
+      "GET /api/reports/bulletin.pdf",
+      "POST /api/upload_storm (auth 401 + valid key 200 + persistence)",
+      "GET /api/storm_uploads",
+      "Auth: register/login/me/favorites CRUD",
+      "Push: vapid-public-key, subscribe idempotent, unsubscribe, test (auth)"
+    ],
+    "frontend_new": [
+      "Timeline component with slider/play/reset-live",
+      "Timeline badge switches En direct ↔ Rejeu based on cursor",
+      "Trajet toggle present and default ON",
+      "Internal frame-slider hidden when timelineDriven",
+      "Mutual exclusivity Nuages/Pluie preserved"
+    ],
+    "frontend_regression": [
+      "Radius slider 20-70",
+      "Push / in-app alerts toggles",
+      "Bulletin PDF button visible",
+      "/historique page loads with charts (170 chart elements)"
+    ]
+  },
+  "mocked_apis": {
+    "has_mocked_apis": false,
+    "note": "All integrations real (NASA GIBS, RainViewer, Blitzortung, Open-Meteo). Trajectory uses real in-memory strike buffer."
+  }
+}

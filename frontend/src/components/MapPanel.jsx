@@ -9,6 +9,7 @@ import {
   useWeatherLayersState,
 } from "@/components/WeatherLayers";
 import WindLayer from "@/components/WindLayer";
+import TrajectoryLayer from "@/components/TrajectoryLayer";
 import { useIsMobile } from "@/lib/useIsMobile";
 
 delete L.Icon.Default.prototype._getIconUrl;
@@ -96,6 +97,9 @@ export default function MapPanel({
   radiusKm = LOURDES.radius,
   fullscreen = false,
   onToggleFullscreen,
+  cursorTs = null,
+  isLive = true,
+  timelineChildren = null,
 }) {
   const centerLL = useMemo(() => [center.lat, center.lon], [center.lat, center.lon]);
   const centerIcon = useMemo(() => buildCenterIcon(), []);
@@ -127,7 +131,7 @@ export default function MapPanel({
   };
 
   const now = Date.now() / 1000;
-  const wx = useWeatherLayersState();
+  const wx = useWeatherLayersState({ cursorTs, isLive });
   const isMobile = useIsMobile();
   // Auto-zoom to 7 when Rain is active (to see broader storm context beyond 20-70km)
   const zoomOverride = wx.showRain ? 7 : null;
@@ -157,6 +161,7 @@ export default function MapPanel({
           enabled={wx.showWind}
           onMaxSpeedChange={wx.setWindMaxSpeed}
         />
+        <TrajectoryLayer center={center} enabled={wx.showTrajectory && isLive} />
         <FitToRadius center={centerLL} radiusKm={radiusKm} override={zoomOverride} />
         <InvalidateOnResize trigger={fullscreen} />
         <Circle
@@ -276,7 +281,8 @@ export default function MapPanel({
         </div>
       )}
 
-      <WeatherLayersPanel {...wx} isMobile={isMobile} />
+      <WeatherLayersPanel {...wx} isMobile={isMobile} timelineDriven />
+      {timelineChildren}
     </div>
   );
 }
