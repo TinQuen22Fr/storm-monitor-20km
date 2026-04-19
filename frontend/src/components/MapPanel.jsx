@@ -133,6 +133,7 @@ export default function MapPanel({
   const now = Date.now() / 1000;
   const wx = useWeatherLayersState({ cursorTs, isLive });
   const isMobile = useIsMobile();
+  const [fitSignal, setFitSignal] = useState(0);
   // Auto-zoom to 7 when Rain is active (to see broader storm context beyond 20-70km)
   const zoomOverride = wx.showRain ? 7 : null;
 
@@ -161,7 +162,7 @@ export default function MapPanel({
           enabled={wx.showWind}
           onMaxSpeedChange={wx.setWindMaxSpeed}
         />
-        <TrajectoryLayer center={center} enabled={wx.showTrajectory && isLive} />
+        <TrajectoryLayer center={center} enabled={wx.showTrajectory && isLive} fitSignal={fitSignal} />
         <FitToRadius center={centerLL} radiusKm={radiusKm} override={zoomOverride} />
         <InvalidateOnResize trigger={fullscreen} />
         <Circle
@@ -282,7 +283,11 @@ export default function MapPanel({
       )}
 
       <WeatherLayersPanel {...wx} isMobile={isMobile} timelineDriven />
-      <TrajectoryBadge center={center} enabled={wx.showTrajectory && isLive} />
+      <TrajectoryBadge
+        center={center}
+        enabled={wx.showTrajectory && isLive}
+        onFit={() => setFitSignal((s) => s + 1)}
+      />
     </div>
   );
 }

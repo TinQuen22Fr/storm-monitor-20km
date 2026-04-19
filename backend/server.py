@@ -371,6 +371,8 @@ _alerter_state = {
     "storm_active": False,
     "last_strike_ts": 0.0,
     "approach_active": False,
+    "vigilance_level": 1,  # 1=vert, 2=jaune, 3=orange, 4=rouge
+    "vigilance_last_check": 0.0,
 }
 
 
@@ -424,6 +426,36 @@ async def _alert_watcher():
                     tag="storm-approach",
                 )
             _alerter_state["approach_active"] = bool(approach.get("approaching"))
+
+            # Vigilance escalation check (every 20 min — vigilance data TTL is 15 min)
+            import time as _t
+            if _t.time() - _alerter_state["vigilance_last_check"] > 20 * 60:
+                _alerter_state["vigilance_last_check"] = _t.time()
+                try:
+                    vig = await vigilance_mod.compute_vigilance()
+                    # Overall level for Lourdes (65) primarily
+                    lourdes = next((d for d in vig["departements"] if d["id"] == "65"), None)
+                    current_level = lourdes["max_level"] if lourdes else vig["overall_level"]
+                    prev_level = _alerter_state["vigilance_level"]
+                    # Notify only on escalation to orange (3) or rouge (4)
+                    if current_level >= 3 and current_level > prev_level:
+                        level_fr = {3: "orange", 4: "rouge"}[current_level]
+                        # Find which phenomena triggered
+                        worst_phen = [
+                            p for p in lourdes["phenomena"]
+                            if p["level"] == current_level
+                        ] if lourdes else []
+                        names = ", ".join(p["label"] for p in worst_phen[:3])
+                        await push_mod.send_to_all(
+                            db,
+                            title=f"⚠ Vigilance {level_fr.upper()} · Lourdes",
+                            body=f"{names} · passage en niveau {level_fr}. Soyez vigilant.",
+                            url="/",
+                            tag=f"vigilance-{level_fr}",
+                        )
+                    _alerter_state["vigilance_level"] = current_level
+                except Exception as e:
+                    logger.warning("Vigilance check error: %s", e)
         except asyncio.CancelledError:
             return
         except Exception as e:

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
+import L from "leaflet";
 import { CircleMarker, Polyline, useMap } from "react-leaflet";
 import { api } from "@/lib/api";
 
-export default function TrajectoryLayer({ center, enabled = true }) {
+export default function TrajectoryLayer({ center, enabled = true, fitSignal = 0 }) {
   const [traj, setTraj] = useState(null);
   const map = useMap();
 
@@ -35,6 +36,14 @@ export default function TrajectoryLayer({ center, enabled = true }) {
       clearInterval(t);
     };
   }, [enabled, center.lat, center.lon]);
+
+  // Click-to-fit: when fitSignal increments, zoom map to include trajectory + center
+  useEffect(() => {
+    if (!fitSignal || !traj || !traj.waypoints?.length) return;
+    const points = traj.waypoints.map((w) => [w.lat, w.lon]);
+    const bounds = L.latLngBounds([...points, [center.lat, center.lon]]);
+    map.flyToBounds(bounds, { padding: [60, 60], duration: 0.8, maxZoom: 10 });
+  }, [fitSignal, traj, center.lat, center.lon, map]);
 
   if (!traj || !traj.waypoints?.length) return null;
 

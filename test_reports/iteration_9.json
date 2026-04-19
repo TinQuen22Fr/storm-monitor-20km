@@ -1,0 +1,78 @@
+{
+  "summary": "Iteration 9 testing complete: (a) predict_trajectory noise rejection logic validated via synthetic pytest unit tests — not_enough_strikes / stationary / noise_too_high / happy path all behave correctly; (b) /api/weather/vigilance still returns 5 depts with correct structure after refactor to single multi-location Open-Meteo request (no 429 rate limit observed, cached response <1s); (c) _alert_watcher vigilance escalation logic verified via code inspection in server.py (lines 430-458): fires push on transition to level>=3 AND >prev_level, updates _alerter_state['vigilance_level'], runs every 20min; (d) TrajectoryBadge is now a <button data-testid=trajectory-badge>, correctly disabled when !detected, shows reason text 'Pas assez d'impacts' (current live state), className uses 'cursor-default' when disabled (would use 'hover:border-red-600 cursor-pointer' when detected+onFit); click on disabled button completes without JS errors; (e) All 61 backend tests pass (57 prior + 4 new trajectory unit). All frontend regression selectors found (vigilance-banner, timeline-preset-0, 4 weather toggles).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Historique page (Recharts init)",
+        "issues": ["Pre-existing Recharts 'width(-1) and height(-1)' warning on initial mount (6 occurrences). Non-blocking. Carried from iter-7/8. Main agent may wrap charts in ResponsiveContainer with explicit minHeight."]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_storm_tracker.py",
+    "/app/backend/tests/test_trajectory_unit.py",
+    "/app/test_reports/pytest/pytest_results_iter9.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "analysis.py predict_trajectory thresholds (>120 km/h noise, <3 km/h stationary) are sensible for meso-scale cells; unit tests confirm the branches trigger correctly. Good defensive coding.",
+    "vigilance.py _fetch_open_meteo_multi: single request for 5 coordinate pairs is correct pattern for Open-Meteo — addresses the 429 root cause. No caching regression observed.",
+    "server.py _alert_watcher vigilance block (L430-458): correct 20-min throttle matches the 15-min TTL, uses Lourdes dept (65) as primary source with overall_level fallback. Only fires on escalation (>= 3 AND > prev) — prevents spam when level is already orange. Worst-phenomena label aggregation caps at 3 which is UX-friendly. Minor: no downgrade notification (not requested, just noting).",
+    "TrajectoryBadge.jsx: onClick={detected && onFit ? onFit : undefined} combined with disabled={!detected || !onFit} is belt-and-suspenders — good. The conditional 'hover:border-red-600 cursor-pointer' vs 'cursor-default' tailwind classes render cleanly; confirmed visually the disabled state does not show hover cursor.",
+    "TrajectoryBadge title attribute is only set when detected — matches current a11y best practice (avoid misleading tooltip on disabled buttons).",
+    "Minor: TrajectoryLayer.jsx fitSignal effect should be verified when a real trajectory triggers (could not test dynamically because strikes are calm). Code review only."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_trajectory_unit.py (NEW — 4 unit tests for predict_trajectory)"
+  ],
+  "success_rate": {
+    "backend": "100% (61/61 tests passing: 57 integration + 4 new trajectory unit)",
+    "frontend": "100% (trajectory-badge is <button>, disabled state correct, reason text correct, regression selectors all present)"
+  },
+  "test_credentials": {
+    "email": "test@lourdes.fr",
+    "password": "storm123",
+    "upload_api_key": "from /app/backend/.env UPLOAD_API_KEY"
+  },
+  "seed_data_creation": "",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "ITER-9 FEATURES VALIDATED: (1) predict_trajectory rejects noisy fits: returns {detected:false, reason:'noise_too_high', computed_speed_kmh:>120, count:n} and {detected:false, reason:'stationary', computed_speed_kmh:<3, count:n}. Happy path returns detected:true with waypoints/speed_kmh/compass/bearing_deg. Unit tests in /app/backend/tests/test_trajectory_unit.py. (2) /api/weather/vigilance still passes all 4 tests after single-request refactor — 5 depts (09/31/32/64/65), 6 phenomena each, cached <1s. (3) Vigilance push escalation logic is code-reviewed only (can't trigger orange-level event on calm weather); fires on level>=3 and >prev, reads _alerter_state['vigilance_level'], 20-min throttle, uses vigilance_mod.compute_vigilance() + push_mod.send_to_all(). (4) Frontend: [data-testid=trajectory-badge] is a BUTTON tag, disabled=true when !detected, className contains 'cursor-default'; when trajectory is detected (live only) it becomes enabled with 'hover:border-red-600 cursor-pointer' and onClick fires setFitSignal(). Reason text 'Pas assez d'impacts' displayed correctly (current state). (5) Regression: vigilance-banner, timeline-preset-0/1800/3600/10800/21600/43200, 4 weather toggles (toggle-clouds, toggle-rain, toggle-wind, toggle-trajectory), push endpoints, bulletin PDF, storm uploads, lightning endpoints, auth/favorites all still pass. Test command: cd /app && REACT_APP_BACKEND_URL=https://storm-monitor-20km.preview.emergentagent.com python -m pytest backend/tests/ -v",
+  "rca_of_the_issue": "N/A — no bugs found this iteration. All new features (noise rejection, single-request vigilance, clickable trajectory badge, vigilance escalation push) work as intended.",
+  "features_tested": {
+    "backend_new": [
+      "predict_trajectory not_enough_strikes branch (count<4)",
+      "predict_trajectory stationary branch (speed<3 km/h)",
+      "predict_trajectory noise_too_high branch (speed>120 km/h)",
+      "predict_trajectory happy path (3<=speed<=120, returns waypoints/compass/bearing)",
+      "Vigilance single-request refactor: 5 depts returned in one Open-Meteo call, no 429",
+      "Vigilance escalation hook in _alert_watcher (code-reviewed only, not dynamically triggered)"
+    ],
+    "backend_regression": [
+      "All 57 prior tests still pass (weather, auth, favorites, push, bulletin PDF, storm zones, lightning, trajectory endpoint, approach, forecast, storm uploads, vigilance)"
+    ],
+    "frontend_new": [
+      "TrajectoryBadge renders as <button> tag",
+      "TrajectoryBadge disabled=true when traj.detected=false",
+      "TrajectoryBadge className uses cursor-default (not hover:border-red-600) when disabled",
+      "TrajectoryBadge shows correct reason text 'Pas assez d'impacts' for not_enough_strikes",
+      "Click on disabled trajectory-badge completes without JS errors"
+    ],
+    "frontend_regression": [
+      "vigilance-banner present",
+      "timeline-preset-0 present",
+      "4 weather toggles present (toggle-clouds, toggle-rain, toggle-wind, toggle-trajectory)",
+      "No error elements on page"
+    ]
+  },
+  "mocked_apis": {
+    "has_mocked_apis": false,
+    "note": "All tests hit real Open-Meteo + Blitzortung data via backend. No mocks. Vigilance escalation push could not be dynamically triggered (weather calm) but logic is correct per code review."
+  }
+}

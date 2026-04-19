@@ -1,13 +1,12 @@
 import { useEffect, useState } from "react";
-import { Activity } from "lucide-react";
+import { Activity, Maximize2 } from "lucide-react";
 import { api, LOURDES } from "@/lib/api";
 
 /**
  * Floating badge showing trajectory stats: speed, bearing, ETA.
- * Renders next to the strikes badge so the user sees the prediction
- * even when the polyline is outside the currently visible map area.
+ * Click to zoom the map to include the predicted path.
  */
-export default function TrajectoryBadge({ center = LOURDES, enabled = true }) {
+export default function TrajectoryBadge({ center = LOURDES, enabled = true, onFit }) {
   const [traj, setTraj] = useState(null);
 
   useEffect(() => {
@@ -43,18 +42,26 @@ export default function TrajectoryBadge({ center = LOURDES, enabled = true }) {
   };
 
   return (
-    <div
-      className="absolute top-[220px] right-6 z-[500] bg-white border border-slate-200 px-4 py-3 shadow-[0_2px_16px_rgba(0,0,0,0.04)] max-w-[220px]"
+    <button
+      onClick={detected && onFit ? onFit : undefined}
+      disabled={!detected || !onFit}
+      className={`absolute top-[220px] right-6 z-[500] bg-white border border-slate-200 px-4 py-3 shadow-[0_2px_16px_rgba(0,0,0,0.04)] max-w-[220px] text-left ${
+        detected && onFit ? "hover:border-red-600 cursor-pointer" : "cursor-default"
+      } transition-colors`}
       data-testid="trajectory-badge"
+      title={detected ? "Cliquer pour cadrer la carte sur la trajectoire" : undefined}
     >
       <div className="flex items-center gap-3">
         <Activity
           className={`w-4 h-4 ${detected ? "text-red-600" : "text-slate-400"}`}
           strokeWidth={2}
         />
-        <div className="min-w-0">
-          <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400">
-            Trajectoire
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400">
+              Trajectoire
+            </span>
+            {detected && onFit && <Maximize2 className="w-2.5 h-2.5 text-slate-400" strokeWidth={2} />}
           </div>
           {detected ? (
             <>
@@ -78,6 +85,6 @@ export default function TrajectoryBadge({ center = LOURDES, enabled = true }) {
           )}
         </div>
       </div>
-    </div>
+    </button>
   );
 }
