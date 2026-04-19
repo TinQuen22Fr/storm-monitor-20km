@@ -179,7 +179,7 @@ export default function NightStormMode({ open, onClose, center = LOURDES }) {
       </MapContainer>
 
       {/* Top bar */}
-      <div className="absolute top-0 left-0 right-0 z-[10] bg-gradient-to-b from-black/90 to-transparent px-6 py-4 flex items-center justify-between">
+      <div className="absolute top-0 left-0 right-0 z-[3000] bg-gradient-to-b from-black/95 to-transparent px-6 py-4 flex items-center justify-between pointer-events-auto">
         <div>
           <div className="font-mono text-[10px] uppercase tracking-[0.3em] text-red-500 flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
@@ -219,7 +219,7 @@ export default function NightStormMode({ open, onClose, center = LOURDES }) {
       </div>
 
       {/* Bottom legend */}
-      <div className="absolute bottom-6 left-6 z-[10] flex items-center gap-5 text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400 bg-black/60 backdrop-blur px-4 py-2 border border-slate-800">
+      <div className="absolute bottom-6 left-6 z-[3000] flex items-center gap-5 text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400 bg-black/80 backdrop-blur px-4 py-2 border border-slate-800 pointer-events-auto">
         <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-yellow-300" />&lt;30s</span>
         <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-orange-500" />&lt;2min</span>
         <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-red-600" />Plus ancien</span>
