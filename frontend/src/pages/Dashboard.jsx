@@ -245,6 +245,16 @@ export default function Dashboard() {
 
         <VigilanceBanner />
 
+        {(current?.degraded || zones?.degraded) && (
+          <div
+            className="px-6 py-2 bg-amber-50 border-b border-amber-200 flex items-center gap-2 text-[11px] font-mono text-amber-900"
+            data-testid="degraded-banner"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
+            <span>Service météo limité par le fournisseur — reprise automatique sous quelques minutes.</span>
+          </div>
+        )}
+
         {approach?.approaching && (
           <div className="px-6 pt-4">
             <ApproachAlert approach={approach} />

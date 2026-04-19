@@ -17,7 +17,7 @@ from typing import Any, Dict, List
 
 import httpx
 
-from weather import _cached, OPEN_METEO_BASE
+from weather import _cached, OPEN_METEO_BASE, get_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -103,16 +103,15 @@ def _parse_iso(s: str) -> float:
 async def _fetch_meteoalarm() -> Dict[str, Any]:
     """Fetch and cache the MeteoAlarm France feed (TTL 15 min)."""
     async def _do() -> Dict[str, Any]:
-        async with httpx.AsyncClient(timeout=12.0) as client:
-            r = await client.get(
-                METEOALARM_URL,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (Lourdes-Storm-Tracker)",
-                    "Accept": "application/json",
-                },
-            )
-            r.raise_for_status()
-            return r.json()
+        r = await get_with_retry(
+            METEOALARM_URL,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Lourdes-Storm-Tracker)",
+                "Accept": "application/json",
+            },
+            timeout=12.0,
+        )
+        return r.json()
 
     return await _cached("vigilance:meteoalarm", ttl=900.0, fn=_do)
 
@@ -257,12 +256,11 @@ async def _compute_from_openmeteo_fallback() -> Dict[str, Any]:
             "daily": "weather_code,wind_gusts_10m_max,cape_max",
             "forecast_days": 1, "timezone": "auto",
         }
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            r = await client.get(OPEN_METEO_BASE, params=params)
-            r.raise_for_status()
-            return r.json() if not isinstance(r.json(), list) else r.json()
+        r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=15.0)
+        payload = r.json()
+        return payload if isinstance(payload, list) else [payload]
 
-    data_list = await _do() if callable(_do) else []
+    data_list = await _do()
     if isinstance(data_list, dict):
         data_list = [data_list]
 

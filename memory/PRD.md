@@ -248,3 +248,17 @@
 - ✅ Nouveau toggle **VIGILANCE** (5e bouton) dans `WeatherLayersPanel` (`data-testid='toggle-vigilance-polygons'`), activé par défaut
 - ✅ GeoJSON national data.gouv.fr simplifié (~85 KB), servi depuis `/app/frontend/public/geo/`
 
+
+## Hotfix (2026-04-19) — Résilience Open-Meteo (fini les 500)
+**Problème**: Open-Meteo rate-limite (429) le serveur après trop d'appels, ce qui faisait remonter des 500 côté frontend sur `/api/weather/current`, `/api/weather/forecast`, `/api/weather/history`, `/api/storms/zones`, `/api/forecast/storm-risk`.
+
+**Correctifs livrés**:
+- ✅ **`get_with_retry`** (weather.py) : helper centralisé avec retry 429/503 court (2 tentatives, 1-2s) pour ne pas saturer
+- ✅ **Cache résilient avec stale-while-error** + **persistance sur disque** (`/app/backend/.stale_cache.pkl`) : survit aux redémarrages backend, sert les dernières bonnes données quand l'upstream tombe
+- ✅ **TTLs augmentés** : current 60s→180s, forecast 120s→600s, zones 90s→240s
+- ✅ **Mode dégradé propre** : endpoints retournent 200 avec `{degraded: true, message: "..."}` au lieu de 500 quand aucune donnée stale n'est disponible
+- ✅ **Bandeau UI ambré** (`data-testid="degraded-banner"`) quand l'app détecte le mode dégradé — message explicite "Service météo limité par le fournisseur — reprise automatique sous quelques minutes"
+- ✅ Appliqué aussi à vigilance.py pour MeteoAlarm + fallback Open-Meteo
+
+**Validé**: tous les endpoints répondent en 200 même sous 429, app reste entièrement fonctionnelle côté UI, bandeau ambré visible, `—` propre dans les tuiles de conditions quand pas de données.
+

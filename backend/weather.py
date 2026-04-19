@@ -2,12 +2,19 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 import math
+import os
+import pickle
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable, Coroutine, Dict, List
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 # Lourdes center coordinates
 LOURDES_LAT = 43.0951
@@ -21,10 +28,77 @@ RAIN_CODES = {51, 53, 55, 61, 63, 65, 80, 81, 82}
 
 OPEN_METEO_BASE = "https://api.open-meteo.com/v1/forecast"
 
+# Stale cache persistence (survives backend restarts)
+_STALE_FILE = Path(os.environ.get("STALE_CACHE_FILE", "/app/backend/.stale_cache.pkl"))
 
-# ---------- Simple async TTL cache ----------
+
+# ---------- Resilient HTTP with 429 retry ----------
+async def get_with_retry(url: str, params: Dict[str, Any] | None = None,
+                        headers: Dict[str, Any] | None = None,
+                        timeout: float = 10.0, max_retries: int = 2) -> httpx.Response:
+    """GET with short exponential backoff on 429/503. Fails fast."""
+    last_response: httpx.Response | None = None
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        for attempt in range(max_retries):
+            try:
+                r = await client.get(url, params=params, headers=headers)
+                last_response = r
+                if r.status_code in (429, 503):
+                    if attempt >= max_retries - 1:
+                        break
+                    wait = 1.0 + attempt  # 1s, 2s
+                    logger.info("Rate-limited (%s), waiting %.1fs (attempt %d/%d)",
+                               r.status_code, wait, attempt + 1, max_retries)
+                    await asyncio.sleep(wait)
+                    continue
+                r.raise_for_status()
+                return r
+            except (httpx.TimeoutException, httpx.NetworkError):
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1.0)
+                    continue
+                raise
+    if last_response is not None:
+        last_response.raise_for_status()
+        return last_response
+    raise RuntimeError("get_with_retry exhausted without result")
+
+
+# ---------- Simple async TTL cache with stale-while-error fallback ----------
 _cache: Dict[str, tuple[float, Any]] = {}
 _cache_locks: Dict[str, asyncio.Lock] = {}
+_last_log: Dict[str, float] = {}
+
+
+def _load_stale() -> Dict[str, Any]:
+    try:
+        if _STALE_FILE.exists():
+            with open(_STALE_FILE, "rb") as f:
+                return pickle.load(f)
+    except Exception as e:
+        logger.warning("Failed to load stale cache: %s", e)
+    return {}
+
+
+_stale_cache: Dict[str, Any] = _load_stale()
+_stale_save_pending = False
+
+
+async def _save_stale_soon() -> None:
+    """Debounced save to disk (max once per 30s)."""
+    global _stale_save_pending
+    if _stale_save_pending:
+        return
+    _stale_save_pending = True
+    try:
+        await asyncio.sleep(30)
+        try:
+            with open(_STALE_FILE, "wb") as f:
+                pickle.dump(_stale_cache, f)
+        except Exception as e:
+            logger.warning("Failed to save stale cache: %s", e)
+    finally:
+        _stale_save_pending = False
 
 
 async def _cached(key: str, ttl: float, fn: Callable[[], Coroutine[Any, Any, Any]]) -> Any:
@@ -37,9 +111,29 @@ async def _cached(key: str, ttl: float, fn: Callable[[], Coroutine[Any, Any, Any
         hit = _cache.get(key)
         if hit and hit[0] > now:
             return hit[1]
-        value = await fn()
-        _cache[key] = (now + ttl, value)
-        return value
+        try:
+            value = await fn()
+            _cache[key] = (now + ttl, value)
+            _stale_cache[key] = value
+            # Fire-and-forget persistence
+            try:
+                asyncio.create_task(_save_stale_soon())
+            except RuntimeError:
+                pass
+            return value
+        except Exception as exc:
+            stale = _stale_cache.get(key)
+            if stale is not None:
+                _cache[key] = (now + min(ttl, 60.0), stale)
+                last = _last_log.get(key, 0)
+                if now - last > 60:
+                    _last_log[key] = now
+                    logger.warning(
+                        "Upstream error for '%s' — serving stale cache (%s)",
+                        key, type(exc).__name__
+                    )
+                return stale
+            raise
 
 
 def km_to_deg_lat(km: float) -> float:
@@ -83,7 +177,7 @@ def sampling_grid(lat: float, lon: float, radius_km: float, step_km: float | Non
 
 
 async def fetch_current(lat: float = LOURDES_LAT, lon: float = LOURDES_LON) -> Dict[str, Any]:
-    return await _cached(f"current:{lat}:{lon}", 60.0, lambda: _fetch_current_impl(lat, lon))
+    return await _cached(f"current:{lat}:{lon}", 180.0, lambda: _fetch_current_impl(lat, lon))
 
 
 async def _fetch_current_impl(lat: float, lon: float) -> Dict[str, Any]:
@@ -112,10 +206,8 @@ async def _fetch_current_impl(lat: float, lon: float) -> Dict[str, Any]:
         "timezone": "Europe/Paris",
         "forecast_days": 1,
     }
-    async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.get(OPEN_METEO_BASE, params=params)
-        r.raise_for_status()
-        data = r.json()
+    r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=15)
+    data = r.json()
 
     # pick current-hour CAPE & lightning_potential
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:00")
@@ -142,7 +234,7 @@ async def _fetch_current_impl(lat: float, lon: float) -> Dict[str, Any]:
 
 
 async def fetch_forecast(lat: float = LOURDES_LAT, lon: float = LOURDES_LON) -> Dict[str, Any]:
-    return await _cached(f"forecast:{lat}:{lon}", 120.0, lambda: _fetch_forecast_impl(lat, lon))
+    return await _cached(f"forecast:{lat}:{lon}", 600.0, lambda: _fetch_forecast_impl(lat, lon))
 
 
 async def _fetch_forecast_impl(lat: float, lon: float) -> Dict[str, Any]:
@@ -163,10 +255,8 @@ async def _fetch_forecast_impl(lat: float, lon: float) -> Dict[str, Any]:
         "forecast_days": 2,
         "past_hours": 0,
     }
-    async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.get(OPEN_METEO_BASE, params=params)
-        r.raise_for_status()
-        data = r.json()
+    r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=15)
+    data = r.json()
     hourly = data.get("hourly", {})
     times = hourly.get("time", [])
     # Return next 24 hours from now
@@ -212,10 +302,8 @@ async def _fetch_history_24h_impl(lat: float, lon: float) -> Dict[str, Any]:
         "past_days": 1,
         "forecast_days": 1,
     }
-    async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.get(OPEN_METEO_BASE, params=params)
-        r.raise_for_status()
-        data = r.json()
+    r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=15)
+    data = r.json()
     hourly = data.get("hourly", {})
     times = hourly.get("time", [])
     # Return the last 24h (up to now)
@@ -267,10 +355,8 @@ async def _fetch_history_days_impl(lat: float, lon: float, days: int) -> Dict[st
         "past_days": days,
         "forecast_days": 1,
     }
-    async with httpx.AsyncClient(timeout=20) as client:
-        r = await client.get(OPEN_METEO_BASE, params=params)
-        r.raise_for_status()
-        data = r.json()
+    r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=20)
+    data = r.json()
     hourly = data.get("hourly", {})
     times = hourly.get("time", [])
 
@@ -347,10 +433,8 @@ async def _fetch_storm_risk_impl(lat: float, lon: float, days: int) -> Dict[str,
         "timezone": "Europe/Paris",
         "forecast_days": days,
     }
-    async with httpx.AsyncClient(timeout=20) as client:
-        r = await client.get(OPEN_METEO_BASE, params=params)
-        r.raise_for_status()
-        data = r.json()
+    r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=20)
+    data = r.json()
     hourly = data.get("hourly", {})
     times = hourly.get("time", [])
 
@@ -413,7 +497,7 @@ async def _fetch_storm_risk_impl(lat: float, lon: float, days: int) -> Dict[str,
 
 
 async def fetch_storm_zones(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM) -> Dict[str, Any]:
-    return await _cached(f"zones:{lat}:{lon}:{radius_km}", 90.0, lambda: _fetch_storm_zones_impl(lat, lon, radius_km))
+    return await _cached(f"zones:{lat}:{lon}:{radius_km}", 240.0, lambda: _fetch_storm_zones_impl(lat, lon, radius_km))
 
 
 async def fetch_wind_grid(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM) -> Dict[str, Any]:
@@ -432,10 +516,8 @@ async def _fetch_wind_grid_impl(lat: float, lon: float, radius_km: float) -> Dic
         "timezone": "Europe/Paris",
         "forecast_days": 1,
     }
-    async with httpx.AsyncClient(timeout=20) as client:
-        r = await client.get(OPEN_METEO_BASE, params=params)
-        r.raise_for_status()
-        raw = r.json()
+    r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=20)
+    raw = r.json()
 
     responses = raw if isinstance(raw, list) else [raw]
     arrows: List[Dict[str, Any]] = []
@@ -479,10 +561,8 @@ async def _fetch_storm_zones_impl(lat: float, lon: float, radius_km: float) -> D
         "timezone": "Europe/Paris",
         "forecast_days": 1,
     }
-    async with httpx.AsyncClient(timeout=20) as client:
-        r = await client.get(OPEN_METEO_BASE, params=params)
-        r.raise_for_status()
-        raw = r.json()
+    r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=20)
+    raw = r.json()
 
     # Response is a list when multiple lat/lon provided
     responses = raw if isinstance(raw, list) else [raw]

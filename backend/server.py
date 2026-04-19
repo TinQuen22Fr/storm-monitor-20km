@@ -6,7 +6,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Request
@@ -159,34 +159,75 @@ async def delete_favorite(fav_id: str, user=Depends(get_current_user)):
 
 
 # ---------- Weather ----------
+def _degraded(kind: str, error: Exception) -> Dict[str, Any]:
+    """Return a safe empty payload when upstream is unavailable."""
+    logger.warning("Upstream failure on %s: %s", kind, type(error).__name__)
+    base = {
+        "degraded": True,
+        "source_error": str(error)[:120],
+        "message": "Service météo temporairement indisponible — réessayez dans quelques minutes.",
+    }
+    if kind == "current":
+        base.update({"current": {}, "hourly": {}})
+    elif kind == "forecast":
+        base.update({"hourly": [], "daily": []})
+    elif kind == "history":
+        base.update({"hourly": []})
+    elif kind == "zones":
+        base.update({"zones": [], "storm_active": False, "max_cape": 0, "max_lightning_potential": 0})
+    elif kind == "risk":
+        base.update({"days": []})
+    elif kind == "wind":
+        base.update({"arrows": [], "max_speed": 0})
+    return base
+
+
 @api_router.get("/weather/current")
 async def weather_current(lat: float = LOURDES_LAT, lon: float = LOURDES_LON):
-    return await fetch_current(lat, lon)
+    try:
+        return await fetch_current(lat, lon)
+    except Exception as e:
+        return _degraded("current", e)
 
 
 @api_router.get("/weather/forecast")
 async def weather_forecast(lat: float = LOURDES_LAT, lon: float = LOURDES_LON):
-    return await fetch_forecast(lat, lon)
+    try:
+        return await fetch_forecast(lat, lon)
+    except Exception as e:
+        return _degraded("forecast", e)
 
 
 @api_router.get("/weather/history")
 async def weather_history(lat: float = LOURDES_LAT, lon: float = LOURDES_LON):
-    return await fetch_history_24h(lat, lon)
+    try:
+        return await fetch_history_24h(lat, lon)
+    except Exception as e:
+        return _degraded("history", e)
 
 
 @api_router.get("/weather/history-days")
 async def weather_history_days(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, days: int = 7):
-    return await fetch_history_days(lat, lon, days)
+    try:
+        return await fetch_history_days(lat, lon, days)
+    except Exception as e:
+        return _degraded("history", e)
 
 
 @api_router.get("/storms/zones")
 async def storm_zones(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM):
-    return await fetch_storm_zones(lat, lon, radius_km)
+    try:
+        return await fetch_storm_zones(lat, lon, radius_km)
+    except Exception as e:
+        return _degraded("zones", e)
 
 
 @api_router.get("/weather/wind-grid")
 async def weather_wind_grid(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM):
-    return await fetch_wind_grid(lat, lon, radius_km)
+    try:
+        return await fetch_wind_grid(lat, lon, radius_km)
+    except Exception as e:
+        return _degraded("wind", e)
 
 
 @api_router.get("/weather/vigilance")
@@ -253,7 +294,10 @@ async def storms_trajectory(
 @api_router.get("/forecast/storm-risk")
 async def forecast_storm_risk(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, days: int = 7):
     """Daily storm risk forecast for the next N days."""
-    return await fetch_storm_risk_forecast(lat, lon, days)
+    try:
+        return await fetch_storm_risk_forecast(lat, lon, days)
+    except Exception as e:
+        return _degraded("risk", e)
 
 
 # ---------- Storm upload (secured with API key header) ----------
