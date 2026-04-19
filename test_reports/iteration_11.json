@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 11 testing complete: validated 3 new features — (1) 70km trajectory/approach radius, (2) Mode soirée orage fullscreen overlay, (3) shareable PNG card at /api/share/card.png. All 3 features work end-to-end. Backend 7/8 tests pass (1 minor failure: Cache-Control header stripped by ingress, not a backend bug). All regression endpoints + frontend selectors remain intact.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/share/card.png", "issue": "Cache-Control set by FastAPI as 'public, max-age=60' but response arriving at client is 'no-store, no-cache, must-revalidate' — the preview Kubernetes ingress/proxy is overriding the header. Backend code is correct (server.py L205). This is an infrastructure behaviour, not a code bug."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_share_card.py",
+    "/app/test_reports/pytest/pytest_results_iter11.xml"
+  ],
+  "action_items": [
+    "(Optional) If Cache-Control 'public, max-age=60' matters for production, verify the production ingress does not strip it (preview env does). Not a blocker."
+  ],
+  "critical_code_review_comments": [
+    "share_card.py: render_share_card is async but all Pillow/drawing work is synchronous/CPU-bound — acceptable for a 1200x630 card (~30-80ms), but consider running in asyncio.to_thread() under heavy load to avoid blocking the event loop.",
+    "share_card.py L55: fetches strikes with radius 70km and filters to last hour in Python — fine, but store.recent() already supports since_ts; could pass since_ts=now-3600 to offload filtering.",
+    "share_card.py L72: `next((x for x in vig['departements'] if x['id']=='65'), None) or vig['departements'][0]` — `or` fallback is neat but if dept 65 exists with max_level=0 it still passes (0 is falsy only if max_level field were the iterable, which it isn't, so the dict truthiness is fine). No issue.",
+    "NightStormMode.jsx: `seenTs.current` uses epoch ts as dedup key — two strikes at identical sub-second ts would be missed. Low probability given Blitzortung precision. Also on reopen, seenTs is reset in the cleanup effect (L111) so every strike on re-open counts as 'fresh' → first fetch has `seenTs.current.size === 0` guard (L91) that suppresses beep on initial load. Good.",
+    "NightStormMode.jsx: playThunderBeep creates a new AudioContext per beep and closes it 400ms later — works, but modern browsers throttle AudioContext creation and may log warnings. A singleton AudioContext instantiated on first user gesture would be cleaner.",
+    "Dashboard.jsx shareCard(): Web Share API path doesn't await the share promise before the fetch — actually it does (await navigator.share). Good. Fallback clipboard.writeText may silently fail in headless/non-HTTPS contexts, but the window.open fallback still runs. Minor: if clipboard fails and window.open is blocked by popup blocker (rare on user-initiated click), user gets nothing. Acceptable.",
+    "Dashboard.jsx L121: /api/storms/approach called with radius_km=70 as requested — matches UI max slider. Trajectory also 70km (TrajectoryLayer L27, TrajectoryBadge L22).",
+    "server.py /api/share/card.png route is simple and correct. No auth — appropriate for a shareable preview image.",
+    "Prior iter-10 gap still present: /api/storms/approach still uses naive median-split without clustering (noted in iter-10). Scope of iter-11 doesn't touch this."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_share_card.py (NEW — 8 tests for share card PNG + regression)"
+  ],
+  "success_rate": {
+    "backend": "87.5% (7/8 new tests passing; the one failure is an ingress cache-header override, not a backend issue)",
+    "frontend": "100% (share-card-button, night-mode-button, night-storm-mode overlay with fullscreen z-index:2000, night-mode-close, night-mode-sound toggle, dark CartoDB tiles, 20km red + 70km gray circles, lightning markers all verified; regression selectors for vigilance-banner #FFFBEB yellow, timeline-preset-0, toggle-clouds/rain/wind/trajectory, trajectory-badge, download-bulletin-pdf all present)"
+  },
+  "test_credentials": {"email": "test@lourdes.fr", "password": "storm123", "upload_api_key": "from /app/backend/.env UPLOAD_API_KEY"},
+  "seed_data_creation": "",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "ITER-11 VALIDATED: (1) GET /api/share/card.png returns 200, Content-Type image/png, PNG 1200x630 ~10-80KB. Backend sets 'Cache-Control: public, max-age=60' correctly in code but preview ingress rewrites it to 'no-store, no-cache'. Renders vigilance color stripe (currently yellow for dept 65), strike count, closest strike, approach/trajectory info, timestamp footer. Pure Pillow, DejaVu font at /usr/share/fonts/truetype/dejavu. (2) /api/storms/trajectory and /api/storms/approach both work with radius_km=70 (new default from Dashboard.jsx; backend still defaults to 150 & 100 respectively for backwards compat — fine). (3) Night mode: clicking night-mode-button in sidebar opens <div data-testid='night-storm-mode' class='fixed inset-0 z-[2000] bg-black'> covering 1920x1080, z-index=2000, position=fixed. Close button removes element, sound toggle swaps Volume2/VolumeX SVG. (4) Share button: Web Share API path works on mobile; desktop fallback copies URL + opens new tab (clipboard write may fail silently in headless browsers but window.open succeeds). (5) All iter-10 regression passes: vigilance-banner bg=#FFFBEB (yellow), all 4 weather toggles, trajectory-badge, timeline presets, PDF bulletin.",
+  "rca_of_the_issue": "N/A — no bugs found. The only test failure (Cache-Control header) has a clear non-code RCA: Kubernetes ingress strips/overrides the header. Backend code sets the header correctly; verified in server.py L205."
+}

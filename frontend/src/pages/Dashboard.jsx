@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, BellOff, Download, RefreshCw, Zap } from "lucide-react";
+import { Bell, BellOff, Download, Moon, RefreshCw, Share2, Zap } from "lucide-react";
 import MapPanel from "@/components/MapPanel";
 import AlertBanner from "@/components/AlertBanner";
 import ApproachAlert from "@/components/ApproachAlert";
 import Timeline from "@/components/Timeline";
 import VigilanceBanner from "@/components/VigilanceBanner";
+import NightStormMode from "@/components/NightStormMode";
 import NavTabs from "@/components/NavTabs";
 import CurrentConditions from "@/components/CurrentConditions";
 import CapeGauge from "@/components/CapeGauge";
@@ -44,6 +45,8 @@ export default function Dashboard() {
   const [approach, setApproach] = useState(null);
   const [cursorTs, setCursorTs] = useState(() => Math.floor(Date.now() / 1000));
   const [playing, setPlaying] = useState(false);
+  const [nightMode, setNightMode] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
   const isMobile = useIsMobile();
 
   // "Live" when cursor is within 60s of now
@@ -112,10 +115,10 @@ export default function Dashboard() {
         seenStrikeTs.current = new Set([...seenStrikeTs.current].slice(-1000));
       }
 
-      // Approach analysis (use a wider radius, independent of UI radius)
+      // Approach analysis (use configured radius + buffer, capped at 70km)
       try {
         const app = await api.get("/storms/approach", {
-          params: { lat: center.lat, lon: center.lon, radius_km: 100 },
+          params: { lat: center.lat, lon: center.lon, radius_km: 70 },
         });
         const prev = approach?.approaching;
         setApproach(app.data);
@@ -162,6 +165,33 @@ export default function Dashboard() {
 
   const downloadPdf = () => {
     const url = `${API}/reports/bulletin.pdf?lat=${center.lat}&lon=${center.lon}&radius_km=${radius}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const shareCard = async () => {
+    const url = `${API}/share/card.png?t=${Date.now()}`;
+    // Try Web Share API (mobile) first with image
+    try {
+      if (navigator.share) {
+        const res = await fetch(url);
+        const blob = await res.blob();
+        const file = new File([blob], "orage-lourdes.png", { type: "image/png" });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            title: "Suivi d'orage · Lourdes",
+            text: "État actuel autour de Lourdes",
+            files: [file],
+          });
+          return;
+        }
+      }
+    } catch { /* fall back to copy */ }
+    // Desktop fallback: open image in new tab & copy URL
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2000);
+    } catch { /* ignore */ }
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
@@ -369,6 +399,26 @@ export default function Dashboard() {
             Bulletin PDF
           </button>
 
+          {/* Share card */}
+          <button
+            onClick={shareCard}
+            className="mt-2 w-full flex items-center justify-center gap-2 px-4 h-10 border border-slate-300 bg-white text-slate-900 hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-colors font-mono text-[10px] uppercase tracking-[0.2em]"
+            data-testid="share-card-button"
+          >
+            <Share2 className="w-4 h-4" strokeWidth={1.8} />
+            {shareCopied ? "Lien copié ✓" : "Partager (WhatsApp…)"}
+          </button>
+
+          {/* Night storm mode */}
+          <button
+            onClick={() => setNightMode(true)}
+            className="mt-2 w-full flex items-center justify-center gap-2 px-4 h-10 border border-slate-900 bg-slate-900 text-white hover:bg-black transition-colors font-mono text-[10px] uppercase tracking-[0.2em]"
+            data-testid="night-mode-button"
+          >
+            <Moon className="w-4 h-4" strokeWidth={1.8} />
+            Mode soirée orage
+          </button>
+
           {/* Storm risk forecast dialog */}
           <StormRiskDialog lat={center.lat} lon={center.lon} />
 
@@ -407,6 +457,12 @@ export default function Dashboard() {
           </footer>
         </div>
       </aside>
+
+      <NightStormMode
+        open={nightMode}
+        onClose={() => setNightMode(false)}
+        center={center}
+      />
     </div>
   );
 }

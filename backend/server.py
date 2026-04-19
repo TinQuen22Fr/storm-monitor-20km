@@ -40,6 +40,7 @@ import reports as reports_mod
 import analysis as analysis_mod
 import uploads as uploads_mod
 import vigilance as vigilance_mod
+import share_card as share_card_mod
 import asyncio
 
 ROOT_DIR = Path(__file__).parent
@@ -192,6 +193,17 @@ async def weather_wind_grid(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, 
 async def weather_vigilance():
     """Vigilance météo calculée localement (Open-Meteo) pour Lourdes + départements voisins."""
     return await vigilance_mod.compute_vigilance()
+
+
+@api_router.get("/share/card.png")
+async def share_card_png():
+    """Shareable PNG snapshot (1200x630) of current storm state around Lourdes."""
+    png_bytes = await share_card_mod.render_share_card()
+    return Response(
+        content=png_bytes,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=60"},
+    )
 
 
 # ---------- Lightning (Blitzortung) ----------

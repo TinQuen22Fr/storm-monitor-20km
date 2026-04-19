@@ -24,7 +24,7 @@ export default function TrajectoryLayer({ center, enabled = true, fitSignal = 0 
     const load = async () => {
       try {
         const { data } = await api.get("/storms/trajectory", {
-          params: { lat: center.lat, lon: center.lon, radius_km: 150, project_minutes: 45 },
+          params: { lat: center.lat, lon: center.lon, radius_km: 70, project_minutes: 45 },
         });
         if (!cancel) setTraj(data?.detected ? data : null);
       } catch { /* ignore */ }
