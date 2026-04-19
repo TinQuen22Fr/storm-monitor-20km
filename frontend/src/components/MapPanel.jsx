@@ -99,7 +99,6 @@ export default function MapPanel({
   onToggleFullscreen,
   cursorTs = null,
   isLive = true,
-  timelineChildren = null,
 }) {
   const centerLL = useMemo(() => [center.lat, center.lon], [center.lat, center.lon]);
   const centerIcon = useMemo(() => buildCenterIcon(), []);
@@ -282,7 +281,6 @@ export default function MapPanel({
       )}
 
       <WeatherLayersPanel {...wx} isMobile={isMobile} timelineDriven />
-      {timelineChildren}
     </div>
   );
 }

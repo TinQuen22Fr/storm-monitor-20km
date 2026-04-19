@@ -170,32 +170,31 @@ export default function Dashboard() {
       <section
         className={`${
           fullscreen ? "lg:col-span-12" : "lg:col-span-8"
-        } col-span-1 order-1 lg:order-2 h-[70vh] lg:h-full relative z-0`}
+        } col-span-1 order-1 lg:order-2 h-[70vh] lg:h-full relative z-0 flex flex-col`}
         data-testid="map-area"
       >
-        <MapPanel
-          zones={zones?.zones || []}
-          strikes={displayedStrikes}
-          center={center}
-          radiusKm={radius}
-          fullscreen={fullscreen}
-          onToggleFullscreen={() => setFullscreen((v) => !v)}
+        <div className="flex-1 min-h-0 relative">
+          <MapPanel
+            zones={zones?.zones || []}
+            strikes={displayedStrikes}
+            center={center}
+            radiusKm={radius}
+            fullscreen={fullscreen}
+            onToggleFullscreen={() => setFullscreen((v) => !v)}
+            cursorTs={cursorTs}
+            isLive={isLive}
+          />
+        </div>
+        <Timeline
           cursorTs={cursorTs}
+          onCursorChange={setCursorTs}
+          playing={playing}
+          setPlaying={setPlaying}
           isLive={isLive}
-          timelineChildren={
-            <Timeline
-              cursorTs={cursorTs}
-              onCursorChange={setCursorTs}
-              playing={playing}
-              setPlaying={setPlaying}
-              isLive={isLive}
-              onResetLive={() => {
-                setPlaying(false);
-                setCursorTs(Math.floor(Date.now() / 1000));
-              }}
-              isMobile={isMobile}
-            />
-          }
+          onResetLive={() => {
+            setPlaying(false);
+            setCursorTs(Math.floor(Date.now() / 1000));
+          }}
         />
       </section>
 

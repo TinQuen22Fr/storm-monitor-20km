@@ -17,7 +17,6 @@ export default function Timeline({
   setPlaying,
   isLive,
   onResetLive,
-  isMobile = false,
 }) {
   const nowRef = useRef(Math.floor(Date.now() / 1000));
   const [nowTs, setNowTs] = useState(nowRef.current);
@@ -59,11 +58,7 @@ export default function Timeline({
 
   return (
     <div
-      className={`absolute z-[600] bg-white border border-slate-200 shadow-[0_2px_24px_rgba(0,0,0,0.08)] ${
-        isMobile
-          ? "bottom-[260px] left-4 right-4"
-          : "bottom-6 left-1/2 -translate-x-1/2 w-[70%] max-w-[700px]"
-      }`}
+      className="relative bg-white border-t border-slate-200 w-full shrink-0"
       data-testid="timeline"
     >
       <div className="flex items-center gap-3 px-4 py-3">
