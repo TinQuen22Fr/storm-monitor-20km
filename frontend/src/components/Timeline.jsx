@@ -56,6 +56,20 @@ export default function Timeline({
 
   const minutesAgo = Math.round((nowTs - cursorTs) / 60);
 
+  const PRESETS = [
+    { label: "Maintenant", offset: 0 },
+    { label: "-30 min", offset: 30 * 60 },
+    { label: "-1 h", offset: 3600 },
+    { label: "-3 h", offset: 3 * 3600 },
+    { label: "-6 h", offset: 6 * 3600 },
+    { label: "-12 h", offset: 12 * 3600 },
+  ];
+
+  const activePreset = PRESETS.reduce((best, p) => {
+    const diff = Math.abs(nowTs - p.offset - cursorTs);
+    return !best || diff < best.diff ? { ...p, diff } : best;
+  }, null);
+
   return (
     <div
       className="relative bg-white border-t border-slate-200 w-full shrink-0"
@@ -125,8 +139,45 @@ export default function Timeline({
         )}
       </div>
 
-      <div className="hidden sm:block border-t border-slate-100 px-4 py-1.5 font-mono text-[9px] uppercase tracking-[0.2em] text-slate-400">
-        Nuages · Pluie · Impacts synchronisés sur le curseur
+      <div className="hidden sm:block border-t border-slate-100 px-4 py-2 flex items-center gap-1.5 overflow-x-auto">
+        <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-slate-400 shrink-0 mr-2">
+          Sauter à
+        </span>
+        {PRESETS.map((p) => {
+          const isActive = activePreset && activePreset.label === p.label && activePreset.diff < 120;
+          return (
+            <button
+              key={p.label}
+              onClick={() => {
+                setPlaying(false);
+                onCursorChange(nowTs - p.offset);
+              }}
+              className={`px-2.5 h-7 font-mono text-[10px] uppercase tracking-[0.15em] border transition-colors shrink-0 ${
+                isActive
+                  ? "bg-slate-900 text-white border-slate-900"
+                  : "bg-white text-slate-700 border-slate-200 hover:border-slate-900 hover:text-slate-900"
+              }`}
+              data-testid={`timeline-preset-${p.offset}`}
+            >
+              {p.label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="sm:hidden border-t border-slate-100 px-3 py-2 flex items-center gap-1 overflow-x-auto">
+        {PRESETS.map((p) => (
+          <button
+            key={p.label}
+            onClick={() => {
+              setPlaying(false);
+              onCursorChange(nowTs - p.offset);
+            }}
+            className="px-2 h-7 font-mono text-[10px] uppercase border border-slate-200 shrink-0"
+            data-testid={`timeline-preset-mobile-${p.offset}`}
+          >
+            {p.label}
+          </button>
+        ))}
       </div>
       <div
         className="absolute top-0 left-0 h-[2px] bg-slate-900 pointer-events-none transition-all"

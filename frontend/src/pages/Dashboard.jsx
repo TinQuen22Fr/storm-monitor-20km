@@ -4,6 +4,7 @@ import MapPanel from "@/components/MapPanel";
 import AlertBanner from "@/components/AlertBanner";
 import ApproachAlert from "@/components/ApproachAlert";
 import Timeline from "@/components/Timeline";
+import VigilanceBanner from "@/components/VigilanceBanner";
 import NavTabs from "@/components/NavTabs";
 import CurrentConditions from "@/components/CurrentConditions";
 import CapeGauge from "@/components/CapeGauge";
@@ -211,6 +212,8 @@ export default function Dashboard() {
           maxLp={zones?.max_lightning_potential}
           fetchedAt={lastFetch}
         />
+
+        <VigilanceBanner />
 
         {approach?.approaching && (
           <div className="px-6 pt-4">

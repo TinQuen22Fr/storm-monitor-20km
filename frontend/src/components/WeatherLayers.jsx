@@ -46,7 +46,7 @@ export function useWeatherLayersState({ cursorTs = null, isLive = true } = {}) {
   const [showTrajectory, setShowTrajectory] = useState(true);
   const [windMaxSpeed, setWindMaxSpeed] = useState(null);
   const [frame, setFrame] = useState(0);
-  const [playing, setPlaying] = useState(true);
+  const [playing, setPlaying] = useState(false);
   const tickRef = useRef(null);
 
   useEffect(() => {
@@ -269,7 +269,7 @@ export function WeatherLayersPanel({
         </button>
       </div>
 
-      {!timelineDriven && (showClouds || showRain) && activeFrames.length > 0 && (
+      {(showClouds || showRain) && activeFrames.length > 0 && (
         <div className="border-t border-slate-200 px-4 py-3 flex items-center gap-3">
           <button
             onClick={() => setPlaying((p) => !p)}

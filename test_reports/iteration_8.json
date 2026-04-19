@@ -1,0 +1,73 @@
+{
+  "summary": "Iteration 8 testing complete: (a) NEW /api/weather/vigilance endpoint validated (structure, 5 depts 65/64/32/31/09, 6 phenomena per dept, caching), (b) VigilanceBanner UI (testid=vigilance-banner) + expand/collapse (vigilance-toggle/expanded), (c) Timeline preset chips (timeline-preset-0/1800/3600/10800/21600/43200) switch state between 'EN DIRECT' and 'REJEU · IL Y A X MIN', (d) Cloud flicker fix: playing=false default, play-pause-frames + frame-slider both visible. All 57 backend tests pass. All frontend selectors found and interactions working.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Historique page",
+        "issues": ["Recurring Recharts warning 'width(-1) and height(-1) of chart should be greater than 0' on initial mount. Non-blocking, charts render (6+ recharts-wrapper elements). Pre-existing issue from iter-7."]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_storm_tracker.py",
+    "/app/test_reports/pytest/pytest_results_iter8.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "vigilance.py correctly computes worst-of-today-and-tomorrow merge per phenomenon and surfaces overall_level as max across 5 depts. Hardcoded thresholds (wind 70/100/130, precip 25/50/100) are reasonable Météo-France-style approximations; may want to externalise to config in future.",
+    "vigilance.py imports `_cached` from weather module — private-looking name (leading underscore). Consider exposing it as public helper (`cached`) to avoid the implicit API contract.",
+    "Disclaimer is returned in every response (good), but it's not rendered in VigilanceBanner expanded view verification (not asserted in tests). Main agent may want to confirm disclaimer text is shown to users in the expanded panel.",
+    "Timeline preset buttons use inline labels in SAUTER À row — accessible and clearly labelled. No issues found.",
+    "WeatherLayers frame-slider + play-pause-frames visible simultaneously when timelineDriven was previously hiding frame-slider; test confirmed both are now present. Good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_storm_tracker.py (added TestVigilance class with 4 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (57/57 tests passing)",
+    "frontend": "100% (vigilance banner + timeline presets + cloud flicker fix all validated)"
+  },
+  "test_credentials": {
+    "email": "test@lourdes.fr",
+    "password": "storm123",
+    "upload_api_key": "from /app/backend/.env UPLOAD_API_KEY"
+  },
+  "seed_data_creation": "",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "ITER-8 FEATURES VALIDATED: (1) GET /api/weather/vigilance returns {overall_level:1-4, overall_level_fr:vert|jaune|orange|rouge, overall_color:#hex, overall_label, departements:[5], phenomena_meta, levels_meta, disclaimer, source:'open-meteo'}. Each dept has phenomena list with 6 items (orage, vent, pluie, canicule, grand-froid, neige) each having {level, level_fr, color, today, tomorrow}. Current weather is calm so overall=1 (vert) — this is correct PASS behavior. Cached (TTL 15min), second call <1s. (2) Frontend: [data-testid=vigilance-banner] appears below AlertBanner in sidebar. [data-testid=vigilance-toggle] expand/collapses showing [data-testid=vigilance-expanded]. (3) Timeline has 6 preset chips in 'SAUTER À' row: timeline-preset-0 (Maintenant), timeline-preset-1800 (-30 min), timeline-preset-3600 (-1 h), timeline-preset-10800 (-3 h), timeline-preset-21600 (-6 h), timeline-preset-43200 (-12 h). Clicking non-zero preset changes badge from '● EN DIRECT' to '↺ REJEU · IL Y A 30 MIN'. Clicking Maintenant returns to EN DIRECT. (4) Cloud flicker fix: [data-testid=toggle-clouds] ON no longer auto-cycles. Both [data-testid=play-pause-frames] and [data-testid=frame-slider] are visible and functional. (5) Regression: 4 WeatherLayers toggles (toggle-clouds, toggle-rain, toggle-wind, toggle-trajectory) all present; /historique loads with 6 chart elements. All 57 backend endpoints pass regression. Test command: REACT_APP_BACKEND_URL=https://storm-monitor-20km.preview.emergentagent.com python -m pytest backend/tests/test_storm_tracker.py -v",
+  "features_tested": {
+    "backend_new": [
+      "GET /api/weather/vigilance basic structure (9 required keys)",
+      "GET /api/weather/vigilance returns 5 depts (09, 31, 32, 64, 65)",
+      "GET /api/weather/vigilance each dept has 6 phenomena with level/level_fr/color/today/tomorrow",
+      "GET /api/weather/vigilance caching (2nd call <1s)"
+    ],
+    "backend_regression": [
+      "All 53 prior tests still pass (weather, auth, favorites, push, bulletin PDF, storm zones, lightning, trajectory, approach, forecast, storm uploads)"
+    ],
+    "frontend_new": [
+      "VigilanceBanner rendered below AlertBanner",
+      "vigilance-toggle expands/collapses vigilance-expanded panel",
+      "Timeline 6 preset chips present",
+      "Preset click switches badge EN DIRECT ↔ REJEU correctly",
+      "Clouds toggle ON no longer flickers (playing=false)",
+      "play-pause-frames + frame-slider both visible"
+    ],
+    "frontend_regression": [
+      "4 WeatherLayers toggles present",
+      "Timeline still renders (not overlaying map)",
+      "/historique page loads with charts"
+    ]
+  },
+  "mocked_apis": {
+    "has_mocked_apis": false,
+    "note": "Vigilance computed locally from real Open-Meteo data. No mocks."
+  }
+}

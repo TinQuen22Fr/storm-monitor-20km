@@ -1010,5 +1010,62 @@ class TestForecastStormRisk:
         print(f"✓ Storm risk forecast: {len(data['days'])} days")
 
 
+class TestVigilance:
+    """Test /api/weather/vigilance endpoint (PHASE 9 - Météo-France-style vigilance)"""
+
+    def test_vigilance_basic_structure(self):
+        """GET /api/weather/vigilance returns all required top-level keys"""
+        response = requests.get(f"{BASE_URL}/api/weather/vigilance")
+        assert response.status_code == 200
+        data = response.json()
+        for key in ["overall_level", "overall_level_fr", "overall_color", "overall_label",
+                    "departements", "phenomena_meta", "levels_meta", "disclaimer", "source"]:
+            assert key in data, f"Missing top-level key: {key}"
+        assert data["source"] == "open-meteo"
+        assert data["overall_level_fr"] in ("vert", "jaune", "orange", "rouge")
+        assert data["overall_color"].startswith("#")
+        assert 1 <= data["overall_level"] <= 4
+        print(f"✓ Vigilance overall={data['overall_level']} ({data['overall_level_fr']}) color={data['overall_color']}")
+
+    def test_vigilance_five_departements(self):
+        """Vigilance returns 5 departements (65, 64, 32, 31, 09)"""
+        response = requests.get(f"{BASE_URL}/api/weather/vigilance")
+        assert response.status_code == 200
+        data = response.json()
+        depts = data["departements"]
+        assert len(depts) == 5
+        dept_ids = sorted([d["id"] for d in depts])
+        assert dept_ids == ["09", "31", "32", "64", "65"], f"Got {dept_ids}"
+        print(f"✓ Vigilance has 5 depts: {dept_ids}")
+
+    def test_vigilance_phenomena_per_dept(self):
+        """Each dept has 6 phenomena (orage, vent, pluie, canicule, grand-froid, neige)"""
+        response = requests.get(f"{BASE_URL}/api/weather/vigilance")
+        data = response.json()
+        expected_keys = {"orage", "vent", "pluie", "canicule", "grand-froid", "neige"}
+        for dept in data["departements"]:
+            phen_keys = {p["key"] for p in dept["phenomena"]}
+            assert phen_keys == expected_keys, f"Dept {dept['id']} has {phen_keys}"
+            for p in dept["phenomena"]:
+                assert 1 <= p["level"] <= 4
+                assert p["level_fr"] in ("vert", "jaune", "orange", "rouge")
+                assert p["color"].startswith("#")
+                assert "today" in p and "tomorrow" in p
+        print("✓ All 5 depts have 6 phenomena with correct structure")
+
+    def test_vigilance_cached_fast(self):
+        """Second call to /api/weather/vigilance should be fast (cached TTL 15min)"""
+        import time
+        requests.get(f"{BASE_URL}/api/weather/vigilance")  # warm up
+        start = time.time()
+        response = requests.get(f"{BASE_URL}/api/weather/vigilance")
+        elapsed = time.time() - start
+        assert response.status_code == 200
+        assert elapsed < 1.0, f"Cached vigilance took {elapsed:.2f}s"
+        print(f"✓ Cached vigilance response: {elapsed*1000:.0f}ms")
+
+
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

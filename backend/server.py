@@ -39,6 +39,7 @@ import push as push_mod
 import reports as reports_mod
 import analysis as analysis_mod
 import uploads as uploads_mod
+import vigilance as vigilance_mod
 import asyncio
 
 ROOT_DIR = Path(__file__).parent
@@ -185,6 +186,12 @@ async def storm_zones(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius
 @api_router.get("/weather/wind-grid")
 async def weather_wind_grid(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM):
     return await fetch_wind_grid(lat, lon, radius_km)
+
+
+@api_router.get("/weather/vigilance")
+async def weather_vigilance():
+    """Vigilance météo calculée localement (Open-Meteo) pour Lourdes + départements voisins."""
+    return await vigilance_mod.compute_vigilance()
 
 
 # ---------- Lightning (Blitzortung) ----------
