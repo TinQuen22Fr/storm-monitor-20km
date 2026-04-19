@@ -73,10 +73,8 @@ def analyze_approach(center_lat: float, center_lon: float, strikes: List[Dict[st
     if approaching and speed_kmh > 0:
         eta_min = (min_distance / speed_kmh) * 60.0
 
-    # Direction from closest recent strike to center
     closest = min(new_half, key=lambda s: float(s["distance_km"]))
     brg = _bearing_deg(float(closest["lat"]), float(closest["lon"]), center_lat, center_lon)
-    # We want the direction the storm is coming FROM (opposite of bearing to center)
     from_brg = (brg + 180.0) % 360.0
 
     return {
@@ -91,6 +89,106 @@ def analyze_approach(center_lat: float, center_lon: float, strikes: List[Dict[st
         "eta_min": round(eta_min, 1) if eta_min is not None else None,
         "from_bearing": round(from_brg, 1),
         "from_compass": compass_fr(from_brg),
+    }
+
+
+def predict_trajectory(
+    center_lat: float,
+    center_lon: float,
+    strikes: List[Dict[str, Any]],
+    now: Optional[float] = None,
+    project_minutes: int = 45,
+) -> Dict[str, Any]:
+    """Linear-regression trajectory prediction of the storm centroid.
+
+    Fits lat(t) and lon(t) over the last 60 minutes of strikes and projects
+    the centroid forward. Returns waypoints every 10 min up to project_minutes
+    and ETA for crossing within 10 km of the center.
+    """
+    now = now or time.time()
+    recent = [s for s in strikes if now - s["ts"] <= 3600]
+    if len(recent) < 4:
+        return {"detected": False, "reason": "not_enough_strikes", "count": len(recent)}
+
+    # Sort by time and pick the last 20 max to limit noise
+    recent.sort(key=lambda s: s["ts"])
+    recent = recent[-20:]
+
+    ts = [float(s["ts"]) for s in recent]
+    lats = [float(s["lat"]) for s in recent]
+    lons = [float(s["lon"]) for s in recent]
+
+    # Normalize time axis (minutes since first)
+    t0 = ts[0]
+    x = [(t - t0) / 60.0 for t in ts]
+    n = len(x)
+    mean_x = sum(x) / n
+    mean_lat = sum(lats) / n
+    mean_lon = sum(lons) / n
+
+    var_x = sum((xi - mean_x) ** 2 for xi in x)
+    if var_x == 0:
+        return {"detected": False, "reason": "static_centroid"}
+
+    slope_lat = sum((xi - mean_x) * (lat - mean_lat) for xi, lat in zip(x, lats)) / var_x
+    slope_lon = sum((xi - mean_x) * (lon - mean_lon) for xi, lon in zip(x, lons)) / var_x
+
+    # Current projected centroid (at now minute)
+    now_min = (now - t0) / 60.0
+
+    def at(minute_offset: float) -> Dict[str, float]:
+        m = now_min + minute_offset
+        plat = mean_lat + slope_lat * (m - mean_x)
+        plon = mean_lon + slope_lon * (m - mean_x)
+        return {
+            "lat": round(plat, 4),
+            "lon": round(plon, 4),
+            "t_offset_min": minute_offset,
+        }
+
+    # Current + projected path
+    waypoints: List[Dict[str, float]] = [at(0)]
+    for off in range(10, project_minutes + 1, 10):
+        waypoints.append(at(off))
+
+    # Motion speed km/h
+    # Distance between waypoint(0) and waypoint(60 min) divided by 1 hour
+    p1 = at(0)
+    p2 = at(60)
+    import math as _m
+    def _hav(la1, lo1, la2, lo2):
+        r = 6371.0
+        p1 = _m.radians(la1); p2 = _m.radians(la2)
+        dp = _m.radians(la2 - la1)
+        dl = _m.radians(lo2 - lo1)
+        a = _m.sin(dp / 2) ** 2 + _m.cos(p1) * _m.cos(p2) * _m.sin(dl / 2) ** 2
+        return 2 * r * _m.asin(_m.sqrt(a))
+
+    hourly_km = _hav(p1["lat"], p1["lon"], p2["lat"], p2["lon"])
+    speed_kmh = round(hourly_km, 1)
+
+    # Will it cross near the center (<=10 km)?
+    eta_min: Optional[float] = None
+    min_distance: float = _hav(p1["lat"], p1["lon"], center_lat, center_lon)
+    for off in range(0, project_minutes + 1, 5):
+        w = at(off)
+        d = _hav(w["lat"], w["lon"], center_lat, center_lon)
+        if d < min_distance:
+            min_distance = d
+            if d <= 10.0 and eta_min is None:
+                eta_min = off
+
+    bearing = _bearing_deg(p1["lat"], p1["lon"], p2["lat"], p2["lon"])
+
+    return {
+        "detected": True,
+        "count": n,
+        "waypoints": waypoints,
+        "speed_kmh": speed_kmh,
+        "bearing_deg": round(bearing, 0),
+        "compass": compass_fr(bearing),
+        "eta_min": eta_min,
+        "closest_distance_km": round(min_distance, 1),
     }
 
 

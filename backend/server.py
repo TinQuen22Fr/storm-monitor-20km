@@ -219,6 +219,18 @@ async def storms_approach(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, ra
     return result
 
 
+@api_router.get("/storms/trajectory")
+async def storms_trajectory(
+    lat: float = LOURDES_LAT,
+    lon: float = LOURDES_LON,
+    radius_km: float = 150.0,
+    project_minutes: int = 45,
+):
+    """Predict the storm centroid trajectory via linear regression on recent strikes."""
+    strikes = await lightning_mod.store.recent(lat, lon, radius_km, since_ts=None)
+    return analysis_mod.predict_trajectory(lat, lon, strikes, project_minutes=project_minutes)
+
+
 @api_router.get("/forecast/storm-risk")
 async def forecast_storm_risk(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, days: int = 7):
     """Daily storm risk forecast for the next N days."""

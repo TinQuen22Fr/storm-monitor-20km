@@ -179,6 +179,33 @@ body {
   }
 }
 
+/* Wind arrows drift animation */
+.wind-arrow-anim {
+  animation: wind-drift 2.4s ease-in-out infinite;
+  transform-origin: center;
+}
+@keyframes wind-drift {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+    opacity: 0.95;
+  }
+  50% {
+    transform: translateY(-2px) scale(1.04);
+    opacity: 1;
+  }
+}
+
+/* Trajectory dashed line animation */
+.trajectory-path {
+  stroke-dasharray: 10 6;
+  animation: trajectory-dash 1.2s linear infinite;
+}
+@keyframes trajectory-dash {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
+
 @layer base {
   [data-debug-wrapper="true"] {
     display: contents !important;

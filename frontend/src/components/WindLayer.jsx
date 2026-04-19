@@ -14,14 +14,12 @@ function colorForSpeed(kmh) {
 function buildArrowIcon(speed, direction) {
   const color = colorForSpeed(speed);
   const size = Math.max(22, Math.min(42, 22 + speed / 2));
-  // SVG arrow pointing "toward" direction (wind blows TO this direction)
-  // Meteorology convention: wind_direction is direction wind comes FROM.
-  // So we rotate the arrow to point AWAY from that direction (+180°).
   const rot = (direction + 180) % 360;
   const label = Math.round(speed);
+  const delay = (Math.random() * 1.5).toFixed(2);
   return L.divIcon({
     className: "",
-    html: `<div style="width:${size}px;height:${size}px;position:relative;transform:rotate(${rot}deg);transform-origin:center;">
+    html: `<div class="wind-arrow-anim" style="width:${size}px;height:${size}px;position:relative;transform:rotate(${rot}deg);animation-delay:${delay}s">
       <svg viewBox="0 0 24 24" width="${size}" height="${size}" style="filter:drop-shadow(0 1px 1px rgba(0,0,0,0.25))">
         <path d="M12 2 L16 10 L13 10 L13 22 L11 22 L11 10 L8 10 Z"
               fill="${color}" stroke="#ffffff" stroke-width="1" stroke-linejoin="round" />
