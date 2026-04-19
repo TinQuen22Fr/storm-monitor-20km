@@ -156,3 +156,24 @@
 - Export bulletin PDF multilingue (EN)
 - PWA installable + badge icon number pour impacts en cours
 
+
+## Phase 10 Implemented (2026-04-19) — Vigilance + stabilité tuiles + presets timeline
+- ✅ **Vigilance "à la Météo-France"** (`/app/backend/vigilance.py` + `/api/weather/vigilance`) : calcul 4 niveaux (vert/jaune/orange/rouge) sur 6 phénomènes (orages, vent, pluie-inondation, canicule, grand froid, neige-verglas) pour Lourdes (65) + 4 départements voisins (64, 32, 31, 09). Source : Open-Meteo forecast+daily, cache 15 min. (L'API officielle Météo-France est protégée par Akamai/token depuis le sandbox — le disclaimer redirige vers vigilance.meteofrance.fr)
+- ✅ **`<VigilanceBanner>`** (`/app/frontend/src/components/VigilanceBanner.jsx`) : bandeau couleur en haut du sidebar, click-to-expand → grille 6 phénomènes × (aujourd'hui/demain) + chips des départements voisins + disclaimer
+- ✅ **Fix clignotement Nuages** : `playing = false` par défaut dans `useWeatherLayersState` → les tuiles restent figées sur la frame la plus récente (ou choisie). User peut relancer l'animation via le bouton play/pause interne
+- ✅ **Slider de frames réactivé** : le slider `data-testid='frame-slider'` est à nouveau visible dans le `WeatherLayersPanel` pour choisir manuellement l'instant (clouds 5 jours / radar 2 h)
+- ✅ **Presets Timeline** : chips "Maintenant / -30 min / -1 h / -3 h / -6 h / -12 h" (`data-testid='timeline-preset-{offset}'`) pour sauter rapidement à un instant antérieur ; le preset actif est surligné
+
+## Test Results (iteration_8)
+- Backend 57/57 tests (nouveau `/api/weather/vigilance` validé, structure complète, cache OK, toutes régressions)
+- Frontend 100% : VigilanceBanner + expand, presets Timeline, plus de clignotement des nuages, frame-slider visible
+- Aucune action-item en attente, aucun retest nécessaire
+
+## Prochaines pistes / Backlog
+- Badge flottant vitesse/cap/ETA de la trajectoire au-dessus de la carte
+- Option : ancrer la prédiction de trajectoire sur cursorTs (au lieu de toujours live)
+- Si un compte Météo-France API est fourni par l'utilisateur, brancher la vigilance officielle (token → `public-api.meteofrance.fr/.../cartevigilance/encours`)
+- Bouton "Partager l'orage" (lien horodaté `?ts=&radius=`)
+- PWA installable + badge numérique
+- Export bulletin PDF multilingue (EN)
+
