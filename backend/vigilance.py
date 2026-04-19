@@ -19,7 +19,6 @@ Levels match Météo-France colours:
 """
 from __future__ import annotations
 
-import asyncio
 import time
 from typing import Any, Dict, List
 
@@ -116,23 +115,29 @@ PHENOMENA_META = [
 ]
 
 
-async def _fetch_open_meteo(lat: float, lon: float) -> Dict[str, Any]:
-    async def _do() -> Dict[str, Any]:
+async def _fetch_open_meteo_multi(depts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Single request for all depts — Open-Meteo supports comma-separated coords."""
+    async def _do() -> List[Dict[str, Any]]:
+        lats = ",".join(f"{d['lat']}" for d in depts)
+        lons = ",".join(f"{d['lon']}" for d in depts)
         params = {
-            "latitude": lat,
-            "longitude": lon,
+            "latitude": lats,
+            "longitude": lons,
             "hourly": "weather_code,cape",
             "daily": "weather_code,wind_gusts_10m_max,precipitation_sum,precipitation_hours,"
                      "temperature_2m_max,temperature_2m_min,cape_max,snowfall_sum",
             "forecast_days": 2,
             "timezone": "auto",
         }
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             r = await client.get(OPEN_METEO_BASE, params=params)
             r.raise_for_status()
-            return r.json()
+            data = r.json()
+            # When multi-location is used, Open-Meteo returns a list
+            return data if isinstance(data, list) else [data]
 
-    return await _cached(f"vigilance:{lat:.3f}:{lon:.3f}", ttl=900.0, fn=_do)
+    key = "vigilance:multi:" + ",".join(d["id"] for d in depts)
+    return await _cached(key, ttl=900.0, fn=_do)
 
 
 def _day_levels(day_idx: int, data: Dict[str, Any]) -> Dict[str, int]:
@@ -194,8 +199,9 @@ LOURDES_DEPTS = [
 
 async def compute_vigilance() -> Dict[str, Any]:
     """Compute vigilance per phenomenon for Lourdes (65) and 4 neighbouring depts."""
-    async def _one(dept: Dict[str, Any]) -> Dict[str, Any]:
-        data = await _fetch_open_meteo(dept["lat"], dept["lon"])
+    all_data = await _fetch_open_meteo_multi(LOURDES_DEPTS)
+
+    def _one(dept: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, Any]:
         today = _day_levels(0, data)
         tomorrow = _day_levels(1, data)
         merged = {k: max(today[k], tomorrow[k]) for k in today}
@@ -227,7 +233,7 @@ async def compute_vigilance() -> Dict[str, Any]:
             "values_tomorrow": vals_tomorrow,
         }
 
-    results = await asyncio.gather(*[_one(d) for d in LOURDES_DEPTS])
+    results = [_one(d, all_data[i]) for i, d in enumerate(LOURDES_DEPTS) if i < len(all_data)]
     # Overall worst level among all depts
     overall = max(r["max_level"] for r in results)
     return {

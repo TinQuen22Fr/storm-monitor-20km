@@ -167,6 +167,24 @@ def predict_trajectory(
     hourly_km = _hav(p1["lat"], p1["lon"], p2["lat"], p2["lon"])
     speed_kmh = round(hourly_km, 1)
 
+    # Reject noisy regressions: real storm cells move 5-100 km/h. > 120 means
+    # the strikes are spatially dispersed and the linear fit is meaningless.
+    if speed_kmh > 120.0:
+        return {
+            "detected": False,
+            "reason": "noise_too_high",
+            "computed_speed_kmh": speed_kmh,
+            "count": n,
+        }
+    if speed_kmh < 3.0:
+        # Quasi-stationary → not a moving cell, don't draw a prediction line
+        return {
+            "detected": False,
+            "reason": "stationary",
+            "computed_speed_kmh": speed_kmh,
+            "count": n,
+        }
+
     # Will it cross near the center (<=10 km)?
     eta_min: Optional[float] = None
     min_distance: float = _hav(p1["lat"], p1["lon"], center_lat, center_lon)

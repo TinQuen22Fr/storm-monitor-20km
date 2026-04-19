@@ -10,6 +10,7 @@ import {
 } from "@/components/WeatherLayers";
 import WindLayer from "@/components/WindLayer";
 import TrajectoryLayer from "@/components/TrajectoryLayer";
+import TrajectoryBadge from "@/components/TrajectoryBadge";
 import { useIsMobile } from "@/lib/useIsMobile";
 
 delete L.Icon.Default.prototype._getIconUrl;
@@ -281,6 +282,7 @@ export default function MapPanel({
       )}
 
       <WeatherLayersPanel {...wx} isMobile={isMobile} timelineDriven />
+      <TrajectoryBadge center={center} enabled={wx.showTrajectory && isLive} />
     </div>
   );
 }
