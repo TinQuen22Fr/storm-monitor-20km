@@ -177,3 +177,22 @@
 - PWA installable + badge numérique
 - Export bulletin PDF multilingue (EN)
 
+
+## Phase 11 Implemented (2026-04-19) — Click-to-fit trajectoire + push vigilance auto
+- ✅ **TrajectoryBadge cliquable** : devient `<button>` avec icône `Maximize2`. Clic → `onFit()` → `fitSignal++` → `TrajectoryLayer` appelle `map.flyToBounds(waypoints + center, maxZoom:10, duration:0.8)` et cadre automatiquement la carte sur la trajectoire prédite. Désactivé (disabled + cursor-default) quand `!detected`
+- ✅ **Filtre trajectoire "bruitée"** côté backend (`analysis.predict_trajectory`) : rejette les régressions > 120 km/h (`noise_too_high`) et < 3 km/h (`stationary`). Évite d'afficher des polylignes délirantes quand la foudre est spatialement dispersée (Pyrénées = cellules multiples)
+- ✅ **Fix rate-limit Open-Meteo** pour vigilance : single-request multi-location (`latitude=43.0951,43.18,...&longitude=...`) au lieu de 5 requêtes parallèles
+- ✅ **Push auto vigilance** dans `_alert_watcher` : toutes les 20 min vérifie `compute_vigilance()` pour Lourdes (65). Sur transition vers niveau ≥3 ET > niveau précédent, envoie push VAPID avec titre `⚠ Vigilance ORANGE/ROUGE · Lourdes` et liste les phénomènes concernés (orages, vent, pluie-inondation, etc.)
+
+## Test Results (iteration_9)
+- Backend 61/61 (57 intégration + 4 tests unitaires predict_trajectory : not_enough_strikes / stationary / noise_too_high / happy path)
+- Frontend 100% : trajectory-badge est un `<button>` avec état disabled correct + reason text lisible
+- Zéro critical, zéro action item
+
+## Prochaines pistes / Backlog
+- Ancrer la prédiction de trajectoire sur `cursorTs` (rejouer ce que le modèle prévoyait)
+- PWA installable + badge numérique
+- Partage URL horodatée (`?ts=&radius=`)
+- Bulletin PDF multilingue (EN)
+- Si clé Météo-France officielle fournie, remplacer la vigilance locale
+
