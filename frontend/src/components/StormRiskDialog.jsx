@@ -142,10 +142,10 @@ export default function StormRiskDialog({ lat, lon }) {
         </button>
       </DialogTrigger>
       <DialogContent
-        className="rounded-none border-slate-900 max-w-5xl p-0 max-h-[90vh] overflow-hidden"
+        className="rounded-none border-slate-900 max-w-5xl p-0 max-h-[90vh] flex flex-col overflow-hidden"
         data-testid="storm-risk-dialog"
       >
-        <div className="p-8 border-b border-slate-100">
+        <div className="p-8 border-b border-slate-100 shrink-0">
           <DialogHeader>
             <div className="text-[10px] font-mono uppercase tracking-[0.25em] text-slate-400 mb-2">
               Prévisions orage · Lourdes
@@ -160,7 +160,7 @@ export default function StormRiskDialog({ lat, lon }) {
           </DialogHeader>
         </div>
 
-        <div className="p-8 overflow-y-auto">
+        <div className="p-8 overflow-y-auto flex-1 min-h-0" data-testid="storm-risk-scroll">
           {loading ? (
             <div className="text-center text-sm text-slate-400 font-mono py-12">
               Chargement…

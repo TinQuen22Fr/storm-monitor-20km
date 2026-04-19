@@ -241,3 +241,10 @@
 - ✅ `reports.py` : nouvelle fonction `_utc_to_local_str` qui convertit les timestamps UTC en Europe/Paris via zoneinfo. Header affiche `(HEURE LOCALE)`, tableau Prévision 12 h = "Heure locale", tableau Impacts foudre = "Heure locale"
 - ✅ Validé par extraction PDF : `BULLETIN ORAGE LOURDES · 19 apr 2026 · 21:49 (HEURE LOCALE)` et colonnes "Heure locale"
 
+
+## Hotfix (2026-04-19) — Dialog scroll + polygones vigilance sur carte
+- ✅ **Scroll dialog 7 jours** : `DialogContent` passe en `flex flex-col`, en-tête en `shrink-0`, zone grille en `flex-1 min-h-0 overflow-y-auto` → les 7 jours (dim → sam) sont tous accessibles, scroll vertical interne confirmé (scrollHeight 904 > clientHeight 798)
+- ✅ **Polygones de vigilance sur la carte** (`/app/frontend/src/components/VigilancePolygons.jsx`) : récupère `/geo/lourdes-depts.geojson` (7 départements 65, 64, 32, 31, 09, 66, 40) + `/api/weather/vigilance` et dessine les contours colorés selon le niveau max de chaque dept (vert transparent, jaune #F59E0B fill 0.22, orange #EA580C 0.32, rouge #DC2626 0.4). Tooltip sticky au survol avec nom du dept + phénomènes actifs
+- ✅ Nouveau toggle **VIGILANCE** (5e bouton) dans `WeatherLayersPanel` (`data-testid='toggle-vigilance-polygons'`), activé par défaut
+- ✅ GeoJSON national data.gouv.fr simplifié (~85 KB), servi depuis `/app/frontend/public/geo/`
+
