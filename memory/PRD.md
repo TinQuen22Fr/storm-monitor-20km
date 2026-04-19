@@ -217,3 +217,22 @@
 - Bulletin PDF multilingue
 - Mode "Soirée orage" (plein écran sombre + son d'impact)
 
+
+## Phase 13 Implemented (2026-04-19) — Rayon 70km · Mode soirée orage · Carte partageable
+- ✅ **Rayon de calcul 70 km** (au lieu de 150 pour trajectoire, 100 pour approche) : correspond au max du slider UI, focalise les calculs sur la zone réellement pertinente pour Lourdes
+- ✅ **Mode soirée orage** (`/app/frontend/src/components/NightStormMode.jsx`) : overlay plein écran z-[2000], fond dark CartoDB, auto-zoom bounds sur les impacts + centre, cercles rayon 20 km (rouge) et 70 km (gris pointillé). Markers foudre animés (ping jaune <30s, orange <2min, rouge plus ancien). **Beep Web Audio API** (880Hz → 220Hz) sur chaque nouvel impact <30 km du centre. Toggle son, bouton close
+- ✅ **Carte partageable PNG** (`/app/backend/share_card.py` + route `/api/share/card.png`) : image 1200x630 (format OG standard) générée avec Pillow, bandeau vigilance (vert/jaune/orange/rouge), compteur d'impacts, orage le plus proche, approche/trajectoire détaillée, timestamp. Bouton "Partager (WhatsApp…)" utilise `navigator.share` avec fichier sur mobile, ou copie l'URL + ouvre dans un onglet sur desktop
+
+## Test Results (iteration_11)
+- Backend : /api/share/card.png retourne PNG binaire ~39 KB, vigilance jaune affichée correctement
+- Frontend : share-card-button, night-mode-button, overlay fullscreen, close, sound toggle, cercles 20/70 km, dark tiles — tout validé
+- 100% des regressions OK
+- (Note) Cache-Control écrasé par l'ingress preview Kubernetes — comportement infra, pas un bug code
+
+## Prochaines pistes / Backlog
+- Ancrer la prédiction de trajectoire sur `cursorTs` (rejouer le passé)
+- PWA installable + badge numérique
+- Partage URL horodatée `?ts=&radius=`
+- Bulletin PDF multilingue (EN)
+- Vigilance officielle MF via clé API si fournie (actuellement MeteoAlarm — source officielle MF)
+
