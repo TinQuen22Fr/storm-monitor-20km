@@ -236,6 +236,12 @@ async def weather_vigilance():
     return await vigilance_mod.compute_vigilance()
 
 
+@api_router.get("/weather/vigilance/full")
+async def weather_vigilance_full():
+    """Vigilance officielle MeteoAlarm pour toute la France + Andorre."""
+    return await vigilance_mod.compute_full_france_vigilance()
+
+
 @api_router.get("/share/card.png")
 async def share_card_png():
     """Shareable PNG snapshot (1200x630) of current storm state around Lourdes."""

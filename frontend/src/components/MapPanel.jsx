@@ -11,7 +11,6 @@ import {
 import WindLayer from "@/components/WindLayer";
 import TrajectoryLayer from "@/components/TrajectoryLayer";
 import TrajectoryBadge from "@/components/TrajectoryBadge";
-import VigilancePolygons from "@/components/VigilancePolygons";
 import { useIsMobile } from "@/lib/useIsMobile";
 
 delete L.Icon.Default.prototype._getIconUrl;
@@ -164,7 +163,6 @@ export default function MapPanel({
           onMaxSpeedChange={wx.setWindMaxSpeed}
         />
         <TrajectoryLayer center={center} enabled={wx.showTrajectory && isLive} fitSignal={fitSignal} />
-        <VigilancePolygons enabled={wx.showVigilance} />
         <FitToRadius center={centerLL} radiusKm={radiusKm} override={zoomOverride} />
         <InvalidateOnResize trigger={fullscreen} />
         <Circle

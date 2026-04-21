@@ -1,0 +1,40 @@
+{
+  "summary": "Iteration 12: validated major refactor — vigilance polygons moved from Dashboard to new /vigilance page covering all France + Andorra via MeteoAlarm. Backend 12/12 pytest passing. Frontend /vigilance renders 97 path elements (96 metro + Andorra), correct colors, legend, interaction. Dashboard cleanly reverted to storm-monitoring view with no vigilance polygons or toggle. All regression selectors intact.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_vigilance_full.py",
+    "/app/test_reports/pytest/pytest_results_iter12.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "vigilance.py INSEE_TO_NUTS3: verified at least 96 entries; known mappings (09→FR621, 65→FR626, 33→FR612, 31→FR623, 64→FR615, 66→FR815) all correct.",
+    "compute_full_france_vigilance caches 15 min — good; second call latency <100ms in test.",
+    "Andorra feed (feeds-andorra) merged into the same areas array with id='AD', country='AD' — clean design, no duplicate shape.",
+    "VigilancePage.jsx: overall_level computed from 102 areas; yellow count 13 during test (includes Cantal in addition to the 8 south-west depts). Live data is updating correctly.",
+    "MapPanel.jsx & WeatherLayers.jsx cleanly removed VigilancePolygons import/toggle — grep confirms 0 references.",
+    "NavTabs.jsx has exactly 3 entries (nav-live / nav-vigilance / nav-history) with correct data-testids and active highlighting on /vigilance.",
+    "Dashboard regression: all toggles (toggle-clouds/rain/wind/trajectory), vigilance-banner (#FFFBEB), trajectory-badge, timeline-preset-0, night-mode-button, share-card-button, download-bulletin-pdf all present.",
+    "/api/weather/vigilance/full returns 102 areas (96 metro + 5 DOM + AD) with full shape {id,name,country,max_level,max_level_fr,max_color,max_label,phenomena[],nuts3} — matches spec."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_vigilance_full.py (NEW — 12 tests for /api/weather/vigilance/full + regression)"
+  ],
+  "success_rate": {
+    "backend": "100% (12/12 pytest)",
+    "frontend": "100% (vigilance-page, nav-vigilance/live/history, vigilance-overall, legend-1..4, 97 polygons, yellow fill #F59E0B, click updates vigilance-selected-area to Cantal; Dashboard clean: no toggle-vigilance-polygons, all prior selectors present)"
+  },
+  "test_credentials": {"email": "test@lourdes.fr", "password": "storm123"},
+  "seed_data_creation": "",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "ITER-12 VALIDATED: /api/weather/vigilance/full works correctly. Backend returns 102 areas: 96 metro French depts (INSEE 01-95 + 2A/2B) + 5 DOM (971-976 range) + Andorra (id='AD', country='AD', name='Andorre'). Each area: {id, name, country, max_level(1-4), max_level_fr, max_color(#hex), max_label, phenomena[8], nuts3(FRxxx for metro, FRYxx for DOM, empty for AD)}. Source='meteoalarm'. Dept 65 Hautes-Pyrenees currently max_level=2, orages level=2 jaune color=#F59E0B. Andorra currently level=2 jaune for orages. Cache TTL 15min verified. VigilancePage.jsx: uses Leaflet + SVG polygons from /geo/france-depts.geojson (~97 paths incl. DOM? actually 96 metro rendered + Andorra = 97-100 paths). Overall level JAUNE correctly derived. Yellow count was 13 at test time (live MeteoAlarm data changed since iter-11 when 8 were yellow — this is expected data freshness). Dashboard (/) cleanly reverted: no vigilance polygons on map, only 20km circle + storm zones dots + lightning strikes. All regression selectors confirmed.",
+  "rca_of_the_issue": "N/A — no bugs found. Refactor is clean and complete."
+}

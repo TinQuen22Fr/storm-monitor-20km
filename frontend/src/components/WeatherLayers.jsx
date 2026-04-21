@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { TileLayer, useMap } from "react-leaflet";
-import { Activity, AlertTriangle, Cloud, CloudRain, Pause, Play, Wind } from "lucide-react";
+import { Activity, Cloud, CloudRain, Pause, Play, Wind } from "lucide-react";
 
 const RAINVIEWER_API = "https://api.rainviewer.com/public/weather-maps.json";
 const FRAME_DURATION_MS = 800;
@@ -44,7 +44,6 @@ export function useWeatherLayersState({ cursorTs = null, isLive = true } = {}) {
   const [showRain, setShowRain] = useState(false);
   const [showWind, setShowWind] = useState(false);
   const [showTrajectory, setShowTrajectory] = useState(true);
-  const [showVigilance, setShowVigilance] = useState(true);
   const [windMaxSpeed, setWindMaxSpeed] = useState(null);
   const [frame, setFrame] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -121,7 +120,6 @@ export function useWeatherLayersState({ cursorTs = null, isLive = true } = {}) {
     });
   const toggleWind = () => setShowWind((v) => !v);
   const toggleTrajectory = () => setShowTrajectory((v) => !v);
-  const toggleVigilance = () => setShowVigilance((v) => !v);
 
   const currentFrame = activeFrames[frame];
   let url = null;
@@ -147,12 +145,10 @@ export function useWeatherLayersState({ cursorTs = null, isLive = true } = {}) {
     showRain,
     showWind,
     showTrajectory,
-    showVigilance,
     toggleClouds,
     toggleRain,
     toggleWind,
     toggleTrajectory,
-    toggleVigilance,
     windMaxSpeed,
     setWindMaxSpeed,
     activeFrames,
@@ -192,12 +188,10 @@ export function WeatherLayersPanel({
   showRain,
   showWind,
   showTrajectory,
-  showVigilance,
   toggleClouds,
   toggleRain,
   toggleWind,
   toggleTrajectory,
-  toggleVigilance,
   windMaxSpeed,
   activeFrames,
   frame,
@@ -262,7 +256,7 @@ export function WeatherLayersPanel({
         </button>
         <button
           onClick={toggleTrajectory}
-          className={`flex-1 flex items-center justify-center gap-2 px-3 h-11 border-r border-slate-200 transition-colors font-mono text-[10px] uppercase tracking-[0.2em] ${
+          className={`flex-1 flex items-center justify-center gap-2 px-3 h-11 transition-colors font-mono text-[10px] uppercase tracking-[0.2em] ${
             showTrajectory
               ? "bg-red-600 text-white"
               : "bg-white text-slate-700 hover:text-slate-900"
@@ -272,19 +266,6 @@ export function WeatherLayersPanel({
         >
           <Activity className="w-4 h-4" strokeWidth={1.8} />
           Trajet
-        </button>
-        <button
-          onClick={toggleVigilance}
-          className={`flex-1 flex items-center justify-center gap-2 px-3 h-11 transition-colors font-mono text-[10px] uppercase tracking-[0.2em] ${
-            showVigilance
-              ? "bg-amber-500 text-white"
-              : "bg-white text-slate-700 hover:text-slate-900"
-          }`}
-          data-testid="toggle-vigilance-polygons"
-          title="Afficher la vigilance Météo-France par département sur la carte"
-        >
-          <AlertTriangle className="w-4 h-4" strokeWidth={1.8} />
-          Vigilance
         </button>
       </div>
 
