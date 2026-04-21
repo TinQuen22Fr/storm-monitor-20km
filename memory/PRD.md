@@ -262,3 +262,25 @@
 
 **Validé**: tous les endpoints répondent en 200 même sous 429, app reste entièrement fonctionnelle côté UI, bandeau ambré visible, `—` propre dans les tuiles de conditions quand pas de données.
 
+
+## Phase 14 (2026-04-21) — Page Vigilance dédiée France + Andorre
+- ✅ **Nouvel onglet `/vigilance`** (`/app/frontend/src/pages/VigilancePage.jsx`) : carte dédiée France métropolitaine + DOM + Andorre avec panneau latéral (niveau général, légende avec compteurs par couleur, détail cliquable/survol par département). Layout grid 1/4 + 3/4 sur desktop
+- ✅ **Endpoint `/api/weather/vigilance/full`** : agrège MeteoAlarm France + MeteoAlarm Andorre, mappe les 101 départements (96 métro + 5 DOM) via table `INSEE_TO_NUTS3` et ajoute l'Andorre. Retourne `{areas: [...102...], overall_level, ...}`
+- ✅ **GeoJSON départements** (~220 KB) simplifié via topojson `toposimplify(epsilon=0.02)`, servi depuis `/geo/france-depts.geojson`. Andorre en polygone simple dans `/geo/andorra.geojson`
+- ✅ **NavTabs enrichi** : 3 onglets Direct / Vigilance / Historique (icône `AlertTriangle`)
+- ✅ **Dashboard principal nettoyé** : `VigilancePolygons` retiré du map, toggle "Vigilance" retiré du panneau des couches. La carte de Lourdes est à nouveau dédiée au suivi d'orage pur
+
+## Test Results (iteration_12)
+- Backend 12/12 pytest passent — endpoint `/api/weather/vigilance/full` retourne 102 zones, Hautes-Pyrénées en jaune orages, Andorre incluse
+- Frontend 100% : page /vigilance rend 97 polygones (96 + Andorre), couleurs correctes (#F59E0B pour jaune), légende avec compteurs corrects, interaction hover/click met à jour le panneau de détail
+- Dashboard principal nettoyé : plus de `toggle-vigilance-polygons`, tous les autres sélecteurs préservés
+- Zéro critical, zéro action item
+
+## Prochaines pistes / Backlog
+- Filtre par phénomène (afficher uniquement les orages / vent / neige…) sur la page /vigilance
+- Ancrer la prédiction de trajectoire sur `cursorTs`
+- PWA installable + badge numérique
+- Partage URL horodatée `?ts=&radius=`
+- Bulletin PDF multilingue (EN)
+- Polygone Andorre plus précis si besoin (actuellement une enveloppe approximative)
+
