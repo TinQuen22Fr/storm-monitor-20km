@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { Activity, AlertTriangle, BarChart3 } from "lucide-react";
+import { Activity, BarChart3 } from "lucide-react";
 
 export default function NavTabs({ variant = "inline" }) {
   const base =
@@ -12,7 +12,7 @@ export default function NavTabs({ variant = "inline" }) {
         to="/"
         end
         className={({ isActive }) =>
-          `flex-1 flex items-center justify-center gap-2 px-3 h-9 font-mono text-[10px] uppercase tracking-[0.2em] transition-colors ${
+          `flex-1 flex items-center justify-center gap-2 px-4 h-9 font-mono text-[10px] uppercase tracking-[0.2em] transition-colors ${
             isActive
               ? "bg-slate-900 text-white"
               : "text-slate-600 hover:text-slate-900"
@@ -24,23 +24,9 @@ export default function NavTabs({ variant = "inline" }) {
         Direct
       </NavLink>
       <NavLink
-        to="/vigilance"
-        className={({ isActive }) =>
-          `flex-1 flex items-center justify-center gap-2 px-3 h-9 font-mono text-[10px] uppercase tracking-[0.2em] transition-colors ${
-            isActive
-              ? "bg-slate-900 text-white"
-              : "text-slate-600 hover:text-slate-900"
-          }`
-        }
-        data-testid="nav-vigilance"
-      >
-        <AlertTriangle className="w-3.5 h-3.5" strokeWidth={2} />
-        Vigilance
-      </NavLink>
-      <NavLink
         to="/historique"
         className={({ isActive }) =>
-          `flex-1 flex items-center justify-center gap-2 px-3 h-9 font-mono text-[10px] uppercase tracking-[0.2em] transition-colors ${
+          `flex-1 flex items-center justify-center gap-2 px-4 h-9 font-mono text-[10px] uppercase tracking-[0.2em] transition-colors ${
             isActive
               ? "bg-slate-900 text-white"
               : "text-slate-600 hover:text-slate-900"
