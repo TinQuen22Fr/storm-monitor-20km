@@ -121,8 +121,8 @@ export default function VigilancePage() {
   return (
     <div className="min-h-screen bg-slate-50" data-testid="vigilance-page">
       <div className="border-b border-slate-200 bg-white">
-        <div className="max-w-[1800px] mx-auto px-6 py-4 flex items-center gap-6">
-          <div>
+        <div className="max-w-[1800px] mx-auto px-6 py-4 flex flex-col md:flex-row md:items-center gap-4">
+          <div className="flex-1">
             <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-slate-400">
               Vigilance officielle · MeteoAlarm
             </div>
@@ -130,8 +130,7 @@ export default function VigilancePage() {
               Carte de vigilance · France + Andorre
             </h1>
           </div>
-          <div className="flex-1" />
-          <div className="w-64">
+          <div className="w-full md:w-96 shrink-0">
             <NavTabs />
           </div>
         </div>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, BellOff, Download, Moon, RefreshCw, Share2, Zap } from "lucide-react";
+import { Bell, BellOff, Download, Map as MapIcon, Moon, RefreshCw, Share2, Zap } from "lucide-react";
+import { Link } from "react-router-dom";
 import MapPanel from "@/components/MapPanel";
 import AlertBanner from "@/components/AlertBanner";
 import ApproachAlert from "@/components/ApproachAlert";
@@ -428,6 +429,16 @@ export default function Dashboard() {
             <Moon className="w-4 h-4" strokeWidth={1.8} />
             Mode soirée orage
           </button>
+
+          {/* Vigilance map link */}
+          <Link
+            to="/vigilance"
+            className="mt-2 w-full flex items-center justify-center gap-2 px-4 h-10 border border-amber-500 bg-amber-50 text-amber-900 hover:bg-amber-500 hover:text-white transition-colors font-mono text-[10px] uppercase tracking-[0.2em]"
+            data-testid="open-vigilance-map"
+          >
+            <MapIcon className="w-4 h-4" strokeWidth={1.8} />
+            Carte vigilance France
+          </Link>
 
           {/* Storm risk forecast dialog */}
           <StormRiskDialog lat={center.lat} lon={center.lon} />
