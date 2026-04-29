@@ -187,56 +187,98 @@ yarn build
 cd -
 
 # ---------------------------------------------------------------------------
-# 5. Nginx vhost (HTTP only — SSL to be added manually with certbot)
+# 5. Nginx vhost
 # ---------------------------------------------------------------------------
+# We define the full HTTP+HTTPS config in one block. Initially only the HTTP
+# server is active because the SSL certs don't exist yet — we comment-out the
+# 443 block. After running certbot, we'll uncomment it (or certbot does it).
 echo "==> Writing Nginx vhost..."
-cat > /etc/nginx/sites-available/storm-monitor.conf <<EOF
+
+# Define a reusable config snippet with all the application routes
+cat > /etc/nginx/snippets/storm-monitor-app.conf <<EOF
+root /var/www/storm-monitor/frontend/build;
+index index.html;
+
+client_max_body_size 25m;
+
+# Backend API proxy
+location /api/ {
+    proxy_pass http://127.0.0.1:8001;
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_read_timeout 60s;
+    proxy_send_timeout 60s;
+}
+
+# GeoJSON / static data assets
+location /geo/ {
+    try_files \$uri =404;
+    add_header Cache-Control "public, max-age=86400";
+}
+
+# Service worker (push notifications)
+location = /sw.js {
+    try_files \$uri =404;
+    add_header Cache-Control "no-cache";
+}
+
+# SPA fallback
+location / {
+    try_files \$uri /index.html;
+}
+
+gzip on;
+gzip_vary on;
+gzip_min_length 1024;
+gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+EOF
+
+mkdir -p /etc/nginx/snippets
+
+# HTTP vhost — always active. If SSL certs exist (post-certbot), redirect to HTTPS.
+SSL_CERT="/etc/letsencrypt/live/storm-monitor.quentin-astro.fr/fullchain.pem"
+SSL_KEY="/etc/letsencrypt/live/storm-monitor.quentin-astro.fr/privkey.pem"
+
+if [[ -f "$SSL_CERT" && -f "$SSL_KEY" ]]; then
+  echo "==> SSL certs found — writing HTTPS vhost"
+  cat > /etc/nginx/sites-available/storm-monitor.conf <<EOF
 server {
     listen 80;
     listen [::]:80;
     server_name storm-monitor.quentin-astro.fr;
 
-    root /var/www/storm-monitor/frontend/build;
-    index index.html;
+    location /.well-known/acme-challenge/ { root /var/www/html; }
+    location / { return 301 https://\$host\$request_uri; }
+}
 
-    client_max_body_size 25m;
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name storm-monitor.quentin-astro.fr;
 
-    # Backend API
-    location /api/ {
-        proxy_pass http://127.0.0.1:8001;
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_read_timeout 60s;
-        proxy_send_timeout 60s;
-    }
+    ssl_certificate     $SSL_CERT;
+    ssl_certificate_key $SSL_KEY;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 
-    # GeoJSON / static data assets
-    location /geo/ {
-        try_files \$uri =404;
-        add_header Cache-Control "public, max-age=86400";
-    }
-
-    # Service worker (push notifications)
-    location = /sw.js {
-        try_files \$uri =404;
-        add_header Cache-Control "no-cache";
-    }
-
-    # SPA fallback
-    location / {
-        try_files \$uri /index.html;
-    }
-
-    # Gzip
-    gzip on;
-    gzip_vary on;
-    gzip_min_length 1024;
-    gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+    include /etc/nginx/snippets/storm-monitor-app.conf;
 }
 EOF
+else
+  echo "==> No SSL certs yet — writing HTTP-only vhost (run certbot afterwards)"
+  cat > /etc/nginx/sites-available/storm-monitor.conf <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name storm-monitor.quentin-astro.fr;
+
+    include /etc/nginx/snippets/storm-monitor-app.conf;
+}
+EOF
+fi
 
 ln -sf /etc/nginx/sites-available/storm-monitor.conf /etc/nginx/sites-enabled/storm-monitor.conf
 rm -f /etc/nginx/sites-enabled/default
