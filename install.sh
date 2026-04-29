@@ -19,6 +19,7 @@
 set -euo pipefail
 
 REPO_URL="https://github.com/TinQuen22Fr/storm-monitor-20km.git"
+BRANCH="Testing"
 APP_DIR="/var/www/storm-monitor"
 DOMAIN="storm-monitor.quentin-astro.fr"
 BACKEND_PORT="8001"
@@ -96,15 +97,29 @@ systemctl enable --now mongod
 # ---------------------------------------------------------------------------
 mkdir -p /var/www
 if [[ -d "$APP_DIR/.git" ]]; then
-  echo "==> Repository already cloned, pulling latest..."
-  sudo -u "$RUN_USER" -H git -C "$APP_DIR" pull --ff-only
+  echo "==> Repository already cloned, syncing branch '$BRANCH'..."
+  git -C "$APP_DIR" fetch origin
+  git -C "$APP_DIR" checkout "$BRANCH"
+  git -C "$APP_DIR" pull --ff-only origin "$BRANCH"
 else
-  echo "==> Cloning repository..."
-  sudo -u "$RUN_USER" -H git clone "$REPO_URL" "$APP_DIR"
+  if [[ -d "$APP_DIR" ]]; then
+    # Existing non-git directory — clone in-place via temp dir
+    echo "==> Directory $APP_DIR exists but is not a git repo. Removing it..."
+    rm -rf "$APP_DIR"
+  fi
+  echo "==> Cloning '$BRANCH' branch..."
+  git clone -b "$BRANCH" "$REPO_URL" "$APP_DIR"
 fi
 
-# Configure remote so future `git push` works (origin already set by clone)
-sudo -u "$RUN_USER" -H git -C "$APP_DIR" remote set-url origin "$REPO_URL"
+# Configure remote so future `git push` works
+git -C "$APP_DIR" remote set-url origin "$REPO_URL"
+
+# Sanity check
+if [[ ! -d "$APP_DIR/backend" || ! -d "$APP_DIR/frontend" ]]; then
+  echo "ERROR: clone did not produce expected backend/ and frontend/ directories." >&2
+  echo "       Branch '$BRANCH' may not contain the application code." >&2
+  exit 1
+fi
 
 chown -R "$RUN_USER":"$RUN_USER" "$APP_DIR"
 
@@ -112,26 +127,25 @@ chown -R "$RUN_USER":"$RUN_USER" "$APP_DIR"
 # 3. Backend — Python venv, dependencies, .env
 # ---------------------------------------------------------------------------
 echo "==> Setting up backend..."
-sudo -u "$RUN_USER" -H bash -c "
-  set -euo pipefail
-  cd '$APP_DIR/backend'
-  if [ ! -d venv ]; then
-    python3 -m venv venv
-  fi
-  source venv/bin/activate
-  pip install --upgrade pip
-  pip install -r requirements.txt
-  pip install emergentintegrations --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ || true
-"
+cd "$APP_DIR/backend"
+if [ ! -d venv ]; then
+  python3 -m venv venv
+fi
+# shellcheck disable=SC1091
+source venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+pip install emergentintegrations --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ || true
+deactivate
+cd -
 
 # Generate .env only if missing
 if [[ ! -f "$APP_DIR/backend/.env" ]]; then
   echo "==> Generating backend/.env with fresh secrets..."
-  sudo -u "$RUN_USER" -H bash -c "
-    set -euo pipefail
-    cd '$APP_DIR/backend'
-    source venv/bin/activate
-    python3 - <<'PY' > .env
+  cd "$APP_DIR/backend"
+  # shellcheck disable=SC1091
+  source venv/bin/activate
+  python3 - <<'PY' > .env
 import secrets
 from py_vapid import Vapid01
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
@@ -141,20 +155,21 @@ v = Vapid01()
 v.generate_keys()
 pub_raw = v.public_key.public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
 public_b64 = base64.urlsafe_b64encode(pub_raw).decode().rstrip('=')
-private_pem = v.private_pem().decode().replace('\n', '\\\\n')
+private_pem = v.private_pem().decode().replace('\n', '\\n')
 
-print('MONGO_URL=\"mongodb://localhost:27017\"')
-print('DB_NAME=\"storm_lourdes\"')
-print('CORS_ORIGINS=\"*\"')
-print(f'JWT_SECRET=\"{secrets.token_urlsafe(48)}\"')
-print(f'UPLOAD_API_KEY=\"lourdes-{secrets.token_urlsafe(32)}\"')
-print('VAPID_SUBJECT=\"mailto:quentin@quentin-astro.fr\"')
-print(f'VAPID_PUBLIC_KEY=\"{public_b64}\"')
-print(f'VAPID_PRIVATE_KEY_PEM=\"{private_pem}\"')
-print('STORM_DATA_FILE=\"/var/www/storm-monitor/backend/storm_data.json\"')
+print('MONGO_URL="mongodb://localhost:27017"')
+print('DB_NAME="storm_lourdes"')
+print('CORS_ORIGINS="*"')
+print(f'JWT_SECRET="{secrets.token_urlsafe(48)}"')
+print(f'UPLOAD_API_KEY="lourdes-{secrets.token_urlsafe(32)}"')
+print('VAPID_SUBJECT="mailto:quentin@quentin-astro.fr"')
+print(f'VAPID_PUBLIC_KEY="{public_b64}"')
+print(f'VAPID_PRIVATE_KEY_PEM="{private_pem}"')
+print('STORM_DATA_FILE="/var/www/storm-monitor/backend/storm_data.json"')
 PY
-    chmod 600 .env
-  "
+  chmod 600 .env
+  deactivate
+  cd -
 else
   echo "==> backend/.env already exists, skipping secrets generation"
 fi
@@ -166,14 +181,11 @@ echo "==> Building frontend..."
 cat > "$APP_DIR/frontend/.env" <<EOF
 REACT_APP_BACKEND_URL=http://storm-monitor.quentin-astro.fr
 EOF
-chown "$RUN_USER":"$RUN_USER" "$APP_DIR/frontend/.env"
 
-sudo -u "$RUN_USER" -H bash -c "
-  set -euo pipefail
-  cd '$APP_DIR/frontend'
-  yarn install --frozen-lockfile
-  yarn build
-"
+cd "$APP_DIR/frontend"
+yarn install --frozen-lockfile
+yarn build
+cd -
 
 # ---------------------------------------------------------------------------
 # 5. Nginx vhost (HTTP only — SSL to be added manually with certbot)
