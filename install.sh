@@ -22,7 +22,7 @@ REPO_URL="https://github.com/TinQuen22Fr/storm-monitor-20km.git"
 APP_DIR="/var/www/storm-monitor"
 DOMAIN="storm-monitor.quentin-astro.fr"
 BACKEND_PORT="8001"
-RUN_USER="quentin"
+RUN_USER="root"
 
 # ---------------------------------------------------------------------------
 # 0. Pre-flight
@@ -67,13 +67,18 @@ if ! command -v yarn >/dev/null; then
   npm install -g yarn
 fi
 
-# MongoDB 7
+# MongoDB 8.0 (supports Ubuntu 22.04 jammy + 24.04 noble + Debian 12 bookworm)
 if ! command -v mongod >/dev/null; then
-  echo "==> Installing MongoDB 7..."
-  curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | \
-      gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
-  echo "deb [signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg] https://repo.mongodb.org/apt/ubuntu $(lsb_release -sc)/mongodb-org/7.0 multiverse" \
-      > /etc/apt/sources.list.d/mongodb-org-7.0.list
+  echo "==> Installing MongoDB 8.0..."
+  CODENAME="$(lsb_release -sc)"
+  # Strip stale 7.0 repo if it exists (it has no Noble release file)
+  rm -f /etc/apt/sources.list.d/mongodb-org-7.0.list
+  rm -f /usr/share/keyrings/mongodb-server-7.0.gpg
+
+  curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | \
+      gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg --dearmor
+  echo "deb [signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg] https://repo.mongodb.org/apt/ubuntu ${CODENAME}/mongodb-org/8.0 multiverse" \
+      > /etc/apt/sources.list.d/mongodb-org-8.0.list
   apt-get update -y
   apt-get install -y mongodb-org
 fi
@@ -233,8 +238,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=quentin
-Group=quentin
+User=root
+Group=root
 WorkingDirectory=/var/www/storm-monitor/backend
 EnvironmentFile=/var/www/storm-monitor/backend/.env
 ExecStart=/var/www/storm-monitor/backend/venv/bin/uvicorn server:app --host 127.0.0.1 --port 8001 --workers 1
@@ -243,18 +248,15 @@ RestartSec=5
 StandardOutput=append:/var/log/storm-monitor.log
 StandardError=append:/var/log/storm-monitor.err.log
 
-# Hardening
+# Hardening (relaxed for root user)
 NoNewPrivileges=true
 PrivateTmp=true
-ProtectSystem=full
-ProtectHome=read-only
-ReadWritePaths=/var/www/storm-monitor /var/log
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# Pre-create log files with correct ownership
+# Pre-create log files
 touch /var/log/storm-monitor.log /var/log/storm-monitor.err.log
 chown "$RUN_USER":"$RUN_USER" /var/log/storm-monitor.log /var/log/storm-monitor.err.log
 
@@ -281,7 +283,7 @@ echo "        sudo apt install -y certbot python3-certbot-nginx"
 echo "        sudo certbot --nginx -d storm-monitor.quentin-astro.fr"
 echo ""
 echo "    To deploy a new version:"
-echo "        cd /var/www/storm-monitor && sudo -u quentin git pull"
-echo "        cd frontend && sudo -u quentin yarn install --frozen-lockfile && sudo -u quentin yarn build"
-echo "        sudo systemctl restart storm-monitor && sudo systemctl reload nginx"
+echo "        cd /var/www/storm-monitor && git pull"
+echo "        cd frontend && yarn install --frozen-lockfile && yarn build"
+echo "        systemctl restart storm-monitor && systemctl reload nginx"
 echo ""
