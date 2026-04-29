@@ -48,6 +48,13 @@ echo "    User    : $RUN_USER"
 # ---------------------------------------------------------------------------
 echo "==> Installing system packages..."
 export DEBIAN_FRONTEND=noninteractive
+
+# Clean any broken/stale MongoDB repo entries from previous attempts
+# (MongoDB 7.0 has no release for Ubuntu Noble — this would block apt update)
+rm -f /etc/apt/sources.list.d/mongodb-org-7.0.list
+rm -f /etc/apt/sources.list.d/mongodb-org-7.0.list.save
+rm -f /usr/share/keyrings/mongodb-server-7.0.gpg
+
 apt-get update -y
 apt-get install -y \
     git curl ca-certificates gnupg lsb-release \
