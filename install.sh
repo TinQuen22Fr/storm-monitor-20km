@@ -178,7 +178,7 @@ fi
 # ---------------------------------------------------------------------------
 echo "==> Building frontend..."
 cat > "$APP_DIR/frontend/.env" <<EOF
-REACT_APP_BACKEND_URL=http://storm-monitor.quentin-astro.fr
+REACT_APP_BACKEND_URL=https://storm-monitor.quentin-astro.fr
 EOF
 
 cd "$APP_DIR/frontend"
@@ -293,10 +293,11 @@ echo "    Backend logs  : journalctl -u storm-monitor -f"
 echo "                    tail -f /var/log/storm-monitor.err.log"
 echo "    Nginx logs    : tail -f /var/log/nginx/error.log"
 echo ""
-echo "    Test URL      : http://storm-monitor.quentin-astro.fr"
+echo "    Test URL      : https://storm-monitor.quentin-astro.fr (after Certbot)"
+echo "                    http://storm-monitor.quentin-astro.fr (HTTP fallback)"
 echo "    Test API      : curl http://127.0.0.1:8001/api/weather/current?lat=43.0951\&lon=-0.0434"
 echo ""
-echo "    To enable HTTPS later (when DNS points to this IP):"
+echo "    NEXT — enable HTTPS (required, frontend is built for HTTPS):"
 echo "        sudo apt install -y certbot python3-certbot-nginx"
 echo "        sudo certbot --nginx -d storm-monitor.quentin-astro.fr"
 echo ""
