@@ -133,9 +133,8 @@ if [ ! -d venv ]; then
 fi
 # shellcheck disable=SC1091
 source venv/bin/activate
-pip install --upgrade pip
+pip install --upgrade pip wheel setuptools
 pip install -r requirements.txt
-pip install emergentintegrations --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ || true
 deactivate
 cd -
 
