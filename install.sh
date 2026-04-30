@@ -303,16 +303,16 @@ server {
 }
 
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
     server_name storm-monitor.quentin-astro.fr;
 
+    include /etc/nginx/snippets/storm-monitor-app.conf;
+
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
     ssl_certificate     $SSL_CERT;
     ssl_certificate_key $SSL_KEY;
     include /etc/letsencrypt/options-ssl-nginx.conf;
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
-
-    include /etc/nginx/snippets/storm-monitor-app.conf;
 }
 EOF
 else
