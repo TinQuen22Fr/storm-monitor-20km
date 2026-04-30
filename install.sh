@@ -307,8 +307,8 @@ server {
 
     include /etc/nginx/snippets/storm-monitor-app.conf;
 
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
     ssl_certificate     $SSL_CERT;
     ssl_certificate_key $SSL_KEY;
     include /etc/letsencrypt/options-ssl-nginx.conf;
