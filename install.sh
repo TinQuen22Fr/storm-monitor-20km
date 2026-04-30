@@ -11,7 +11,7 @@
 #   5. Generates /var/www/storm-monitor/backend/.env (random secrets + VAPID)
 #   6. Builds frontend with REACT_APP_BACKEND_URL=http://storm-monitor.quentin-astro.fr
 #   7. Creates Nginx vhost /etc/nginx/sites-available/storm-monitor.conf (HTTP only)
-#   8. Creates systemd unit /etc/systemd/system/storm-monitor.service (port 8001)
+#   8. Creates systemd unit /etc/systemd/system/storm-monitor.service (port 8003)
 #   9. Starts everything
 #
 # SSL/HTTPS (Certbot) is intentionally NOT installed — do it manually after.
@@ -22,7 +22,7 @@ REPO_URL="https://github.com/TinQuen22Fr/storm-monitor-20km.git"
 BRANCH="Testing"
 APP_DIR="/var/www/storm-monitor"
 DOMAIN="storm-monitor.quentin-astro.fr"
-BACKEND_PORT="8001"
+BACKEND_PORT="8003"
 RUN_USER="root"
 
 # ---------------------------------------------------------------------------
@@ -203,7 +203,7 @@ client_max_body_size 25m;
 
 # Backend API proxy
 location /api/ {
-    proxy_pass http://127.0.0.1:8001;
+    proxy_pass http://127.0.0.1:${BACKEND_PORT};
     proxy_http_version 1.1;
     proxy_set_header Host \$host;
     proxy_set_header X-Real-IP \$remote_addr;
@@ -302,7 +302,7 @@ User=root
 Group=root
 WorkingDirectory=/var/www/storm-monitor/backend
 EnvironmentFile=/var/www/storm-monitor/backend/.env
-ExecStart=/var/www/storm-monitor/backend/venv/bin/uvicorn server:app --host 127.0.0.1 --port 8001 --workers 1
+ExecStart=/var/www/storm-monitor/backend/venv/bin/uvicorn server:app --host 127.0.0.1 --port ${BACKEND_PORT} --workers 1
 Restart=always
 RestartSec=5
 StandardOutput=append:/var/log/storm-monitor.log
@@ -337,7 +337,7 @@ echo "    Nginx logs    : tail -f /var/log/nginx/error.log"
 echo ""
 echo "    Test URL      : https://storm-monitor.quentin-astro.fr (after Certbot)"
 echo "                    http://storm-monitor.quentin-astro.fr (HTTP fallback)"
-echo "    Test API      : curl http://127.0.0.1:8001/api/weather/current?lat=43.0951\&lon=-0.0434"
+echo "    Test API      : curl http://127.0.0.1:${BACKEND_PORT}/api/weather/current?lat=43.0951\&lon=-0.0434"
 echo ""
 echo "    NEXT — enable HTTPS (required, frontend is built for HTTPS):"
 echo "        sudo apt install -y certbot python3-certbot-nginx"
