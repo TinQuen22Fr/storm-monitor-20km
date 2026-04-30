@@ -4,7 +4,7 @@
 # Usage:  sudo bash install.sh
 #
 # What it does:
-#   1. Installs Python 3.11+, Node.js 20, Yarn, MongoDB 7, Nginx
+#   1. Installs Python 3.11+, Node.js 20, Yarn, MongoDB 8, Nginx 1.30+ (from nginx.org)
 #   2. Clones https://github.com/TinQuen22Fr/storm-monitor-20km.git into /var/www/storm-monitor
 #   3. Configures git remote for future pushes
 #   4. Creates Python venv + installs backend dependencies
@@ -58,10 +58,51 @@ rm -f /usr/share/keyrings/mongodb-server-7.0.gpg
 
 apt-get update -y
 apt-get install -y \
-    git curl ca-certificates gnupg lsb-release \
-    build-essential nginx \
+    git curl ca-certificates gnupg2 lsb-release ubuntu-keyring \
+    build-essential \
     python3 python3-venv python3-pip python3-dev \
     fonts-dejavu
+
+# ---------------------------------------------------------------------------
+# Nginx — install from the official nginx.org stable repo.
+# Ubuntu's own nginx package is frozen on old versions (1.24) which lack the
+# modern `http2 on;` directive and HTTP/3 support. The upstream repo ships
+# 1.30+ which is the recommended baseline for this app.
+# ---------------------------------------------------------------------------
+if ! command -v nginx >/dev/null || ! nginx -v 2>&1 | grep -qE 'nginx/1\.(2[6-9]|[3-9][0-9])'; then
+  echo "==> Installing nginx from nginx.org (stable)..."
+  # Purge any pre-existing Ubuntu-distributed nginx (< 1.26) to avoid conflicts
+  apt-get purge -y 'nginx*' || true
+  apt-get autoremove -y || true
+
+  # Signing key
+  curl -fsSL https://nginx.org/keys/nginx_signing.key | \
+      gpg --dearmor -o /usr/share/keyrings/nginx-archive-keyring.gpg
+
+  # Stable channel for current Ubuntu codename
+  CODENAME="$(lsb_release -cs)"
+  echo "deb [signed-by=/usr/share/keyrings/nginx-archive-keyring.gpg] http://nginx.org/packages/ubuntu ${CODENAME} nginx" \
+      > /etc/apt/sources.list.d/nginx.list
+
+  # Pin upstream over distro packages
+  cat > /etc/apt/preferences.d/99nginx <<'EOF'
+Package: *
+Pin: origin nginx.org
+Pin: origin packages.nginx.org
+Pin-Priority: 900
+EOF
+
+  apt-get update -y
+  apt-get install -y nginx
+fi
+
+# The nginx.org package ships a minimal nginx.conf that only loads
+# /etc/nginx/conf.d/*.conf. Ensure sites-enabled/ is also loaded so the
+# Debian-style vhost layout keeps working.
+mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/snippets
+if ! grep -q "sites-enabled" /etc/nginx/nginx.conf; then
+  sed -i '/include \/etc\/nginx\/conf.d\/\*.conf;/a\    include /etc/nginx/sites-enabled/*;' /etc/nginx/nginx.conf
+fi
 
 # Node.js 20
 if ! command -v node >/dev/null || [[ "$(node -v)" != v20* ]]; then
@@ -303,16 +344,17 @@ server {
 }
 
 server {
-    server_name storm-monitor.quentin-astro.fr;
-
-    include /etc/nginx/snippets/storm-monitor-app.conf;
-
     listen 443 ssl;
     listen [::]:443 ssl;
+    http2 on;
+    server_name storm-monitor.quentin-astro.fr;
+
     ssl_certificate     $SSL_CERT;
     ssl_certificate_key $SSL_KEY;
     include /etc/letsencrypt/options-ssl-nginx.conf;
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    include /etc/nginx/snippets/storm-monitor-app.conf;
 }
 EOF
 else
