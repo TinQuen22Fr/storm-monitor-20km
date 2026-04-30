@@ -194,6 +194,11 @@ cd -
 # 443 block. After running certbot, we'll uncomment it (or certbot does it).
 echo "==> Writing Nginx vhost..."
 
+mkdir -p /etc/nginx/snippets
+
+# Idempotent: always rewrite the snippet from scratch (no append, no duplicates)
+rm -f /etc/nginx/snippets/storm-monitor-app.conf
+
 # Define a reusable config snippet with all the application routes
 cat > /etc/nginx/snippets/storm-monitor-app.conf <<EOF
 root /var/www/storm-monitor/frontend/build;
@@ -219,10 +224,26 @@ location /geo/ {
     add_header Cache-Control "public, max-age=86400";
 }
 
-# Service worker (push notifications)
+# Service worker — never cache, must update instantly
 location = /sw.js {
     try_files \$uri =404;
-    add_header Cache-Control "no-cache";
+    add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+    add_header Pragma "no-cache" always;
+    expires off;
+}
+
+# index.html — never cache (SPA shell must always pull latest hashed assets)
+location = /index.html {
+    add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+    add_header Pragma "no-cache" always;
+    expires off;
+    try_files \$uri =404;
+}
+
+# Hashed static assets (CRA build output) — cache aggressively
+location /static/ {
+    try_files \$uri =404;
+    add_header Cache-Control "public, max-age=31536000, immutable";
 }
 
 # SPA fallback
@@ -236,7 +257,34 @@ gzip_min_length 1024;
 gzip_types text/plain text/css application/javascript application/json image/svg+xml;
 EOF
 
-mkdir -p /etc/nginx/snippets
+# Catch-all default vhost — prevents Host-header bleed between sibling vhosts
+# (e.g. Android Chrome HTTP/2 connection coalescing landing on the wrong app).
+# Any request whose Host header doesn't match a declared server_name is dropped.
+#
+# Step 1: strip every existing "default_server" declaration on port 80 from
+#         other vhosts, otherwise Nginx will refuse with "duplicate default
+#         server for 0.0.0.0:80". We touch only sibling configs, never our own.
+echo "==> Stripping legacy default_server declarations on port 80..."
+for f in /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*.conf; do
+  [[ -e "$f" ]] || continue
+  case "$f" in
+    */00-default-catchall.conf|*/storm-monitor.conf) continue ;;
+  esac
+  if grep -qE 'listen[[:space:]]+(\[::\]:)?80[[:space:]]+default_server' "$f"; then
+    echo "    - cleaning $f"
+    sed -i -E 's/(listen[[:space:]]+(\[::\]:)?80)[[:space:]]+default_server/\1/g' "$f"
+  fi
+done
+
+# Step 2: write the strict catch-all. Any unknown Host header → connection closed.
+cat > /etc/nginx/conf.d/00-default-catchall.conf <<'EOF'
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+    return 444;
+}
+EOF
 
 # HTTP vhost — always active. If SSL certs exist (post-certbot), redirect to HTTPS.
 SSL_CERT="/etc/letsencrypt/live/storm-monitor.quentin-astro.fr/fullchain.pem"
