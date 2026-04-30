@@ -284,3 +284,32 @@
 - Bulletin PDF multilingue (EN)
 - Polygone Andorre plus précis si besoin (actuellement une enveloppe approximative)
 
+
+## Phase 15 (2026-04-30) — Déploiement Kimsufi finalisé
+
+### Problèmes résolus
+- ❌ **Doublons Nginx** (`location = /sw.js` + `location = /index.html`) → causaient `nginx -t` qui plantait. Le `sed` précédent injectait dans un vhost qui les contenait déjà.
+- ❌ **Redirection Android SQM → storm-monitor** : HTTP/2 connection coalescing de Chrome réutilisait une seule connexion TLS entre les 2 vhosts siblings.
+- ❌ **Nginx 1.24 (paquet Ubuntu)** : trop vieux pour la syntaxe `http2 on;` moderne.
+
+### Corrections appliquées dans `/app/install.sh`
+- ✅ **Installation auto de Nginx 1.30+** depuis le dépôt officiel `nginx.org` (purge préalable du paquet Ubuntu, clé GPG + pinning apt)
+- ✅ **Auto-injection** de `include /etc/nginx/sites-enabled/*;` dans `nginx.conf` (le layout nginx.org ne le charge pas par défaut)
+- ✅ **Syntaxe moderne HTTP/2** : `http2 on;` en directive séparée (plus `listen ... http2;` déprécié)
+- ✅ **Snippet idempotent** : `storm-monitor-app.conf` réécrit à chaque run, zéro risque de doublon
+- ✅ **Cache headers cohérents** : `no-cache` sur `/sw.js` + `/index.html`, `max-age=31536000 immutable` sur `/static/`
+- ✅ **Catch-all vhost anti-bleed** (`return 444`) + strip automatique de tout `default_server` résiduel des autres vhosts
+- ✅ Vhost storm-monitor propre : un bloc 80 (redirect HTTPS + ACME), un bloc 443 (SSL + include snippet)
+
+### Vérification prod
+- ✅ `grep -r emergent /var/www/storm-monitor/frontend/build/` → **0 occurrence**
+- ✅ `<title>` = `Storm Monitoring`, `<meta author>` = `Quentin Dumont`
+- ✅ Domaine JS embarqué = `storm-monitor.quentin-astro.fr` uniquement
+- ✅ Les deux vhosts SQM et storm-monitor coexistent, pas de bleed Android (HTTP/2 `http2 on;` n'active plus le coalescing cross-domain grâce au catch-all)
+
+### État final
+- Server Kimsufi `ns3020148` → Nginx 1.30.0 → storm-monitor.quentin-astro.fr opérationnel HTTPS
+- Backend FastAPI uvicorn en port 8003 géré par systemd
+- MongoDB 8.0, Python venv, Node 20 + Yarn
+- SQM (port 8001) toujours fonctionnel sur son propre vhost
+
