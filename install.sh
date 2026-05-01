@@ -119,18 +119,51 @@ if ! command -v yarn >/dev/null; then
   npm install -g yarn
 fi
 
-# MongoDB 8.0 (supports Ubuntu 22.04 jammy + 24.04 noble + Debian 12 bookworm)
-if ! command -v mongod >/dev/null; then
-  echo "==> Installing MongoDB 8.0..."
-  CODENAME="$(lsb_release -sc)"
-  # Strip stale 7.0 repo if it exists (it has no Noble release file)
-  rm -f /etc/apt/sources.list.d/mongodb-org-7.0.list
-  rm -f /usr/share/keyrings/mongodb-server-7.0.gpg
+# MongoDB — version selected based on CPU AVX support.
+# - AVX present → MongoDB 8.0 (latest stable)
+# - AVX missing → MongoDB 4.4 (last release without AVX requirement)
+# Old Atom CPUs typical of low-cost Kimsufi do NOT have AVX → MongoDB 8 crashes
+# at startup with "Illegal instruction (core dumped)". 4.4 is the fallback.
+HAS_AVX=0
+if grep -qo '\bavx\b' /proc/cpuinfo 2>/dev/null; then
+  HAS_AVX=1
+fi
 
-  curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | \
-      gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg --dearmor
-  echo "deb [signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg] https://repo.mongodb.org/apt/ubuntu ${CODENAME}/mongodb-org/8.0 multiverse" \
-      > /etc/apt/sources.list.d/mongodb-org-8.0.list
+if ! command -v mongod >/dev/null; then
+  CODENAME="$(lsb_release -sc)"
+  # Strip stale repo entries (any older version installed previously)
+  rm -f /etc/apt/sources.list.d/mongodb-org-*.list
+  rm -f /usr/share/keyrings/mongodb-server-*.gpg
+
+  if [[ $HAS_AVX -eq 1 ]]; then
+    echo "==> CPU has AVX → installing MongoDB 8.0..."
+    curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | \
+        gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg --dearmor
+    echo "deb [signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg] https://repo.mongodb.org/apt/ubuntu ${CODENAME}/mongodb-org/8.0 multiverse" \
+        > /etc/apt/sources.list.d/mongodb-org-8.0.list
+  else
+    echo "==> CPU has NO AVX → falling back to MongoDB 4.4 (last AVX-free release)"
+    # 4.4 has packages for Focal (20.04). They run fine on Noble/Jammy too —
+    # MongoDB 4.4 is a self-contained server, not affected by libssl3.
+    curl -fsSL https://www.mongodb.org/static/pgp/server-4.4.asc | \
+        gpg -o /usr/share/keyrings/mongodb-server-4.4.gpg --dearmor
+    echo "deb [signed-by=/usr/share/keyrings/mongodb-server-4.4.gpg] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/4.4 multiverse" \
+        > /etc/apt/sources.list.d/mongodb-org-4.4.list
+    # Hostide install: MongoDB 4.4 needs libssl1.1 which Noble doesn't ship.
+    # On Noble we install the focal libssl1.1 package directly.
+    if [[ "$CODENAME" == "noble" || "$CODENAME" == "bookworm" ]]; then
+      if ! ldconfig -p | grep -q 'libssl.so.1.1'; then
+        echo "    Installing libssl1.1 from focal-security (required by mongo 4.4)..."
+        TMPDEB="/tmp/libssl1.1.deb"
+        curl -fsSL -o "$TMPDEB" \
+          http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2.24_$(dpkg --print-architecture).deb || \
+          curl -fsSL -o "$TMPDEB" \
+          http://launchpadlibrarian.net/648013231/libssl1.1_1.1.1f-1ubuntu2.20_$(dpkg --print-architecture).deb
+        dpkg -i "$TMPDEB" || apt-get install -fy
+        rm -f "$TMPDEB"
+      fi
+    fi
+  fi
   apt-get update -y
   apt-get install -y mongodb-org
 fi
