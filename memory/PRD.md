@@ -363,3 +363,40 @@ Détection automatique des épisodes orageux (bursts de strikes) dans les 24h pa
 - Frontend e2e 100% : replay-page renders, 4 NavTabs, empty-state OK, bootstrap URL purple banner + dates formatées + URL cleaned, exit button, CTA absent si 0 events, régression live intacte
 - **Zéro critical, zéro action item, zéro régression**
 
+
+## Phase 18 (2026-05-01) — Démos d'orages reconstitués + Export MP4
+
+### Démos Pyrénées (reconstitution scénarisée)
+- `/app/backend/demo_storms.py` : 2 épisodes synthétiques mais physiquement plausibles
+  - `demo-pyrenees-cevenol` : orage cévenol type fin avril, ~62 impacts, 45 min, drift SW→NE
+  - `demo-cellule-isolee` : cellule isolée Argelès-Gazost, ~32 impacts, 20 min
+- Endpoint `GET /api/replay/demos` → liste avec is_reconstructed=true (transparence pour l'utilisateur)
+- Page /replay : section violette "Démos · Reconstitutions Pyrénées" avec badge DÉMO
+
+### Export MP4 (Pillow + ffmpeg)
+- `/app/backend/video_export.py` : rendu Pillow (720×720) + assemblage ffmpeg H.264
+- Tuiles CARTO cachées localement (`/var/www/storm-monitor/cache/videos/tiles/`)
+- 1 frame toutes les 30 s d'event = 24 fps output (45 min → ~6 s vidéo, ~50 KB)
+- HUD complet : timestamp localisé, count impacts, label episode, branding "Quentin Dumont"
+- Job system in-memory async, polling toutes les 1.5 s côté frontend
+- Endpoints :
+  - `POST /api/replay/video` (body avec demo_id ou start/end live) → `{job_id}`
+  - `GET /api/replay/video/{job_id}` → status/progress/mp4_url
+  - `GET /api/replay/video/{job_id}/file.mp4` → fichier MP4 (Content-Type: video/mp4)
+- Purge automatique des MP4 > 24h
+
+### Frontend
+- `VideoExportDialog.jsx` : modal avec progression, player intégré, boutons Télécharger / WhatsApp / Copier lien
+- Pages /replay : 4 boutons par demo (Rejouer Dashboard + Exporter MP4) et même structure pour events réels
+
+### install.sh
+- Ajout du paquet `ffmpeg` à apt-get
+- Création `/var/www/storm-monitor/cache/videos/`
+- Variable d'env `VIDEO_CACHE_DIR` dans la systemd unit
+- `PrivateTmp=false` (cache MP4 doit survivre aux restarts)
+
+### Tests (iteration_15)
+- Backend 9/9 pytest : shape demos, POST 200/404/400, GET status, E2E queue→download→ffprobe (h264 720x720 ≥3s)
+- Frontend 100% : section démos, 2 cards, dialog progress→player→download/whatsapp/copy, navigation play→Dashboard banner
+- **Zéro critical, zéro action item, zéro régression**
+
