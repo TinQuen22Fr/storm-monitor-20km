@@ -29,7 +29,13 @@ RAIN_CODES = {51, 53, 55, 61, 63, 65, 80, 81, 82}
 OPEN_METEO_BASE = "https://api.open-meteo.com/v1/forecast"
 
 # Stale cache persistence (survives backend restarts)
-_STALE_FILE = Path(os.environ.get("STALE_CACHE_FILE", "/app/backend/.stale_cache.pkl"))
+_STALE_FILE = Path(
+    os.environ.get(
+        "STALE_CACHE_FILE",
+        # Default to a path co-located with this module — works in any deploy
+        str(Path(__file__).parent / ".stale_cache.pkl"),
+    )
+)
 
 
 # ---------- Resilient HTTP with 429 retry ----------
