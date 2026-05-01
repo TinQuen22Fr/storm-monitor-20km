@@ -167,6 +167,13 @@ if ! command -v mongod >/dev/null; then
   apt-get update -y
   apt-get install -y mongodb-org
 fi
+# Ensure mongo dirs are owned by the mongodb user (the package is supposed to
+# do this but a manual `mkdir` before the install can leave them root-owned,
+# making mongod crash with "Failed to open /var/log/mongodb/mongod.log").
+if id mongodb &>/dev/null; then
+  mkdir -p /var/lib/mongodb /var/log/mongodb
+  chown -R mongodb:mongodb /var/lib/mongodb /var/log/mongodb
+fi
 systemctl enable --now mongod
 
 # ---------------------------------------------------------------------------
