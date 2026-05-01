@@ -337,3 +337,29 @@
 - Backend 14/14 pytest passent (`test_at_ts_filter.py` créé)
 - Frontend e2e 100% : 9 filter buttons OK, scrub → at_ts envoyé, badge bascule rouge→violet, restore live = OK
 - **Zéro critical, zéro action item, zéro régression**
+
+## Phase 17 (2026-05-01) — Mode Replay "Orages majeurs"
+
+### Feature
+Détection automatique des épisodes orageux (bursts de strikes) dans les 24h passées, avec page dédiée + intégration sur la home page. L'utilisateur peut rejouer un épisode en un clic — la timeline s'anime automatiquement avec trajectoire/strikes/cartes synchronisés.
+
+### Backend
+- ✅ Nouveau `GET /api/replay/events?lat&lon&radius_km&min_strikes=5&gap_min=15`
+- ✅ Algo : segmentation par time-gap + filtre `min_strikes` + duration ≥5min + peak rolling-window 10min
+- ✅ Payload : `{events: [{id, start_ts, end_ts, duration_min, strike_count, peak_count_10min, center_lat/lon, max_distance_km}], source_window_h: 24}`
+- ✅ Tri par intensité (peak_count_10min desc, strike_count desc, start_ts desc)
+
+### Frontend
+- ✅ Nouvelle page `/replay` (`/app/frontend/src/pages/ReplayPage.jsx`) avec panneau "Comment ça marche", compteur "Résumé", liste interactive des events (intensité "Sévère/Fort/Modéré/Faible" selon peak rate)
+- ✅ NavTabs étendu à 4 onglets : Direct / Vigilance / Replay / Historique
+- ✅ Dashboard `?replay=start:end` bootstrap → `cursorTs=start`, `playing=true`, URL cleaned
+- ✅ Bandeau violet `replay-banner` affiche l'épisode + bouton Sortir
+- ✅ CTA violet `replay-cta` sur la sidebar home "Rejouer les N épisode(s) détecté(s)" (affiché uniquement si `replayEventsCount > 0 && !replay`)
+- ✅ Auto-stop quand cursor atteint `end_ts` (bandeau reste, lecture pausée)
+- ✅ Ticker live désactivé automatiquement en replay (isLive=false par cascade)
+
+### Tests (iteration_14)
+- Backend 7/7 pytest (`test_replay_events.py`) : shape, query params, 422 sur types invalides, détection 2-bursts + ignore isolated strike, exclusion <5min, exclusion <5 strikes, id format + centroid rounding
+- Frontend e2e 100% : replay-page renders, 4 NavTabs, empty-state OK, bootstrap URL purple banner + dates formatées + URL cleaned, exit button, CTA absent si 0 events, régression live intacte
+- **Zéro critical, zéro action item, zéro régression**
+
