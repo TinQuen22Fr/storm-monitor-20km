@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 14: Validated 'Replay Mode' (storm major events). Backend GET /api/replay/events: returns {events:[], source_window_h:24} on calm conditions (200 OK). Burst detection algorithm verified end-to-end via in-process ASGI tests with injected synthetic strikes — correctly identifies 2 bursts (12+8 strikes) while ignoring 1 isolated strike between them, excludes bursts <5min duration and bursts with <5 strikes. Event payload shape complete: id='ev-{ts}', start_ts/end_ts (int), duration_min (float), strike_count, peak_count_10min, center_lat/center_lon (4-decimal rounded), max_distance_km. Sort order verified by (-peak_count_10min, -strike_count, -start_ts). Query params (lat/lon/radius_km/min_strikes/gap_min) accepted, invalid types return 422. Frontend /replay page: renders with 4 NavTabs (Direct/Vigilance/Replay/Historique), 'Comment ça marche' panel + Résumé counter, empty state visible when 0 events. Dashboard bootstrap: ?replay=<start>:<end> sets cursorTs=start, playing=true, displays purple replay-banner with 'Mode replay · lecture en cours' + formatted dates, URL cleaned of param (replace state). Exit button removes banner & replay state. CTA replay-cta correctly absent when 0 events available. Live mode regression intact (no banner, no CTA when no events). 7/7 backend pytest pass, frontend e2e pass.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_replay_events.py",
+    "/app/test_reports/pytest/pytest_results_iter14.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py replay_events: bursts <5 min duration are silently dropped AFTER min_strikes check — small wasted work but fine. No business issue.",
+    "ReplayPage.jsx playEvent pre-rolls 5 min before start_ts but caps at now-24h; does NOT cap at end_ts — fine since pre < start <= end always.",
+    "Dashboard bootstrap useEffect deps array intentionally empty (eslint-disable) so ?replay= is consumed once at mount — correct pattern. Re-mount needed for repeat replays (works since ReplayPage uses navigate which triggers re-render).",
+    "Auto-stop logic (cursorTs >= replay.end_ts → setPlaying(false)) only triggers if Timeline actually ticks cursor forward in replay mode. Visually verified bootstrap path; auto-stop edge depends on Timeline.jsx interval which is out of scope of this iter (already validated in iter 13).",
+    "replayEventsCount is fetched every 5min via setInterval; no debounce/visibility check — minor efficiency point, not a bug.",
+    "Inconsistency in StrikeStore.recent until_ts check (s.ts > until_ts → exclude) means timestamps EQUAL to until_ts are KEPT, slight drift from docstring 'exclusive upper'. Pre-existing from iter 13, not introduced here."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_replay_events.py (NEW — 7 tests covering /api/replay/events public endpoint shape + ASGI burst-detection with injected strikes)"
+  ],
+  "success_rate": {
+    "backend": "100% (7/7 pytest test_replay_events.py: shape, query params, 422, 2-burst detection w/ isolated strike ignored, <5min excluded, <5 strikes excluded, id format + centroid rounding)",
+    "frontend": "100% (replay-page loads, 4 NavTabs visible, empty-state, Comment ça marche + Résumé panels, dashboard CTA correctly absent on 0-events, ?replay= bootstrap shows purple banner with dates, URL cleaned, exit button removes banner, NavTabs cross-route navigation OK)"
+  },
+  "test_credentials": {"email": "test@lourdes.fr", "password": "storm123"},
+  "seed_data_creation": "ASGI tests temporarily inject synthetic strikes into lightning.store and restore the original buffer in finally — no persistent test data created.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "ITER-14 VALIDATED: /api/replay/events endpoint and full Replay UI flow are working. Backend uses in-memory StrikeStore (lightning.store) — for tests, use ASGITransport with synthetic strikes; restore buffer in finally. Burst detection: gap_s=gap_min*60, group consecutive strikes with delta<=gap_s; keep groups with >=min_strikes AND duration>=300s. Sort: (-peak_count_10min, -strike_count, -start_ts). Frontend: ReplayPage at /replay (data-testid=replay-page, replay-events-list, replay-event-{idx}, replay-empty, replay-error). Dashboard bootstrap reads ?replay=start:end, clears URL via setSearchParams({},{replace:true}). Banner data-testid=replay-banner, exit btn data-testid=replay-exit-btn, CTA data-testid=replay-cta (only visible when !replay && replayEventsCount>0). At test time no real strikes in DB so CTA never appears in production — tested negatively. Live regression OK. Existing test files (test_at_ts_filter, test_storm_tracker, test_share_card, test_trajectory_unit, test_vigilance_full) untouched.",
+  "rca_of_the_issue": "N/A — no bugs found. Replay feature implemented correctly: backend burst detection algorithm matches spec, frontend bootstrap/banner/exit/CTA wiring all functional with correct data-testids."
+}

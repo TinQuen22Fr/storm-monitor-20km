@@ -276,6 +276,80 @@ async def lightning_status():
     return lightning_mod.status()
 
 
+@api_router.get("/replay/events")
+async def replay_events(
+    lat: float = LOURDES_LAT,
+    lon: float = LOURDES_LON,
+    radius_km: float = 70.0,
+    min_strikes: int = 5,
+    gap_min: int = 15,
+):
+    """Detect contiguous "storm bursts" in the last 24h strike buffer.
+
+    Algorithm:
+      - Fetch all strikes within radius.
+      - Sort by ts ascending.
+      - A burst = any group where consecutive strikes are <= `gap_min` minutes apart.
+      - A burst is kept only if it contains >= `min_strikes` strikes and spans >= 5 min.
+      - Each event exposes start/end timestamps, peak 10-min rate, and centroid.
+    """
+    strikes = await lightning_mod.store.recent(lat, lon, radius_km, since_ts=None)
+    if not strikes:
+        return {"events": [], "source_window_h": 24}
+
+    strikes.sort(key=lambda s: s["ts"])
+    gap_s = gap_min * 60.0
+
+    # 1. Segment into bursts by time-gap
+    bursts: list[list[dict]] = []
+    current: list[dict] = []
+    for s in strikes:
+        if not current or (s["ts"] - current[-1]["ts"]) <= gap_s:
+            current.append(s)
+        else:
+            if len(current) >= min_strikes:
+                bursts.append(current)
+            current = [s]
+    if len(current) >= min_strikes:
+        bursts.append(current)
+
+    # 2. Qualify each burst
+    events = []
+    for b in bursts:
+        start = b[0]["ts"]
+        end = b[-1]["ts"]
+        duration_s = max(end - start, 0.0)
+        if duration_s < 300:  # < 5 min = not worth replaying
+            continue
+        # Peak 10-min rate (rolling window)
+        peak = 0
+        w = 10 * 60.0
+        # Simple 2-pointer since sorted
+        left = 0
+        for right in range(len(b)):
+            while b[right]["ts"] - b[left]["ts"] > w:
+                left += 1
+            peak = max(peak, right - left + 1)
+        c_lat = sum(float(s["lat"]) for s in b) / len(b)
+        c_lon = sum(float(s["lon"]) for s in b) / len(b)
+        max_dist = max(float(s.get("distance_km") or 0) for s in b)
+        events.append({
+            "id": f"ev-{int(start)}",
+            "start_ts": int(start),
+            "end_ts": int(end),
+            "duration_min": round(duration_s / 60.0, 1),
+            "strike_count": len(b),
+            "peak_count_10min": peak,
+            "center_lat": round(c_lat, 4),
+            "center_lon": round(c_lon, 4),
+            "max_distance_km": round(max_dist, 1),
+        })
+
+    # 3. Sort by intensity (peak rate then strike_count) descending, then recency
+    events.sort(key=lambda e: (-e["peak_count_10min"], -e["strike_count"], -e["start_ts"]))
+    return {"events": events, "source_window_h": 24}
+
+
 @api_router.get("/storms/approach")
 async def storms_approach(
     lat: float = LOURDES_LAT,

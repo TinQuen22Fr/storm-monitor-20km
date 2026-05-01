@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, BellOff, Download, Map as MapIcon, Moon, RefreshCw, Share2, Zap } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Bell, BellOff, Download, Map as MapIcon, Moon, PlayCircle, RefreshCw, Share2, X, Zap } from "lucide-react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import MapPanel from "@/components/MapPanel";
 import AlertBanner from "@/components/AlertBanner";
 import ApproachAlert from "@/components/ApproachAlert";
@@ -48,11 +48,58 @@ export default function Dashboard() {
   const [playing, setPlaying] = useState(false);
   const [nightMode, setNightMode] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
+  const [replay, setReplay] = useState(null); // { start_ts, end_ts } when replaying a past event
+  const [replayEventsCount, setReplayEventsCount] = useState(0);
   const isMobile = useIsMobile();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   // "Live" when cursor is within 60s of now
   const nowSec = Math.floor(Date.now() / 1000);
   const isLive = nowSec - cursorTs < 60;
+
+  // Bootstrap replay mode from ?replay=start:end (from ReplayPage)
+  useEffect(() => {
+    const param = searchParams.get("replay");
+    if (!param) return;
+    const [s, e] = param.split(":").map((x) => parseInt(x, 10));
+    if (!s || !e || e <= s) return;
+    setReplay({ start_ts: s, end_ts: e });
+    setCursorTs(s);
+    setPlaying(true);
+    // Clean URL after consuming the param (user can bookmark the replay route instead)
+    setSearchParams({}, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-exit replay when cursor reaches end or user manually scrubs back to live
+  useEffect(() => {
+    if (!replay) return;
+    if (cursorTs >= replay.end_ts) {
+      setPlaying(false);
+      // Stay frozen on the last frame — user exits via the banner button
+    }
+  }, [cursorTs, replay]);
+
+  const exitReplay = useCallback(() => {
+    setReplay(null);
+    setPlaying(false);
+    setCursorTs(Math.floor(Date.now() / 1000));
+  }, []);
+
+  // Fetch count of available replay events periodically so the "Rejouer un orage" CTA is informed
+  useEffect(() => {
+    let cancel = false;
+    const load = async () => {
+      try {
+        const { data } = await api.get("/replay/events");
+        if (!cancel) setReplayEventsCount((data.events || []).length);
+      } catch { /* ignore */ }
+    };
+    load();
+    const t = setInterval(load, 5 * 60_000);
+    return () => { cancel = true; clearInterval(t); };
+  }, []);
 
   // Tick cursor forward while live so tiles & strikes stay current
   useEffect(() => {
@@ -243,6 +290,68 @@ export default function Dashboard() {
           maxLp={zones?.max_lightning_potential}
           fetchedAt={lastFetch}
         />
+
+        {replay && (
+          <div
+            className="px-6 py-3 bg-violet-50 border-b border-violet-200 flex items-center gap-3"
+            data-testid="replay-banner"
+          >
+            <PlayCircle
+              className={`w-4 h-4 text-violet-700 shrink-0 ${playing ? "animate-pulse" : ""}`}
+              strokeWidth={2.2}
+            />
+            <div className="flex-1 min-w-0">
+              <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-violet-700 font-semibold">
+                Mode replay · lecture {playing ? "en cours" : "en pause"}
+              </div>
+              <div className="text-[11px] text-violet-900 font-mono tabular-nums mt-0.5">
+                {new Date(replay.start_ts * 1000).toLocaleString("fr-FR", {
+                  day: "2-digit",
+                  month: "short",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+                {" → "}
+                {new Date(replay.end_ts * 1000).toLocaleString("fr-FR", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={exitReplay}
+              className="shrink-0 h-8 px-3 flex items-center gap-1.5 border border-violet-300 hover:bg-violet-700 hover:text-white hover:border-violet-700 transition-colors font-mono text-[10px] uppercase tracking-[0.18em] text-violet-900"
+              data-testid="replay-exit-btn"
+              aria-label="Sortir du mode replay"
+            >
+              <X className="w-3 h-3" strokeWidth={2.5} />
+              Sortir
+            </button>
+          </div>
+        )}
+
+        {!replay && replayEventsCount > 0 && (
+          <button
+            type="button"
+            onClick={() => navigate("/replay")}
+            className="w-full px-6 py-3 bg-slate-900 hover:bg-violet-700 transition-colors text-left flex items-center gap-3 group"
+            data-testid="replay-cta"
+          >
+            <PlayCircle className="w-4 h-4 text-violet-300 shrink-0" strokeWidth={2.2} />
+            <div className="flex-1 min-w-0">
+              <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-violet-300 font-semibold">
+                Mode replay disponible
+              </div>
+              <div className="text-[12px] text-white font-medium mt-0.5 truncate">
+                Rejouer les {replayEventsCount} épisode{replayEventsCount > 1 ? "s" : ""} détecté{replayEventsCount > 1 ? "s" : ""} des 24h
+              </div>
+            </div>
+            <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/80 group-hover:text-white transition-colors shrink-0">
+              →
+            </span>
+          </button>
+        )}
 
         <VigilanceBanner />
 

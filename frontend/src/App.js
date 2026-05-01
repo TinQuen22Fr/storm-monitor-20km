@@ -4,6 +4,7 @@ import "@/App.css";
 import Dashboard from "@/pages/Dashboard";
 import History from "@/pages/History";
 import VigilancePage from "@/pages/VigilancePage";
+import ReplayPage from "@/pages/ReplayPage";
 import { AuthProvider } from "@/lib/auth";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -14,6 +15,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/vigilance" element={<VigilancePage />} />
+          <Route path="/replay" element={<ReplayPage />} />
           <Route path="/historique" element={<History />} />
         </Routes>
       </BrowserRouter>
