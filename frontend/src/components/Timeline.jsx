@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Pause, Play, Rewind } from "lucide-react";
 
+const SPEED_OPTIONS = [1, 2, 4, 8];
+const SPEED_STORAGE_KEY = "storm.timeline.speed";
+
 /**
  * Unified 24h timeline that drives clouds + rain + strikes display in sync.
  * Props:
@@ -20,6 +23,16 @@ export default function Timeline({
 }) {
   const nowRef = useRef(Math.floor(Date.now() / 1000));
   const [nowTs, setNowTs] = useState(nowRef.current);
+  // Playback speed multiplier — persisted across reloads
+  const [speed, setSpeed] = useState(() => {
+    try {
+      const saved = parseInt(localStorage.getItem(SPEED_STORAGE_KEY) || "1", 10);
+      return SPEED_OPTIONS.includes(saved) ? saved : 1;
+    } catch { return 1; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(SPEED_STORAGE_KEY, String(speed)); } catch { /* ignore */ }
+  }, [speed]);
 
   // Keep "now" in sync every 30s
   useEffect(() => {
@@ -40,6 +53,7 @@ export default function Timeline({
   useEffect(() => {
     if (!playing) return;
     const stepSec = 300; // 5 min per tick
+    const intervalMs = Math.max(50, Math.round(400 / speed));
     const t = setInterval(() => {
       const next = cursorRef.current + stepSec;
       const limit = nowRefT.current;
@@ -49,9 +63,9 @@ export default function Timeline({
       } else {
         onCursorChange(next);
       }
-    }, 400);
+    }, intervalMs);
     return () => clearInterval(t);
-  }, [playing, onCursorChange, setPlaying]);
+  }, [playing, speed, onCursorChange, setPlaying]);
 
   /**
    * Play button click handler.
@@ -109,6 +123,26 @@ export default function Timeline({
           title={!playing && isLive ? "Rejouer les 30 dernières minutes" : (playing ? "Pause" : "Lecture")}
         >
           {playing ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+        </button>
+
+        {/* Speed selector — cycles ×1 → ×2 → ×4 → ×8 → ×1 */}
+        <button
+          type="button"
+          onClick={() => {
+            const idx = SPEED_OPTIONS.indexOf(speed);
+            const next = SPEED_OPTIONS[(idx + 1) % SPEED_OPTIONS.length];
+            setSpeed(next);
+          }}
+          className={`h-9 px-2.5 border font-mono text-[11px] font-semibold tabular-nums transition-colors shrink-0 ${
+            speed > 1
+              ? "bg-slate-900 text-white border-slate-900"
+              : "bg-white text-slate-600 border-slate-300 hover:border-slate-900 hover:text-slate-900"
+          }`}
+          data-testid="timeline-speed"
+          aria-label={`Vitesse ×${speed}, cliquer pour changer`}
+          title={`Vitesse de lecture ×${speed} (cliquer pour cycler ×1/×2/×4/×8)`}
+        >
+          ×{speed}
         </button>
 
         <div className="flex-1 min-w-0">

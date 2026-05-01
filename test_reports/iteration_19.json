@@ -1,0 +1,28 @@
+{
+  "summary": "Frontend-only validation of the new playback-speed selector added next to the Play button on the Direct timeline (/app/frontend/src/components/Timeline.jsx). All 9 specified behaviours pass: default ×1 visible, cycle ×1→×2→×4→×8→×1, active/inactive Tailwind styling, localStorage persistence under key 'storm.timeline.speed', restore-on-reload, correct title attribute, faster slider advancement at higher speed (×8 advanced ~1500s in 700ms vs ~300s at ×1 in the same window), no regression on Play LIVE-rewind from iteration 18, mid-play speed change does not crash playback, and all pre-existing data-testids (timeline-play, timeline-slider, timeline-preset-*) remain intact.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Timeline.jsx speed-selector implementation is clean and minimal: SPEED_OPTIONS=[1,2,4,8] and SPEED_STORAGE_KEY const, lazy-init useState with parseInt+whitelist guard (defends against tampered localStorage values), persistence via separate useEffect on [speed], and onClick uses indexOf+modulo to cycle — exactly the ~10-line additive change requested.",
+    "The auto-advance useEffect deps now correctly include `speed`, so the setInterval is rebuilt with the new intervalMs whenever the user toggles speed mid-play — verified live (no crash, label stays Pause until natural auto-stop). intervalMs = Math.max(50, Math.round(400/speed)) → at ×8 that's 50ms, the 50ms floor protects against runaway timers if SPEED_OPTIONS is ever bumped higher.",
+    "Active/inactive styling uses pure Tailwind class branches (bg-slate-900/text-white vs bg-white/text-slate-600/border-slate-300) — consistent with the rest of the timeline preset buttons and a11y-friendly via aria-label='Vitesse ×N, cliquer pour changer'.",
+    "Empirical speedup ratio measured at ×8 vs ×1 was ~5× over a 700ms sample window (1500s vs 300s of replay-time advancement). Theoretical max is 8×; the gap is caused by React batching + browser timer resolution at very small intervals (50ms) and the slider's onChange not being read on every microtask. Functionally correct — the user-visible behaviour at ×8 is clearly much faster than ×1 and the ×8 mode burns through a 30-min auto-rewind in ~300ms. No bug.",
+    "Persistence verified: localStorage 'storm.timeline.speed' is written immediately on cycle ('2' after one click) and the value is restored on full page reload (UI shows ×2). The whitelist guard means a corrupted value (e.g. localStorage.setItem('storm.timeline.speed','99')) safely falls back to ×1.",
+    "Pre-existing Recharts width/height(-1) console warnings remain on /direct page (unrelated to this feature; documented in iteration 18).",
+    "Minor UX nit (non-blocking, no action): the speed button always renders even when isLive=true and Play hasn't been pressed — that's intentional per spec (allows pre-selecting speed before clicking Play) but a future improvement could be to dim it when playing=false to hint it only matters during replay. Keep as is for now."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100% (10/10 timeline-speed scenarios incl. regression on play/slider/presets)"},
+  "test_credentials": "N/A — public Direct page, no auth.",
+  "seed_data_creation": "None.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Speed selector lives at data-testid='timeline-speed' between timeline-play and the slider. Default ×1 (inactive=bg-white/text-slate-600), >×1 active=bg-slate-900/text-white. Cycle order: 1→2→4→8→1. Persistence key: localStorage 'storm.timeline.speed' (string). intervalMs=max(50, round(400/speed)). To measure speed effect in tests, use timeline-preset-1800 to seed cursor at -30min, then click play and sample timeline-slider input_value at +700ms — at ×8 you'll see ~1200-1800s advancement, at ×1 ~200-400s. Note: at ×8 the full 30-min replay finishes in <500ms, so don't sample after 500ms or you'll see the natural auto-stop (aria-label flips back to 'Lecture'). All previous timeline-* data-testids unchanged.",
+  "rca of the issue": "N/A — no bug. New feature validated end-to-end."
+}
