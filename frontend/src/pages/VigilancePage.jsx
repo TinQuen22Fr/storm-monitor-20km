@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { MapContainer, GeoJSON, TileLayer } from "react-leaflet";
-import { Info } from "lucide-react";
+import { Info, Pin, X } from "lucide-react";
 import NavTabs from "@/components/NavTabs";
 import { api } from "@/lib/api";
 
@@ -36,7 +36,8 @@ export default function VigilancePage() {
   const [franceGeo, setFranceGeo] = useState(null);
   const [andorraGeo, setAndorraGeo] = useState(null);
   const [vig, setVig] = useState(null);
-  const [hover, setHover] = useState(null);
+  const [hover, setHover] = useState(null); // ephemeral — follows the cursor
+  const [selected, setSelected] = useState(null); // sticky — set on click
   const [filter, setFilter] = useState("all");
 
   useEffect(() => {
@@ -83,17 +84,29 @@ export default function VigilancePage() {
   const styleFeatureFrance = (feature) => {
     const code = feature.properties.code;
     const lvl = levelBy[code] || 1;
-    return LEVEL_STYLE[lvl];
+    const base = LEVEL_STYLE[lvl];
+    if (selected && selected.id === code) {
+      return { ...base, weight: 3, color: "#0F172A", dashArray: null };
+    }
+    return base;
   };
 
-  const styleFeatureAndorra = () => LEVEL_STYLE[levelBy["AD"] || 1];
+  const styleFeatureAndorra = () => {
+    const base = LEVEL_STYLE[levelBy["AD"] || 1];
+    if (selected && selected.id === "AD") {
+      return { ...base, weight: 3, color: "#0F172A" };
+    }
+    return base;
+  };
 
   const onEachFranceDept = (feature, layer) => {
     const code = feature.properties.code;
     layer.on({
-      click: () => {
+      click: (e) => {
         const a = phenBy[code];
-        if (a) setHover(a);
+        if (a) setSelected(a);
+        // Prevent the map's own click handler from immediately clearing the selection
+        if (e.originalEvent) e.originalEvent.stopPropagation?.();
       },
       mouseover: (e) => {
         const a = phenBy[code];
@@ -101,6 +114,7 @@ export default function VigilancePage() {
         e.target.setStyle({ weight: 2.5, color: "#0F172A" });
       },
       mouseout: (e) => {
+        setHover(null);
         e.target.setStyle(styleFeatureFrance(feature));
       },
     });
@@ -110,6 +124,7 @@ export default function VigilancePage() {
       `<div style="font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.4">
         <div style="font-weight:700;text-transform:uppercase;letter-spacing:0.08em">${feature.properties.nom} (${code})</div>
         <div style="margin-top:3px">${filterName} ${LEVEL_NAMES[lvl]}</div>
+        <div style="margin-top:3px;color:#64748b">Cliquer pour épingler le détail</div>
       </div>`,
       { sticky: true, direction: "top" }
     );
@@ -119,12 +134,16 @@ export default function VigilancePage() {
     const a = phenBy["AD"];
     const lvl = levelBy["AD"] || 1;
     layer.on({
-      click: () => { if (a) setHover(a); },
+      click: (e) => {
+        if (a) setSelected(a);
+        if (e.originalEvent) e.originalEvent.stopPropagation?.();
+      },
       mouseover: (e) => {
         if (a) setHover(a);
         e.target.setStyle({ weight: 2.5, color: "#0F172A" });
       },
       mouseout: (e) => {
+        setHover(null);
         e.target.setStyle(styleFeatureAndorra());
       },
     });
@@ -133,6 +152,7 @@ export default function VigilancePage() {
       `<div style="font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.4">
         <div style="font-weight:700;text-transform:uppercase;letter-spacing:0.08em">Andorre (AD)</div>
         <div style="margin-top:3px">${filterName} ${LEVEL_NAMES[lvl]}</div>
+        <div style="margin-top:3px;color:#64748b">Cliquer pour épingler le détail</div>
       </div>`,
       { sticky: true, direction: "top" }
     );
@@ -287,60 +307,98 @@ export default function VigilancePage() {
             </div>
           </div>
 
-          {/* Selected area detail */}
-          {hover ? (
-            <div
-              className="border border-slate-200 bg-white p-5"
-              data-testid="vigilance-selected-area"
-            >
-              <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-slate-400 mb-2">
-                {hover.country === "AD" ? "Principauté" : "Département"} {hover.id !== "AD" ? `(${hover.id})` : ""}
-              </div>
-              <div className="flex items-center gap-2 mb-3">
-                <span
-                  className="w-3 h-3 rounded-full"
-                  style={{ background: hover.max_color }}
-                />
-                <h3 className="font-heading text-xl font-black tracking-tight text-slate-900">
-                  {hover.name}
-                </h3>
-              </div>
-              <div className="text-sm font-medium mb-3" style={{ color: hover.max_color }}>
-                Vigilance {hover.max_level_fr} · {hover.max_label}
-              </div>
-              <div className="space-y-1.5">
-                {hover.phenomena
-                  .filter((p) => p.level > 1)
-                  .map((p) => (
-                    <div
-                      key={p.key}
-                      className={`flex items-center gap-2 text-[13px] ${
-                        filter === p.key ? "ring-1 ring-slate-900 rounded-sm px-1 py-0.5 -mx-1" : ""
-                      }`}
+          {/* Selected area detail — click pins, hover previews when nothing pinned */}
+          {(() => {
+            // Priority: pinned selection > hovered area > default placeholder
+            const area = selected || hover;
+            const isPinned = !!selected;
+            if (!area) {
+              return (
+                <div className="border border-slate-200 bg-white p-5 text-sm text-slate-500 flex items-start gap-3">
+                  <Info className="w-4 h-4 shrink-0 mt-0.5" strokeWidth={1.8} />
+                  <div>
+                    Survolez un département pour un aperçu, puis <b>cliquez</b> pour épingler le détail.
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <div
+                className={`border bg-white p-5 transition-colors ${
+                  isPinned
+                    ? "border-slate-900 ring-1 ring-slate-900"
+                    : "border-slate-200 border-dashed"
+                }`}
+                data-testid="vigilance-selected-area"
+              >
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-slate-400 flex items-center gap-2">
+                    {isPinned && <Pin className="w-3 h-3 text-slate-900" strokeWidth={2.2} />}
+                    <span>
+                      {isPinned ? "Épinglé · " : "Aperçu · "}
+                      {area.country === "AD" ? "Principauté" : "Département"}
+                      {area.id !== "AD" ? ` (${area.id})` : ""}
+                    </span>
+                  </div>
+                  {isPinned && (
+                    <button
+                      type="button"
+                      onClick={() => setSelected(null)}
+                      className="w-6 h-6 flex items-center justify-center border border-slate-200 hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-colors"
+                      data-testid="vigilance-unpin-btn"
+                      aria-label="Désépingler"
+                      title="Désépingler"
                     >
-                      <span
-                        className="w-2 h-2 rounded-full"
-                        style={{ background: p.color }}
-                      />
-                      <span className="text-slate-700 flex-1">{p.label}</span>
-                      <span className="font-mono text-xs capitalize" style={{ color: p.color }}>
-                        {p.level_fr}
-                      </span>
+                      <X className="w-3 h-3" strokeWidth={2.4} />
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 mb-3">
+                  <span
+                    className="w-3 h-3 rounded-full"
+                    style={{ background: area.max_color }}
+                  />
+                  <h3 className="font-heading text-xl font-black tracking-tight text-slate-900">
+                    {area.name}
+                  </h3>
+                </div>
+                <div className="text-sm font-medium mb-3" style={{ color: area.max_color }}>
+                  Vigilance {area.max_level_fr} · {area.max_label}
+                </div>
+                <div className="space-y-1.5">
+                  {area.phenomena
+                    .filter((p) => p.level > 1)
+                    .map((p) => (
+                      <div
+                        key={p.key}
+                        className={`flex items-center gap-2 text-[13px] ${
+                          filter === p.key ? "ring-1 ring-slate-900 rounded-sm px-1 py-0.5 -mx-1" : ""
+                        }`}
+                      >
+                        <span
+                          className="w-2 h-2 rounded-full"
+                          style={{ background: p.color }}
+                        />
+                        <span className="text-slate-700 flex-1">{p.label}</span>
+                        <span className="font-mono text-xs capitalize" style={{ color: p.color }}>
+                          {p.level_fr}
+                        </span>
+                      </div>
+                    ))}
+                  {area.phenomena.filter((p) => p.level > 1).length === 0 && (
+                    <div className="text-sm text-slate-500 italic">
+                      Aucune vigilance active
                     </div>
-                  ))}
-                {hover.phenomena.filter((p) => p.level > 1).length === 0 && (
-                  <div className="text-sm text-slate-500 italic">
-                    Aucune vigilance active
+                  )}
+                </div>
+                {!isPinned && (
+                  <div className="mt-3 pt-3 border-t border-slate-100 font-mono text-[10px] text-slate-400 leading-relaxed">
+                    Cliquez sur le département pour épingler ce détail.
                   </div>
                 )}
               </div>
-            </div>
-          ) : (
-            <div className="border border-slate-200 bg-white p-5 text-sm text-slate-500 flex items-start gap-3">
-              <Info className="w-4 h-4 shrink-0 mt-0.5" strokeWidth={1.8} />
-              <div>Survolez ou cliquez sur un département pour afficher le détail des vigilances.</div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Source */}
           {vig && (
@@ -378,7 +436,7 @@ export default function VigilancePage() {
             />
             {franceGeo && vig && (
               <GeoJSON
-                key={`fr-${vig.updated_at}-${filter}`}
+                key={`fr-${vig.updated_at}-${filter}-${selected?.id || "none"}`}
                 data={franceGeo}
                 style={styleFeatureFrance}
                 onEachFeature={onEachFranceDept}
@@ -386,7 +444,7 @@ export default function VigilancePage() {
             )}
             {andorraGeo && vig && (
               <GeoJSON
-                key={`ad-${vig.updated_at}-${filter}`}
+                key={`ad-${vig.updated_at}-${filter}-${selected?.id || "none"}`}
                 data={andorraGeo}
                 style={styleFeatureAndorra}
                 onEachFeature={onEachAndorra}

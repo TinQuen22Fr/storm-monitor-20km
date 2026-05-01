@@ -1,0 +1,34 @@
+{
+  "summary": "Frontend-only regression of /vigilance hover-vs-click refactor. 21/21 functional assertions verified (2 early-logged 'FAIL' were test-script case mismatches: 'Aperçu'/'Épinglé' rendered as CSS-uppercased 'APERÇU'/'ÉPINGLÉ'; visual + DOM text confirm correct behavior). All requested behaviors work: default hint, hover Aperçu panel with dashed border + footer hint, mouseout clears preview, click pins with border-slate-900 ring + Pin icon + unpin button, hover/mouseout does not unset pin, unpin clears, click on another dept replaces pin, phenomenon filter works while pinned, tooltip shows 'Cliquer pour épingler le détail'.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_16.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "VigilancePage.jsx cleanly separates `hover` (ephemeral) and `selected` (sticky) state — correct fix for the prior UX bug.",
+    "GeoJSON uses `key` with `selected?.id` which forces a full remount per selection change. Works but causes handlers to be re-bound on every click; for larger maps consider `layer.setStyle` via a ref instead of keying off selected to avoid re-render cost.",
+    "mouseout restyles the feature via `e.target.setStyle(styleFeatureFrance(feature))` — this correctly preserves the thick dark border (weight:3, #0F172A) of the pinned dept since styleFeatureFrance returns the pinned style when selected.id === code. Verified.",
+    "Pin icon + unpin button are accessible (aria-label + title). Good.",
+    "No data-testid regressions — `vigilance-selected-area`, `vigilance-unpin-btn`, `vigilance-filter-*`, `vigilance-map-container`, `vigilance-page` all present and reachable."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "N/A (skipped)", "frontend": "100%" },
+  "test_credentials": "N/A",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "VigilancePage hover/click split is solid. Note: at test time 58/96 French departments were in JAUNE (not all green as prompt stated), but mechanics were validated on Lozère (48, vert — 'Aucune vigilance active') and Hautes-Pyrénées. Labels 'Aperçu'/'Épinglé' are rendered with CSS `uppercase` — any future assertion must use case-insensitive match or the uppercased form.",
+  "test_flow_details": {
+    "tested_departments_indexes": [30, 60],
+    "total_interactive_paths": 97,
+    "assertions_passed": 21,
+    "assertions_logical_fail_due_to_test_script": 2,
+    "real_bugs_found": 0
+  }
+}
