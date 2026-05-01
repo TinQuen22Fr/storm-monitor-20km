@@ -386,7 +386,15 @@ mkdir -p /etc/nginx/snippets
 # Idempotent: always rewrite the snippet from scratch (no append, no duplicates)
 rm -f /etc/nginx/snippets/storm-monitor-app.conf
 
-# Define a reusable config snippet with all the application routes
+# Define a reusable config snippet with all the application routes.
+#
+# IMPORTANT — Alt-Svc header repetition:
+# nginx's `add_header` directives are NOT inherited from outer scopes if the
+# inner block defines its own add_header. Since several location blocks set
+# Cache-Control headers, we must repeat `add_header Alt-Svc` in EACH block,
+# otherwise tools like http3check.net that probe specific paths (e.g.
+# /index.html) won't see the HTTP/3 advertisement. This is required for
+# external HTTP/3 detection to work.
 cat > /etc/nginx/snippets/storm-monitor-app.conf <<EOF
 root /var/www/storm-monitor/frontend/build;
 index index.html;
@@ -403,12 +411,14 @@ location /api/ {
     proxy_set_header X-Forwarded-Proto \$scheme;
     proxy_read_timeout 60s;
     proxy_send_timeout 60s;
+    add_header Alt-Svc 'h3=":443"; ma=86400' always;
 }
 
 # GeoJSON / static data assets
 location /geo/ {
     try_files \$uri =404;
     add_header Cache-Control "public, max-age=86400";
+    add_header Alt-Svc 'h3=":443"; ma=86400' always;
 }
 
 # Service worker — never cache, must update instantly
@@ -416,6 +426,7 @@ location = /sw.js {
     try_files \$uri =404;
     add_header Cache-Control "no-cache, no-store, must-revalidate" always;
     add_header Pragma "no-cache" always;
+    add_header Alt-Svc 'h3=":443"; ma=86400' always;
     expires off;
 }
 
@@ -423,6 +434,7 @@ location = /sw.js {
 location = /index.html {
     add_header Cache-Control "no-cache, no-store, must-revalidate" always;
     add_header Pragma "no-cache" always;
+    add_header Alt-Svc 'h3=":443"; ma=86400' always;
     expires off;
     try_files \$uri =404;
 }
@@ -431,11 +443,21 @@ location = /index.html {
 location /static/ {
     try_files \$uri =404;
     add_header Cache-Control "public, max-age=31536000, immutable";
+    add_header Alt-Svc 'h3=":443"; ma=86400' always;
+}
+
+# Self-hosted webfonts (immutable, served via HTTP/3)
+location /fonts/ {
+    try_files \$uri =404;
+    add_header Cache-Control "public, max-age=31536000, immutable";
+    add_header Access-Control-Allow-Origin "*";
+    add_header Alt-Svc 'h3=":443"; ma=86400' always;
 }
 
 # SPA fallback
 location / {
     try_files \$uri /index.html;
+    add_header Alt-Svc 'h3=":443"; ma=86400' always;
 }
 
 gzip on;

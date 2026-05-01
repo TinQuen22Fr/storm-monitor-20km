@@ -2,7 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url("https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@400,500,700,800,900&f[]=outfit@300,400,500,600,700&display=swap");
+/* Cabinet Grotesk + Outfit are self-hosted via /public/fonts/fonts.css
+   linked from index.html (CRA-native pattern). IBM Plex Mono stays on
+   Google Fonts (no third-party cookies, no SameSite warning). */
 @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap");
 
 :root {
