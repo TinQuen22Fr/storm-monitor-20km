@@ -1,0 +1,39 @@
+{
+  "summary": "Backend testing of Discord/Telegram webhooks feature. 26/26 pytest assertions passed across 7 test classes covering: webhook status endpoint (no-auth + no-secret-leak), test endpoint (auth gate + null-channels response), _discord_url validation (empty/invalid prefix/valid), _telegram_config (missing token/chat/both), per-tag cooldown (15min throttle + force bypass + active_cooldowns exposed in status), graceful HTTP error capture for both Discord and Telegram with fake URLs, dispatch signature compatibility for the 5 watcher tags (storm-active, lightning-strike, storm-approach, vigilance-orange, vigilance-rouge), and regression of /api/push/test, /api/replay/events, /api/replay/video, /api/weather/vigilance.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_webhooks.py",
+    "/app/test_reports/pytest/pytest_results_iter17.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "webhooks.py is clean, well-documented, ~175 lines, no DRY violations.",
+    "_check_cooldown sets the timestamp inside the lock BEFORE the actual send — correct race-condition behavior, prevents double-fire under concurrent dispatch().",
+    "status() correctly excludes secrets: only booleans + cooldown_s + app_url + active cooldown counters are exposed. Verified.",
+    "Exceptions in _send_discord/_send_telegram are caught and returned as {ok: false, error: ...} so dispatch() never raises and the alert watcher loop stays alive.",
+    "asyncio.gather(_send_discord, _send_telegram) — Discord and Telegram are sent in parallel, good.",
+    "Minor improvement (non-blocking): _cooldowns dict can grow unbounded if many distinct tags are used; current 6-tag enum is safe but consider a periodic cleanup pass.",
+    "Minor improvement (non-blocking): WEBHOOK_COOLDOWN_S parsing falls back silently to 900 on ValueError; logging the bad value would aid ops.",
+    "Server.py _alert_watcher correctly calls dispatch() with all 4 alert tags + 2 vigilance tags after each push_mod.send_to_all — signatures match webhooks.dispatch(title, body, tag, force=False)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_webhooks.py (created)"
+  ],
+  "success_rate": {
+    "backend": "100% (26/26)",
+    "frontend": "N/A (skipped per request)"
+  },
+  "test_credentials": "test@lourdes.fr / storm123 (used to obtain JWT)",
+  "seed_data_creation": "None — test user already exists; tests register if login fails (idempotent).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Webhook tests use monkeypatch and reload the webhooks module per test for cooldown isolation. Live HTTP calls happen against discord.com (returns 401 with the documented invalid-token URL) and api.telegram.org (returns 401/404). If those upstreams ever become unreachable, the tests still pass because the error-capture branch returns {ok: false, error: ...} which the assertions accept. No env vars are persistently set — tests do not pollute backend/.env. Module path /app/backend is added to sys.path inside the test file."
+}

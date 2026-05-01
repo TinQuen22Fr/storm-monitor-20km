@@ -53,6 +53,77 @@ sudo certbot --nginx -d storm-monitor.quentin-astro.fr
 
 Certbot ajoutera automatiquement le bloc 443 + la redirection HTTP → HTTPS.
 
+### Activer HTTP/3 (QUIC) — optionnel mais recommandé
+
+Storm Monitoring tourne sur Nginx 1.30+ qui supporte HTTP/3 nativement. Le vhost est déjà configuré (`listen 443 quic`, `http3 on`, header `Alt-Svc`). Il reste juste à **ouvrir UDP 443** sur votre pare-feu :
+
+```bash
+# UFW
+sudo ufw allow 443/udp
+sudo ufw reload
+
+# OU iptables
+sudo iptables -I INPUT -p udp --dport 443 -j ACCEPT
+```
+
+Vérifier que HTTP/3 répond bien :
+
+```bash
+curl --http3-only -sI https://storm-monitor.quentin-astro.fr/ | head -3
+# Doit afficher: HTTP/3 200
+```
+
+Chrome/Firefox mettront automatiquement à niveau la connexion au deuxième chargement grâce au header `Alt-Svc`.
+
+### Activer les webhooks Discord / Telegram — optionnel
+
+L'app envoie automatiquement des alertes sur Discord ou Telegram pour 4 événements :
+- **Orage en cours** (CAPE élevé détecté)
+- **Impacts de foudre** (strikes dans le rayon de 20 km)
+- **Orage en approche** (centroid qui se rapproche avec ETA)
+- **Vigilance orange/rouge** sur le 65 (Hautes-Pyrénées)
+
+Un cooldown de 15 min par type d'alerte évite le flood.
+
+#### Configuration
+
+Éditez `/var/www/storm-monitor/backend/.env` et remplissez selon vos besoins :
+
+```env
+# Discord (créer un webhook dans Paramètres du salon → Intégrations → Webhooks)
+DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/123456/abc..."
+
+# Telegram (parler à @BotFather pour créer un bot, puis @userinfobot pour votre chat_id)
+TELEGRAM_BOT_TOKEN="7123456789:AAHxxxxxxxxxxxxxxxxxxxxxxxxx"
+TELEGRAM_CHAT_ID="-1001234567890"   # ou votre ID perso
+
+# Facultatif
+WEBHOOK_APP_URL="https://storm-monitor.quentin-astro.fr"
+WEBHOOK_COOLDOWN_S="900"   # 15 min par défaut
+```
+
+Puis redémarrer le backend :
+
+```bash
+sudo systemctl restart storm-monitor
+```
+
+#### Tester les webhooks
+
+```bash
+# Récupérer un token d'auth (login)
+TOKEN=$(curl -s -X POST https://storm-monitor.quentin-astro.fr/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"test@lourdes.fr","password":"storm123"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+
+# Voir quels canaux sont actifs (sans secret)
+curl https://storm-monitor.quentin-astro.fr/api/webhooks/status
+
+# Envoyer un test (bypass cooldown)
+curl -X POST https://storm-monitor.quentin-astro.fr/api/webhooks/test \
+  -H "Authorization: Bearer $TOKEN"
+```
+
 ---
 
 ## 🔄 Mettre à jour la production (après chaque nouvelle feature)

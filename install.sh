@@ -264,6 +264,12 @@ print('VAPID_SUBJECT="mailto:quentin@quentin-astro.fr"')
 print(f'VAPID_PUBLIC_KEY="{public_b64}"')
 print(f'VAPID_PRIVATE_KEY_PEM="{private_pem}"')
 print('STORM_DATA_FILE="/var/www/storm-monitor/backend/storm_data.json"')
+# --- Webhooks (optional — fill to enable Discord / Telegram notifications) ---
+print('DISCORD_WEBHOOK_URL=""')
+print('TELEGRAM_BOT_TOKEN=""')
+print('TELEGRAM_CHAT_ID=""')
+print('WEBHOOK_APP_URL="https://storm-monitor.quentin-astro.fr"')
+print('WEBHOOK_COOLDOWN_S="900"')
 PY
   chmod 600 .env
   deactivate
@@ -404,13 +410,22 @@ server {
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
+    # HTTP/3 (QUIC) — nginx 1.25+. Make sure UDP 443 is open in your firewall:
+    #   sudo ufw allow 443/udp
+    listen 443 quic reuseport;
+    listen [::]:443 quic reuseport;
     http2 on;
+    http3 on;
+    quic_retry on;
     server_name storm-monitor.quentin-astro.fr;
 
     ssl_certificate     $SSL_CERT;
     ssl_certificate_key $SSL_KEY;
     include /etc/letsencrypt/options-ssl-nginx.conf;
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    # Advertise HTTP/3 to clients so they upgrade on the next visit
+    add_header Alt-Svc 'h3=":443"; ma=86400' always;
 
     include /etc/nginx/snippets/storm-monitor-app.conf;
 }
@@ -491,6 +506,21 @@ echo ""
 echo "    NEXT — enable HTTPS (required, frontend is built for HTTPS):"
 echo "        sudo apt install -y certbot python3-certbot-nginx"
 echo "        sudo certbot --nginx -d storm-monitor.quentin-astro.fr"
+echo ""
+echo "    NEXT — enable HTTP/3 (QUIC):"
+echo "        sudo ufw allow 443/udp       # if you use ufw"
+echo "        # or for iptables:"
+echo "        # sudo iptables -I INPUT -p udp --dport 443 -j ACCEPT"
+echo "        # Verify with:"
+echo "        # curl --http3-only -sI https://storm-monitor.quentin-astro.fr/"
+echo ""
+echo "    NEXT — enable webhooks (optional — Discord / Telegram):"
+echo "        edit /var/www/storm-monitor/backend/.env"
+echo "        set DISCORD_WEBHOOK_URL=\"https://discord.com/api/webhooks/...\""
+echo "        and/or TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID"
+echo "        systemctl restart storm-monitor"
+echo "        # test (auth token required):"
+echo "        curl -X POST https://storm-monitor.quentin-astro.fr/api/webhooks/test -H \"Authorization: Bearer \$TOKEN\""
 echo ""
 echo "    To deploy a new version (update mode — clone is preserved):"
 echo "        sudo bash install.sh           # auto-detect existing install → git pull"

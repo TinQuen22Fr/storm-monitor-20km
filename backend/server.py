@@ -40,6 +40,7 @@ import reports as reports_mod
 import analysis as analysis_mod
 import demo_storms as demo_mod
 import video_export as video_mod
+import webhooks as webhooks_mod
 import uploads as uploads_mod
 import vigilance as vigilance_mod
 import share_card as share_card_mod
@@ -569,6 +570,28 @@ async def push_test(user=Depends(get_current_user)):
     return result
 
 
+# ---------- Webhooks (Discord + Telegram) ----------
+@api_router.get("/webhooks/status")
+async def webhooks_status():
+    """Return which channels are configured. No secret is leaked."""
+    return webhooks_mod.status()
+
+
+@api_router.post("/webhooks/test")
+async def webhooks_test(user=Depends(get_current_user)):
+    """Send a test message on all configured channels (bypasses cooldown)."""
+    res = await webhooks_mod.dispatch(
+        title="Test webhook · Storm Monitoring",
+        body=(
+            "Ceci est un test de notification — tout fonctionne.\n"
+            "Les canaux recevront désormais les alertes orages, impacts et vigilance."
+        ),
+        tag="test",
+        force=True,
+    )
+    return res
+
+
 # ---------- PDF bulletin ----------
 @api_router.get("/reports/bulletin.pdf")
 async def bulletin_pdf(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM):
@@ -642,6 +665,11 @@ async def _alert_watcher():
                     url="/",
                     tag="storm-active",
                 )
+                await webhooks_mod.dispatch(
+                    title="Alerte orage · Lourdes",
+                    body=f"Activité orageuse détectée (CAPE {int(zones.get('max_cape') or 0)} J/kg).",
+                    tag="storm-active",
+                )
             _alerter_state["storm_active"] = storm_now
 
             # Fresh strikes in radius
@@ -654,6 +682,11 @@ async def _alert_watcher():
                     title=f"⚡ {len(new_strikes)} impact(s) de foudre",
                     body=f"Le plus proche à {closest['distance_km']:.1f} km de Lourdes.",
                     url="/",
+                    tag="lightning-strike",
+                )
+                await webhooks_mod.dispatch(
+                    title=f"{len(new_strikes)} impact(s) de foudre",
+                    body=f"Le plus proche à {closest['distance_km']:.1f} km de Lourdes.",
                     tag="lightning-strike",
                 )
                 _alerter_state["last_strike_ts"] = max(s["ts"] for s in new_strikes)
@@ -673,6 +706,11 @@ async def _alert_watcher():
                     title="⚠ Orage en approche de Lourdes",
                     body=body,
                     url="/",
+                    tag="storm-approach",
+                )
+                await webhooks_mod.dispatch(
+                    title="Orage en approche de Lourdes",
+                    body=body,
                     tag="storm-approach",
                 )
             _alerter_state["approach_active"] = bool(approach.get("approaching"))
@@ -701,6 +739,11 @@ async def _alert_watcher():
                             title=f"⚠ Vigilance {level_fr.upper()} · Lourdes",
                             body=f"{names} · passage en niveau {level_fr}. Soyez vigilant.",
                             url="/",
+                            tag=f"vigilance-{level_fr}",
+                        )
+                        await webhooks_mod.dispatch(
+                            title=f"Vigilance {level_fr.upper()} · Lourdes (Hautes-Pyrénées)",
+                            body=f"{names} · passage en niveau {level_fr}. Soyez vigilant.",
                             tag=f"vigilance-{level_fr}",
                         )
                     _alerter_state["vigilance_level"] = current_level
