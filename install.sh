@@ -6,13 +6,16 @@
 # What it does:
 #   1. Installs Python 3.11+, Node.js 20, Yarn, MongoDB 8, Nginx 1.30+ (from nginx.org)
 #   2. Clones https://github.com/TinQuen22Fr/storm-monitor-20km.git into /var/www/storm-monitor
+#      OR pulls latest if the directory already exists (stash → pull → restore)
 #   3. Configures git remote for future pushes
 #   4. Creates Python venv + installs backend dependencies
-#   5. Generates /var/www/storm-monitor/backend/.env (random secrets + VAPID)
-#   6. Builds frontend with REACT_APP_BACKEND_URL=http://storm-monitor.quentin-astro.fr
+#   5. Generates /var/www/storm-monitor/backend/.env (random secrets + VAPID) ONLY on first install
+#   6. Builds frontend with REACT_APP_BACKEND_URL=https://storm-monitor.quentin-astro.fr
 #   7. Creates Nginx vhost /etc/nginx/sites-available/storm-monitor.conf (HTTP only)
 #   8. Creates systemd unit /etc/systemd/system/storm-monitor.service (port 8003)
 #   9. Starts everything
+#
+# Idempotent: safe to run multiple times. First run = fresh install, subsequent runs = update.
 #
 # SSL/HTTPS (Certbot) is intentionally NOT installed — do it manually after.
 
@@ -134,30 +137,80 @@ fi
 systemctl enable --now mongod
 
 # ---------------------------------------------------------------------------
-# 2. Clone repository
+# 2. Repository — clone on first install, pull on subsequent runs
 # ---------------------------------------------------------------------------
 mkdir -p /var/www
 if [[ -d "$APP_DIR/.git" ]]; then
-  echo "==> Repository already cloned, syncing branch '$BRANCH'..."
-  git -C "$APP_DIR" fetch origin
-  git -C "$APP_DIR" checkout "$BRANCH"
-  git -C "$APP_DIR" pull --ff-only origin "$BRANCH"
+  # MISE À JOUR : on conserve le clone existant et on pull la branche
+  echo "==> Existing install detected at $APP_DIR — switching to UPDATE mode"
+
+  CURRENT_BRANCH="$(git -C "$APP_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'unknown')"
+  CURRENT_COMMIT="$(git -C "$APP_DIR" rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
+  echo "    Current branch : $CURRENT_BRANCH"
+  echo "    Current commit : $CURRENT_COMMIT"
+
+  # Stash uncommitted local changes (e.g. generated .env, build artifacts) so
+  # `git pull --ff-only` cannot fail on a dirty tree. We restore them after.
+  STASH_CREATED=0
+  if ! git -C "$APP_DIR" diff --quiet || ! git -C "$APP_DIR" diff --cached --quiet; then
+    echo "    Local changes detected — stashing them temporarily..."
+    if git -C "$APP_DIR" stash push -u -m "install.sh auto-stash $(date -u +%FT%TZ)" >/dev/null 2>&1; then
+      STASH_CREATED=1
+    else
+      echo "    WARN: stash failed, continuing anyway"
+    fi
+  fi
+
+  # Make sure the configured remote points to our repo (in case it drifted)
+  git -C "$APP_DIR" remote set-url origin "$REPO_URL"
+
+  echo "==> Fetching latest from origin..."
+  git -C "$APP_DIR" fetch --prune origin
+
+  # Switch branch only if needed (avoids gratuitous churn)
+  if [[ "$CURRENT_BRANCH" != "$BRANCH" ]]; then
+    echo "==> Switching branch: $CURRENT_BRANCH → $BRANCH"
+    git -C "$APP_DIR" checkout "$BRANCH" 2>/dev/null || \
+      git -C "$APP_DIR" checkout -b "$BRANCH" "origin/$BRANCH"
+  fi
+
+  echo "==> Pulling origin/$BRANCH..."
+  if ! git -C "$APP_DIR" pull --ff-only origin "$BRANCH"; then
+    echo "    Fast-forward failed — forcing reset to origin/$BRANCH"
+    git -C "$APP_DIR" reset --hard "origin/$BRANCH"
+  fi
+
+  NEW_COMMIT="$(git -C "$APP_DIR" rev-parse --short HEAD)"
+  if [[ "$CURRENT_COMMIT" == "$NEW_COMMIT" ]]; then
+    echo "    Already up-to-date at $NEW_COMMIT"
+  else
+    echo "    Updated $CURRENT_COMMIT → $NEW_COMMIT"
+    echo "    Changed files :"
+    git -C "$APP_DIR" log --pretty=format:'      - %h %s' "$CURRENT_COMMIT..$NEW_COMMIT" | head -20
+    echo ""
+  fi
+
+  # Try to restore the stashed local changes (best-effort, conflicts are kept in stash)
+  if [[ $STASH_CREATED -eq 1 ]]; then
+    if git -C "$APP_DIR" stash pop >/dev/null 2>&1; then
+      echo "    Restored local stashed changes"
+    else
+      echo "    WARN: stash conflicts — your local changes are kept in 'git stash list'"
+    fi
+  fi
 else
+  # PREMIER INSTALL : clone neuf
   if [[ -d "$APP_DIR" ]]; then
-    # Existing non-git directory — clone in-place via temp dir
     echo "==> Directory $APP_DIR exists but is not a git repo. Removing it..."
     rm -rf "$APP_DIR"
   fi
-  echo "==> Cloning '$BRANCH' branch..."
+  echo "==> First install — cloning '$BRANCH' branch into $APP_DIR..."
   git clone -b "$BRANCH" "$REPO_URL" "$APP_DIR"
 fi
 
-# Configure remote so future `git push` works
-git -C "$APP_DIR" remote set-url origin "$REPO_URL"
-
 # Sanity check
 if [[ ! -d "$APP_DIR/backend" || ! -d "$APP_DIR/frontend" ]]; then
-  echo "ERROR: clone did not produce expected backend/ and frontend/ directories." >&2
+  echo "ERROR: repository does not contain expected backend/ and frontend/ directories." >&2
   echo "       Branch '$BRANCH' may not contain the application code." >&2
   exit 1
 fi
@@ -433,7 +486,9 @@ echo "    NEXT — enable HTTPS (required, frontend is built for HTTPS):"
 echo "        sudo apt install -y certbot python3-certbot-nginx"
 echo "        sudo certbot --nginx -d storm-monitor.quentin-astro.fr"
 echo ""
-echo "    To deploy a new version:"
+echo "    To deploy a new version (update mode — clone is preserved):"
+echo "        sudo bash install.sh           # auto-detect existing install → git pull"
+echo "        # OR manually:"
 echo "        cd /var/www/storm-monitor && git pull"
 echo "        cd frontend && yarn install --frozen-lockfile && yarn build"
 echo "        systemctl restart storm-monitor && systemctl reload nginx"
