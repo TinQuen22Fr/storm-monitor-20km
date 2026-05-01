@@ -129,6 +129,40 @@ if grep -qo '\bavx\b' /proc/cpuinfo 2>/dev/null; then
   HAS_AVX=1
 fi
 
+# ---------------------------------------------------------------------------
+# curl with HTTP/3 support (via snap)
+# ---------------------------------------------------------------------------
+# Ubuntu/Debian ship libcurl WITHOUT HTTP/3 support, so `curl --http3` fails
+# with "the installed libcurl version doesn't support this".
+# We install a recent curl from snap and expose it as `curl3` (system-wide
+# symlink) plus a profile.d alias `curl` for interactive root shells.
+# /usr/bin/curl stays untouched so system scripts/cron keep working.
+if ! command -v snap >/dev/null; then
+  apt-get install -y snapd
+fi
+if ! snap list curl >/dev/null 2>&1; then
+  echo "==> Installing curl with HTTP/3 support via snap..."
+  snap install curl || echo "    WARN: snap install curl failed — HTTP/3 testing CLI won't be available"
+fi
+# Acknowledge the snap-curl banner once (silences it on every call)
+if [[ -x /snap/bin/curl.snap-acked ]]; then
+  /snap/bin/curl.snap-acked >/dev/null 2>&1 || true
+fi
+# System-wide `curl3` shortcut: works for scripts and humans.
+if [[ -x /snap/bin/curl ]] && [[ ! -e /usr/local/bin/curl3 ]]; then
+  ln -sf /snap/bin/curl /usr/local/bin/curl3
+fi
+# Make plain `curl` resolve to the snap build in interactive root shells.
+if [[ -d /etc/profile.d ]] && [[ ! -f /etc/profile.d/storm-monitor-curl3.sh ]]; then
+  cat > /etc/profile.d/storm-monitor-curl3.sh <<'EOF'
+# Storm Monitoring — alias `curl` to the snap build (HTTP/3 support).
+# Drop this file to undo: rm /etc/profile.d/storm-monitor-curl3.sh
+if [ -x /snap/bin/curl ]; then
+  alias curl='/snap/bin/curl'
+fi
+EOF
+fi
+
 if ! command -v mongod >/dev/null; then
   CODENAME="$(lsb_release -sc)"
   # Strip stale repo entries (any older version installed previously)
@@ -551,8 +585,9 @@ echo "    NEXT — enable HTTP/3 (QUIC):"
 echo "        sudo ufw allow 443/udp       # if you use ufw"
 echo "        # or for iptables:"
 echo "        # sudo iptables -I INPUT -p udp --dport 443 -j ACCEPT"
-echo "        # Verify with:"
-echo "        # curl --http3-only -sI https://storm-monitor.quentin-astro.fr/"
+echo "        # Verify with the snap-installed curl that supports HTTP/3:"
+echo "        curl3 --http3-only -sI https://storm-monitor.quentin-astro.fr/ | head -3"
+echo "        # (open a NEW shell first if you also want plain 'curl' to use HTTP/3 via the alias)"
 echo ""
 echo "    NEXT — enable webhooks (optional — Discord / Telegram):"
 echo "        edit /var/www/storm-monitor/backend/.env"

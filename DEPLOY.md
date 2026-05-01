@@ -66,12 +66,35 @@ sudo ufw reload
 sudo iptables -I INPUT -p udp --dport 443 -j ACCEPT
 ```
 
-Vérifier que HTTP/3 répond bien :
+#### Tester HTTP/3 depuis le serveur
+
+⚠️ Le `curl` fourni par Ubuntu/Debian est **compilé sans HTTP/3** :
+
+```
+curl: option --http3-only: the installed libcurl version doesn't support this
+```
+
+`install.sh` installe automatiquement une version récente de `curl` via snap et expose 2 raccourcis :
+
+| Commande | Effet |
+|---|---|
+| `curl3 --http3-only -sI https://...` | Toujours dispo (binaire snap, symlink dans `/usr/local/bin/`) |
+| `curl --http3-only -sI https://...` | Dispo dans un **nouveau shell root** (alias dans `/etc/profile.d/storm-monitor-curl3.sh`) |
+
+Vérifier que HTTP/3 répond :
 
 ```bash
-curl --http3-only -sI https://storm-monitor.quentin-astro.fr/ | head -3
+# Méthode rapide (binaire snap, pas besoin de nouveau shell)
+curl3 --http3-only -sI https://storm-monitor.quentin-astro.fr/ | head -3
 # Doit afficher: HTTP/3 200
+
+# Ou en ouvrant un nouveau shell SSH (alias chargé)
+curl --http3-only -sI https://storm-monitor.quentin-astro.fr/ | head -3
 ```
+
+> 💡 **Si le warning Snap apparaît** ("Caution: You are using the Snap version of curl..."), exécuter une fois `/snap/bin/curl.snap-acked` (déjà fait par `install.sh` à la première run).
+>
+> **Pour annuler** l'alias système : `sudo rm /etc/profile.d/storm-monitor-curl3.sh /usr/local/bin/curl3 && sudo snap remove curl`
 
 Chrome/Firefox mettront automatiquement à niveau la connexion au deuxième chargement grâce au header `Alt-Svc`.
 
