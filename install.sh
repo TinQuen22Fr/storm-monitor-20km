@@ -149,8 +149,16 @@ if [[ -x /snap/bin/curl.snap-acked ]]; then
   /snap/bin/curl.snap-acked >/dev/null 2>&1 || true
 fi
 # System-wide `curl3` shortcut: works for scripts and humans.
-if [[ -x /snap/bin/curl ]] && [[ ! -e /usr/local/bin/curl3 ]]; then
-  ln -sf /snap/bin/curl /usr/local/bin/curl3
+# IMPORTANT: must be a wrapper script, NOT a symlink — snap launchers in
+# /snap/bin/* dispatch based on argv[0], so renaming via symlink would make
+# snap think `curl3` is a different app and fail with "unknown flag".
+if [[ -x /snap/bin/curl ]]; then
+  cat > /usr/local/bin/curl3 <<'EOF'
+#!/usr/bin/env bash
+# Storm Monitoring — wrapper that forwards to the snap curl (HTTP/3 capable).
+exec /snap/bin/curl "$@"
+EOF
+  chmod +x /usr/local/bin/curl3
 fi
 # Make plain `curl` resolve to the snap build in interactive root shells.
 if [[ -d /etc/profile.d ]] && [[ ! -f /etc/profile.d/storm-monitor-curl3.sh ]]; then
