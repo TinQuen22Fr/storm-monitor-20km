@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 15 - Validated demos endpoint + MP4 video export pipeline. Backend: 9/9 pytest pass — GET /api/replay/demos returns {is_reconstructed:true, demos:[2 items]} with full shape (id/label/subtitle/description/is_demo/start_ts/end_ts/duration_min/strike_count/peak_count_10min/center_lat/center_lon) for demo-pyrenees-cevenol and demo-cellule-isolee. POST /api/replay/video {demo_id} → 200 + {job_id, status:'queued'} (start/end overridden by demo strikes — bug fix from agent context confirmed working: cevenol job duration_s≈2700, file generated). Unknown demo_id → 404. POST without demo_id when store has no strikes → 400 'Not enough strikes'. GET /api/replay/video/{job_id} → returns {job_id,status,progress 0-100,created_at,label,mp4_url}. Unknown job → 404. E2E full flow: queue → poll (done in <30s) → GET /file.mp4 (Content-Type video/mp4, >10KB) → ffprobe confirms codec_name=h264, width=720, height=720, duration≥3s. /api/replay/events regression OK. Frontend: /replay loads, replay-demo-section + 2 demo cards (replay-demo-0, replay-demo-1) render with DEMO badge + violet bg. Each card has replay-demo-play-{idx} and replay-demo-video-{idx}. Clicking 'Exporter MP4' opens video-export-dialog → progress bar visible → player appears in ~6s with download/whatsapp/copy buttons. Clicking 'Rejouer dans le Direct' navigates to /?replay=start:end and Dashboard shows replay-banner. Empty state for real events shown (replay-empty visible) when no real bursts, as expected.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard (after navigation from replay)", "issues": ["Pre-existing recharts console warning: 'width(-1) and height(-1) of chart should be greater than 0' — unrelated to this iter's features but appears repeatedly when entering replay mode. Could be a Timeline or sparkline chart container that has 0px during initial transition."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_replay_video.py",
+    "/app/test_reports/pytest/pytest_results_iter15.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "video_export.py: in-memory _JOBS dict — fine for single uvicorn worker but if scaled to multi-worker (gunicorn -w N), jobs created on worker A won't be visible from worker B. Document this constraint or use redis/sqlite for multi-worker.",
+    "video_export.py:393 frames_dir cleanup is best-effort (ignore_errors=True) — if ffmpeg fails AFTER frames are written, frames_dir leaks ~50MB of PNGs in /tmp/storm_videos/output/. Consider try/finally cleanup.",
+    "video_export.py:407 purge_old() only deletes jobs with finished_at < cutoff but never deletes failed-job MP4 paths if mp4_path was never set; orphan files possible if job crashes mid-render. Minor.",
+    "server.py POST /replay/video: when demo_id is set, body.lat/lon/radius_km still come from caller — VideoExportDialog passes event.center_lat/lon for demos, which is correct, but a malicious client could pass garbage center coords for a known demo_id and waste CPU. Low severity (no auth on this app).",
+    "VideoExportDialog.jsx: useEffect deps [open, event, isDemo] — if parent re-renders with same event prop but new object identity, the dialog will restart the job. ReplayPage uses useState for videoEvent so identity is stable per click — OK in practice.",
+    "video_export.py file.mp4 endpoint sets Cache-Control: public, max-age=3600 but there is no cache-busting query param — if the same job_id is reused (currently not, since uuid) clients could get stale content. Not an issue with current uuid-based naming."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_replay_video.py (NEW — 9 tests covering demos endpoint, video job lifecycle, E2E ffprobe-validated MP4, and /api/replay/events regression)"
+  ],
+  "success_rate": {
+    "backend": "100% (9/9 pytest test_replay_video.py: demos shape, POST demo_id 200, POST unknown demo_id 404, POST no-demo no-strikes 400, GET status unknown 404, GET status known shape, E2E queue→poll→download→ffprobe h264 720x720 ≥3s, file.mp4 unknown 404, replay/events regression)",
+    "frontend": "100% (replay-demo-section + 2 demo cards visible, all 4 demo buttons present, video-export-dialog opens, progress bar shown, video-export-player + download/whatsapp/copy buttons appear in ~6s, dialog closes via X, 'Rejouer dans le Direct' navigates to /?replay=... and Dashboard shows replay-banner)"
+  },
+  "test_credentials": "N/A (no auth)",
+  "seed_data_creation": "None — demo storms are deterministic synthetic data generated in-memory by demo_storms.py.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Both new features (demos + MP4 export) are fully functional end-to-end. The video pipeline is fast (~5-10s for 20min cellule-isolee, ~10-15s for 45min cevenol) — earlier 90s polling budgets are very safe. ffmpeg + PIL + httpx are all installed. Tile cache lives at /tmp/storm_videos/tiles and persists between jobs (first job warm-up was sub-30s; subsequent jobs are faster due to tile cache hits). Live StrikeStore is empty (calm conditions in France) so the 'real-event MP4' path only validated by negative test (400). To exercise the real-event path, inject strikes via lightning_mod.store.add(...) like iteration_14 (in-process ASGI). All previously validated features (replay events, vigilance, trajectory, share-card) remain regression-free; only iter-13 inconsistency about until_ts inclusive vs exclusive remains as previously noted."
+}

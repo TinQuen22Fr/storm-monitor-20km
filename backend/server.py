@@ -38,6 +38,8 @@ import lightning as lightning_mod
 import push as push_mod
 import reports as reports_mod
 import analysis as analysis_mod
+import demo_storms as demo_mod
+import video_export as video_mod
 import uploads as uploads_mod
 import vigilance as vigilance_mod
 import share_card as share_card_mod
@@ -348,6 +350,98 @@ async def replay_events(
     # 3. Sort by intensity (peak rate then strike_count) descending, then recency
     events.sort(key=lambda e: (-e["peak_count_10min"], -e["strike_count"], -e["start_ts"]))
     return {"events": events, "source_window_h": 24}
+
+
+@api_router.get("/replay/demos")
+async def replay_demos():
+    """Return the list of reconstructed demo storms (Pyrenees type).
+
+    These are synthetic events used to showcase the Replay + MP4 export
+    features when no live thunderstorm is detected.
+    """
+    import time as _t
+    now = _t.time()
+    return {"demos": demo_mod.list_demo_events(now), "is_reconstructed": True}
+
+
+class VideoExportInput(BaseModel):
+    start_ts: float
+    end_ts: float
+    lat: float = LOURDES_LAT
+    lon: float = LOURDES_LON
+    radius_km: float = 70.0
+    label: str = "Replay Storm Monitoring"
+    demo_id: str | None = None
+
+
+@api_router.post("/replay/video")
+async def replay_video_start(body: VideoExportInput):
+    """Kick off async MP4 generation for a replay episode.
+
+    If `demo_id` is set, strikes come from the demo fixture. Otherwise we
+    pull strikes from the live in-memory Blitzortung store.
+    """
+    import time as _t
+    start_ts = body.start_ts
+    end_ts = body.end_ts
+    label = body.label
+    if body.demo_id:
+        strikes = demo_mod.get_demo_strikes(body.demo_id, _t.time()) or []
+        if not strikes:
+            raise HTTPException(status_code=404, detail="Demo not found")
+        # Demos carry their own time window + label — body values are ignored.
+        start_ts = strikes[0]["ts"]
+        end_ts = strikes[-1]["ts"]
+        for d in demo_mod.DEMOS:
+            if d["id"] == body.demo_id:
+                label = d["label"]
+                break
+    else:
+        strikes = await lightning_mod.store.recent(
+            body.lat, body.lon, body.radius_km * 1.2,
+            since_ts=body.start_ts, until_ts=body.end_ts,
+        )
+    if len(strikes) < 3:
+        raise HTTPException(status_code=400, detail="Not enough strikes to render a replay")
+
+    # Opportunistic purge of old artifacts
+    video_mod.purge_old(max_age_h=24)
+
+    job_id = await video_mod.start_job(
+        strikes=strikes,
+        start_ts=start_ts,
+        end_ts=end_ts,
+        center_lat=body.lat,
+        center_lon=body.lon,
+        radius_km=body.radius_km,
+        label=label,
+    )
+    return {"job_id": job_id, "status": "queued"}
+
+
+@api_router.get("/replay/video/{job_id}")
+async def replay_video_status(job_id: str):
+    j = video_mod.get_job(job_id)
+    if not j:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return j
+
+
+@api_router.get("/replay/video/{job_id}/file.mp4")
+async def replay_video_file(job_id: str):
+    from fastapi.responses import FileResponse
+    j = video_mod.get_job(job_id)
+    if not j or j.get("status") != "done":
+        raise HTTPException(status_code=404, detail="Video not ready")
+    path = j.get("mp4_path")
+    if not path or not Path(path).exists():
+        raise HTTPException(status_code=410, detail="Video expired")
+    return FileResponse(
+        path,
+        media_type="video/mp4",
+        filename=f"storm-replay-{job_id}.mp4",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 @api_router.get("/storms/approach")

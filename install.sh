@@ -62,7 +62,7 @@ rm -f /usr/share/keyrings/mongodb-server-7.0.gpg
 apt-get update -y
 apt-get install -y \
     git curl ca-certificates gnupg2 lsb-release ubuntu-keyring \
-    build-essential \
+    build-essential ffmpeg \
     python3 python3-venv python3-pip python3-dev \
     fonts-dejavu
 
@@ -216,6 +216,11 @@ if [[ ! -d "$APP_DIR/backend" || ! -d "$APP_DIR/frontend" ]]; then
 fi
 
 chown -R "$RUN_USER":"$RUN_USER" "$APP_DIR"
+
+# Video export cache directory (Pillow frames + MP4 output, TTL 24h)
+VIDEO_CACHE_DIR="$APP_DIR/cache/videos"
+mkdir -p "$VIDEO_CACHE_DIR"
+chown -R "$RUN_USER":"$RUN_USER" "$APP_DIR/cache"
 
 # ---------------------------------------------------------------------------
 # 3. Backend — Python venv, dependencies, .env
@@ -445,15 +450,16 @@ User=root
 Group=root
 WorkingDirectory=/var/www/storm-monitor/backend
 EnvironmentFile=/var/www/storm-monitor/backend/.env
+Environment=VIDEO_CACHE_DIR=/var/www/storm-monitor/cache/videos
 ExecStart=/var/www/storm-monitor/backend/venv/bin/uvicorn server:app --host 127.0.0.1 --port ${BACKEND_PORT} --workers 1
 Restart=always
 RestartSec=5
 StandardOutput=append:/var/log/storm-monitor.log
 StandardError=append:/var/log/storm-monitor.err.log
 
-# Hardening (relaxed for root user)
+# Hardening (relaxed for root user). PrivateTmp=false so MP4 cache survives restart.
 NoNewPrivileges=true
-PrivateTmp=true
+PrivateTmp=false
 
 [Install]
 WantedBy=multi-user.target
