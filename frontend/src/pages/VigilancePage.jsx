@@ -287,26 +287,6 @@ export default function VigilancePage() {
             </div>
           )}
 
-          {/* Legend */}
-          <div className="border border-slate-200 bg-white p-5">
-            <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-slate-400 mb-3">
-              Légende
-            </div>
-            <div className="space-y-2">
-              {[4, 3, 2, 1].map((lv) => (
-                <div key={lv} className="flex items-center gap-3 text-sm" data-testid={`legend-${lv}`}>
-                  <span
-                    className="w-3 h-3 rounded-sm"
-                    style={{ background: LEVEL_STYLE[lv].fillColor, opacity: lv === 1 ? 0.4 : 1 }}
-                  />
-                  <span className="font-medium capitalize text-slate-700 w-16">{LEVEL_NAMES[lv]}</span>
-                  <span className="text-slate-500 flex-1">{LEVEL_LABELS[lv]}</span>
-                  <span className="font-mono text-xs text-slate-400 tabular-nums">{counts[lv]}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
           {/* Selected area detail — click pins, hover previews when nothing pinned */}
           {(() => {
             // Priority: pinned selection > hovered area > default placeholder
@@ -399,6 +379,26 @@ export default function VigilancePage() {
               </div>
             );
           })()}
+
+          {/* Legend */}
+          <div className="border border-slate-200 bg-white p-5">
+            <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-slate-400 mb-3">
+              Légende
+            </div>
+            <div className="space-y-2">
+              {[4, 3, 2, 1].map((lv) => (
+                <div key={lv} className="flex items-center gap-3 text-sm" data-testid={`legend-${lv}`}>
+                  <span
+                    className="w-3 h-3 rounded-sm"
+                    style={{ background: LEVEL_STYLE[lv].fillColor, opacity: lv === 1 ? 0.4 : 1 }}
+                  />
+                  <span className="font-medium capitalize text-slate-700 w-16">{LEVEL_NAMES[lv]}</span>
+                  <span className="text-slate-500 flex-1">{LEVEL_LABELS[lv]}</span>
+                  <span className="font-mono text-xs text-slate-400 tabular-nums">{counts[lv]}</span>
+                </div>
+              ))}
+            </div>
+          </div>
 
           {/* Source */}
           {vig && (
