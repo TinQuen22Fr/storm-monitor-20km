@@ -1,0 +1,27 @@
+{
+  "summary": "Frontend-only validation of Timeline play bug fix in /app/frontend/src/components/Timeline.jsx. The original bug — clicking Play in LIVE mode caused the icon to flip Play→Pause→Play immediately because next=cursorTs+300 already exceeded nowTs and triggered setPlaying(false) on the very first tick — is FIXED. The auto-rewind by 30 min before starting playback works, and the refactored refs (cursorRef, nowRefT) keep the setInterval stable across cursor updates so the playing state persists for the full replay window (~2.4s for 30 min at 5min/400ms). All 9 tested behaviours pass.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Timeline.jsx fix is clean: cursorRef + nowRefT mirror state into refs so the auto-advance setInterval is created once when playing flips to true and is torn down only when it flips false — avoids per-tick teardown that previously caused stuttering and early-stop.",
+    "handlePlayClick correctly distinguishes LIVE click (rewind 30 min + setPlaying(true)) from replay-mode click (pure toggle) — title attribute also branches accordingly (`Rejouer les 30 dernières minutes` vs `Lecture`/`Pause`).",
+    "Auto-stop at nowTs (next>=limit → onCursorChange(limit)+setPlaying(false)) is correct: ensures the cursor doesn't overshoot live and the icon naturally returns to Play at end of replay (task #4).",
+    "Slider onChange and preset buttons all call setPlaying(false) before onCursorChange — regressions intact.",
+    "Minor (non-blocking): the auto-advance step is fixed at 300s/400ms (regardless of replay window length). For a 30-min auto-rewind this means the full replay finishes in ~2.4 s — feels fast. Consider exposing a speed control or scaling step to window length if UX feedback requests slower playback. Not a bug, just a UX note.",
+    "Minor (non-blocking): on /replay page, after clicking `replay-demo-play-0` the URL on the destination is `/` (replay= query param appears to be consumed/stripped post-bootstrap). The replay banner IS visible (LECTURE EN COURS, 30 avr. 22:15→23:02) so functionality works, but the URL no longer reflects the replay state — minor for shareability/refresh persistence."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100% (9/9 timeline tests + replay-banner check passed)"},
+  "test_credentials": "N/A — no auth required for Direct/Replay public pages.",
+  "seed_data_creation": "None.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Timeline play bug fix validated end-to-end. Key timing details to remember: with stepSec=300 and 400ms interval, a 30-min rewind replays in 6 ticks ≈ 2.4 s. So when sampling state to verify 'playing persists', sample BEFORE 2.4s (e.g. at 600ms and 1200ms) — sampling at 3s already shows the natural auto-stop and would look like the original bug if you don't account for it. The data-testid attributes used: timeline, timeline-play, timeline-slider, timeline-preset-{seconds}, timeline-preset-mobile-{seconds}, timeline-reset-live, replay-demo-play-0, replay-banner. Recharts warnings (`The width(-1) and height(-1)…`) on the /replay page are pre-existing and unrelated to this fix.",
+  "rca of the issue": "ROOT CAUSE: handlePlayClick used to do `setPlaying(p => !p)` regardless of LIVE state. With cursorTs ≈ nowTs and stepSec=300, the very first interval tick computed `next = cursorTs + 300 >= nowTs` → setPlaying(false) → button flipped back to Play in <400ms, giving the user the impression the click didn't register. Additionally, the original useEffect had cursorTs in its deps array, so each cursor update tore down and recreated the setInterval, increasing jitter. FIX: (1) handlePlayClick auto-rewinds cursor by 30 min when clicked in LIVE mode before setPlaying(true); (2) cursorRef and nowRefT mirror state so the interval can be created once on play-start and read latest values on each tick (deps now [playing, onCursorChange, setPlaying]). REPRODUCTION: pre-fix, click Play while in LIVE; expected behavior was continuous playback for ~2 s, observed behavior was Pause icon for ~400 ms then Play again. POST-FIX VERIFIED: at T+100ms cursor rewound 1800s, icon=Pause; at T+600ms icon still Pause, cursor +600s; at T+1200ms still Pause, cursor +900s; at T+2700ms auto-stopped at nowTs, icon=Lecture (correct end-of-replay)."
+}

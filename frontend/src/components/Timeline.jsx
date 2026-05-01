@@ -27,21 +27,46 @@ export default function Timeline({
     return () => clearInterval(t);
   }, []);
 
-  // Auto-advance every 400ms when playing & not at live
+  // Auto-advance every 400ms when playing & not at live.
+  // We use a ref for cursorTs so that the interval is created ONCE (when
+  // playing flips on) and reads the latest cursor on each tick, instead of
+  // tearing down + recreating the timer at every cursor update (which made
+  // the playback feel stuttering and prone to early-stop bugs).
+  const cursorRef = useRef(cursorTs);
+  useEffect(() => { cursorRef.current = cursorTs; }, [cursorTs]);
+  const nowRefT = useRef(nowTs);
+  useEffect(() => { nowRefT.current = nowTs; }, [nowTs]);
+
   useEffect(() => {
     if (!playing) return;
     const stepSec = 300; // 5 min per tick
     const t = setInterval(() => {
-      const next = cursorTs + stepSec;
-      if (next >= nowTs) {
-        onCursorChange(nowTs);
+      const next = cursorRef.current + stepSec;
+      const limit = nowRefT.current;
+      if (next >= limit) {
+        onCursorChange(limit);
         setPlaying(false);
       } else {
         onCursorChange(next);
       }
     }, 400);
     return () => clearInterval(t);
-  }, [playing, cursorTs, nowTs, onCursorChange, setPlaying]);
+  }, [playing, onCursorChange, setPlaying]);
+
+  /**
+   * Play button click handler.
+   * When already at live, clicking Play has no meaning (nothing to advance to)
+   * and the auto-stop fires immediately. We rewind by 30 min so the playback
+   * has something to reveal — replay of "the last half hour".
+   */
+  const handlePlayClick = () => {
+    if (!playing && isLive) {
+      onCursorChange(nowTs - 30 * 60);
+      setPlaying(true);
+      return;
+    }
+    setPlaying((p) => !p);
+  };
 
   const past24h = nowTs - 24 * 3600;
   const pct = ((cursorTs - past24h) / (nowTs - past24h)) * 100;
@@ -77,10 +102,11 @@ export default function Timeline({
     >
       <div className="flex items-center gap-3 px-4 py-3">
         <button
-          onClick={() => setPlaying((p) => !p)}
+          onClick={handlePlayClick}
           className="w-9 h-9 border border-slate-300 hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-colors flex items-center justify-center shrink-0"
           data-testid="timeline-play"
           aria-label={playing ? "Pause" : "Lecture"}
+          title={!playing && isLive ? "Rejouer les 30 dernières minutes" : (playing ? "Pause" : "Lecture")}
         >
           {playing ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
         </button>
