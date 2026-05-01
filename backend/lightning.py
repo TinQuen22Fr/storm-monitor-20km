@@ -81,8 +81,19 @@ class StrikeStore:
         async with self._lock:
             self._buf.append(strike)
 
-    async def recent(self, lat: float, lon: float, radius_km: float, since_ts: Optional[float] = None) -> List[Dict]:
-        """Return strikes within radius_km of (lat,lon). since_ts is epoch seconds."""
+    async def recent(
+        self,
+        lat: float,
+        lon: float,
+        radius_km: float,
+        since_ts: Optional[float] = None,
+        until_ts: Optional[float] = None,
+    ) -> List[Dict]:
+        """Return strikes within radius_km of (lat,lon).
+
+        since_ts / until_ts are epoch-seconds bounds (inclusive lower, exclusive upper
+        for until_ts). Used to anchor trajectory/approach analysis on a past cursor.
+        """
         now = time.time()
         cutoff = since_ts if since_ts is not None else now - STRIKE_TTL_S
         async with self._lock:
@@ -90,6 +101,8 @@ class StrikeStore:
         out: List[Dict] = []
         for s in items:
             if s["ts"] < cutoff:
+                continue
+            if until_ts is not None and s["ts"] > until_ts:
                 continue
             d = _haversine_km(lat, lon, s["lat"], s["lon"])
             if d <= radius_km:

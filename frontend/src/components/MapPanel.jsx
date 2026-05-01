@@ -162,7 +162,13 @@ export default function MapPanel({
           enabled={wx.showWind}
           onMaxSpeedChange={wx.setWindMaxSpeed}
         />
-        <TrajectoryLayer center={center} enabled={wx.showTrajectory && isLive} fitSignal={fitSignal} />
+        <TrajectoryLayer
+          center={center}
+          enabled={wx.showTrajectory}
+          fitSignal={fitSignal}
+          cursorTs={cursorTs}
+          isLive={isLive}
+        />
         <FitToRadius center={centerLL} radiusKm={radiusKm} override={zoomOverride} />
         <InvalidateOnResize trigger={fullscreen} />
         <Circle
@@ -285,8 +291,10 @@ export default function MapPanel({
       <WeatherLayersPanel {...wx} isMobile={isMobile} timelineDriven />
       <TrajectoryBadge
         center={center}
-        enabled={wx.showTrajectory && isLive}
+        enabled={wx.showTrajectory}
         onFit={() => setFitSignal((s) => s + 1)}
+        cursorTs={cursorTs}
+        isLive={isLive}
       />
     </div>
   );

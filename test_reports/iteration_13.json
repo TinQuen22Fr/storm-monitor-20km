@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 13: validated (1) /vigilance phenomenon filter (9 filter buttons all functional, panel toggles 'Niveau général' ↔ 'Niveau · Orages/Vent/Canicule', GeoJSON re-renders on filter change with key fr-{ts}-{filter}, restoring 'Tous' returns to original yellow count of 33), (2) Dashboard timeline scrub anchoring trajectory on at_ts (live mode emits no at_ts → after scrubbing slider to mid-range, /api/storms/trajectory calls include at_ts=<epoch>, badge label switches from 'TRAJECTOIRE' to 'TRAJ · REJEU', icon swaps Activity → Clock, returning slider to NOW restores live), (3) backend at_ts param wired correctly on /api/storms/trajectory, /api/storms/approach (accepts float, rejects non-numeric with 422, JSON shape unchanged), (4) lightning.store.recent until_ts filter works at unit level (verified with 4 strikes at -3600/-1800/-600/-60s — until_ts=base-1000 returns only the 2 oldest, both since_ts+until_ts combined returns the 2 middle ones), (5) /api/weather/vigilance/full payload exposes all 8 expected phenomena keys (orage,vent,pluie,canicule,grand-froid,neige,brouillard,avalanche) each with {key,level,level_fr,color}. 14/14 backend pytest pass + frontend e2e pass. Live regression intact (initial trajectory calls have NO at_ts).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_at_ts_filter.py",
+    "/app/test_reports/pytest/pytest_results_iter13.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "lightning.py StrikeStore.recent: until_ts uses strict '>' (s.ts > until_ts → skip), so timestamps exactly == until_ts are KEPT. Consistent with FastAPI route docstring claiming inclusive lower / exclusive upper, but actual implementation is inclusive on BOTH bounds — minor docstring drift, not a bug.",
+    "VigilancePage.jsx:81 levelBy useMemo has eslint-disable for exhaustive-deps because getDisplayLevel closure depends on filter — works but could be cleaner by inlining the logic in the memo itself.",
+    "TrajectoryBadge.jsx: when detected=false, the violet/red accent only shows on the swap of Activity↔Clock icon (icon class is text-slate-400 for undetected, so accent color isn't visible). Label 'TRAJECTOIRE' vs 'TRAJ · REJEU' makes the mode obvious. Tested OK.",
+    "/api/storms/trajectory returns 200 + {detected:false, reason:'not_enough_strikes'} with NO strikes in DB at test time — visual trajectory line cannot be validated, but the at_ts contract (URL param, JSON shape) is fully verified via network logs.",
+    "MapPanel.jsx (per spec) wires cursorTs+isLive on TrajectoryLayer + TrajectoryBadge — visually confirmed by badge re-render on slider scrub."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_at_ts_filter.py (NEW — 14 tests covering at_ts on trajectory/approach, vigilance phenomena shape, lightning since/until)"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14 pytest test_at_ts_filter.py + StrikeStore unit verification)",
+    "frontend": "100% (vigilance: 9 filter buttons + panel label swap + count restoration to 33; dashboard: live=no at_ts, scrub→at_ts=1777552232 sent, badge 'TRAJ · REJEU' shown, restore live=ok)"
+  },
+  "test_credentials": {"email": "test@lourdes.fr", "password": "storm123"},
+  "seed_data_creation": "",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "ITER-13 VALIDATED: at_ts param flow end-to-end works. Backend: /api/storms/trajectory and /api/storms/approach accept at_ts (float), reject non-numeric with 422, return same JSON shape with/without. lightning.py StrikeStore.recent gained until_ts param, verified at unit level filters strikes with ts <= until_ts. Frontend /vigilance: 9 phenomenon filter buttons (all/orage/vent/pluie/canicule/grand-froid/neige/brouillard/avalanche), clicking changes GeoJSON key (fr-{ts}-{filter}) forcing re-render, 'Niveau général' panel switches to 'Niveau · {label}'. Dashboard TrajectoryBadge: cursorTs+isLive props work — initial mount sends 0 at_ts (live), scrubbing slider to past sends at_ts=<epoch> on every refetch (no interval in replay mode, only on cursor change). Badge label swaps 'TRAJECTOIRE' (red Activity icon) ↔ 'TRAJ · REJEU' (violet Clock icon). Currently no strikes in DB so trajectory is always undetected — visual line on map cannot be checked but contract is solid. Backend tests live at /app/backend/tests/test_at_ts_filter.py, all green. Existing tests (test_storm_tracker, test_share_card, test_trajectory_unit, test_vigilance_full) untouched.",
+  "rca_of_the_issue": "N/A — no bugs found. Both features (vigilance phenomenon filter + timeline-anchored trajectory) implemented correctly with proper backend at_ts wiring and frontend cursor-driven refetch."
+}

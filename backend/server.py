@@ -277,10 +277,20 @@ async def lightning_status():
 
 
 @api_router.get("/storms/approach")
-async def storms_approach(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = 100.0):
-    """Analyze approach of lightning strikes toward the center."""
-    strikes = await lightning_mod.store.recent(lat, lon, radius_km, since_ts=None)
-    result = analysis_mod.analyze_approach(lat, lon, strikes)
+async def storms_approach(
+    lat: float = LOURDES_LAT,
+    lon: float = LOURDES_LON,
+    radius_km: float = 100.0,
+    at_ts: float | None = None,
+):
+    """Analyze approach of lightning strikes toward the center.
+
+    When `at_ts` is provided, analysis is anchored at that timestamp (timeline scrub).
+    """
+    strikes = await lightning_mod.store.recent(
+        lat, lon, radius_km, since_ts=None, until_ts=at_ts
+    )
+    result = analysis_mod.analyze_approach(lat, lon, strikes, now=at_ts)
     result["radius_analyzed_km"] = radius_km
     return result
 
@@ -291,10 +301,20 @@ async def storms_trajectory(
     lon: float = LOURDES_LON,
     radius_km: float = 150.0,
     project_minutes: int = 45,
+    at_ts: float | None = None,
 ):
-    """Predict the storm centroid trajectory via linear regression on recent strikes."""
-    strikes = await lightning_mod.store.recent(lat, lon, radius_km, since_ts=None)
-    return analysis_mod.predict_trajectory(lat, lon, strikes, project_minutes=project_minutes)
+    """Predict the storm centroid trajectory via linear regression on recent strikes.
+
+    When `at_ts` is provided, the analysis is anchored on that timestamp:
+    only strikes with ts <= at_ts are used, and projection starts from at_ts.
+    This lets the timeline scrub back in time and see past trajectories.
+    """
+    strikes = await lightning_mod.store.recent(
+        lat, lon, radius_km, since_ts=None, until_ts=at_ts
+    )
+    return analysis_mod.predict_trajectory(
+        lat, lon, strikes, now=at_ts, project_minutes=project_minutes
+    )
 
 
 @api_router.get("/forecast/storm-risk")

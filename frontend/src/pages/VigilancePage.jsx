@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MapContainer, GeoJSON, TileLayer } from "react-leaflet";
-import { AlertTriangle, Info } from "lucide-react";
+import { Info } from "lucide-react";
 import NavTabs from "@/components/NavTabs";
 import { api } from "@/lib/api";
 
@@ -19,11 +19,25 @@ const LEVEL_LABELS = {
   4: "Vigilance absolue",
 };
 
+// Phenomenon filter — "all" shows the overall max level, any other key narrows to that phenomenon.
+const PHENOMENA_FILTERS = [
+  { key: "all", label: "Tous", icon: "●" },
+  { key: "orage", label: "Orages", icon: "⚡" },
+  { key: "vent", label: "Vent", icon: "🌬" },
+  { key: "pluie", label: "Pluie-inondation", icon: "🌧" },
+  { key: "canicule", label: "Canicule", icon: "🔥" },
+  { key: "grand-froid", label: "Grand froid", icon: "❄" },
+  { key: "neige", label: "Neige-verglas", icon: "🌨" },
+  { key: "brouillard", label: "Brouillard", icon: "🌫" },
+  { key: "avalanche", label: "Avalanches", icon: "🗻" },
+];
+
 export default function VigilancePage() {
   const [franceGeo, setFranceGeo] = useState(null);
   const [andorraGeo, setAndorraGeo] = useState(null);
   const [vig, setVig] = useState(null);
   const [hover, setHover] = useState(null);
+  const [filter, setFilter] = useState("all");
 
   useEffect(() => {
     fetch("/geo/france-depts.geojson").then((r) => r.json()).then(setFranceGeo).catch(() => {});
@@ -43,14 +57,28 @@ export default function VigilancePage() {
     return () => { cancel = true; clearInterval(t); };
   }, []);
 
-  const levelBy = {};
-  const phenBy = {};
-  if (vig) {
-    for (const a of vig.areas || []) {
-      levelBy[a.id] = a.max_level;
-      phenBy[a.id] = a;
-    }
-  }
+  // Pick the level used for coloring based on the current filter.
+  // "all" → area.max_level ; otherwise → level of the selected phenomenon.
+  const getDisplayLevel = (area) => {
+    if (!area) return 1;
+    if (filter === "all") return area.max_level;
+    const phen = (area.phenomena || []).find((p) => p.key === filter);
+    return phen?.level || 1;
+  };
+
+  // Index by id for O(1) lookups
+  const phenBy = useMemo(() => {
+    const m = {};
+    if (vig) for (const a of vig.areas || []) m[a.id] = a;
+    return m;
+  }, [vig]);
+
+  const levelBy = useMemo(() => {
+    const m = {};
+    if (vig) for (const a of vig.areas || []) m[a.id] = getDisplayLevel(a);
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vig, filter]);
 
   const styleFeatureFrance = (feature) => {
     const code = feature.properties.code;
@@ -58,10 +86,7 @@ export default function VigilancePage() {
     return LEVEL_STYLE[lvl];
   };
 
-  const styleFeatureAndorra = () => {
-    const lvl = levelBy["AD"] || 1;
-    return LEVEL_STYLE[lvl];
-  };
+  const styleFeatureAndorra = () => LEVEL_STYLE[levelBy["AD"] || 1];
 
   const onEachFranceDept = (feature, layer) => {
     const code = feature.properties.code;
@@ -79,12 +104,12 @@ export default function VigilancePage() {
         e.target.setStyle(styleFeatureFrance(feature));
       },
     });
-    const a = phenBy[code];
-    const level = a?.max_level || 1;
+    const lvl = levelBy[code] || 1;
+    const filterName = filter === "all" ? "Vigilance" : `${PHENOMENA_FILTERS.find((p) => p.key === filter).label}`;
     layer.bindTooltip(
       `<div style="font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.4">
         <div style="font-weight:700;text-transform:uppercase;letter-spacing:0.08em">${feature.properties.nom} (${code})</div>
-        <div style="margin-top:3px">Vigilance ${LEVEL_NAMES[level]}</div>
+        <div style="margin-top:3px">${filterName} ${LEVEL_NAMES[lvl]}</div>
       </div>`,
       { sticky: true, direction: "top" }
     );
@@ -92,7 +117,7 @@ export default function VigilancePage() {
 
   const onEachAndorra = (feature, layer) => {
     const a = phenBy["AD"];
-    const level = a?.max_level || 1;
+    const lvl = levelBy["AD"] || 1;
     layer.on({
       click: () => { if (a) setHover(a); },
       mouseover: (e) => {
@@ -103,20 +128,43 @@ export default function VigilancePage() {
         e.target.setStyle(styleFeatureAndorra());
       },
     });
+    const filterName = filter === "all" ? "Vigilance" : `${PHENOMENA_FILTERS.find((p) => p.key === filter).label}`;
     layer.bindTooltip(
       `<div style="font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.4">
         <div style="font-weight:700;text-transform:uppercase;letter-spacing:0.08em">Andorre (AD)</div>
-        <div style="margin-top:3px">Vigilance ${LEVEL_NAMES[level]}</div>
+        <div style="margin-top:3px">${filterName} ${LEVEL_NAMES[lvl]}</div>
       </div>`,
       { sticky: true, direction: "top" }
     );
   };
 
-  // Counts per level
+  // Counts per level based on current filter
   const counts = { 1: 0, 2: 0, 3: 0, 4: 0 };
   if (vig) {
-    for (const a of vig.areas || []) counts[a.max_level] = (counts[a.max_level] || 0) + 1;
+    for (const a of vig.areas || []) {
+      const lvl = getDisplayLevel(a);
+      counts[lvl] = (counts[lvl] || 0) + 1;
+    }
   }
+
+  // Per-filter availability counter (how many areas are >= yellow for that phenomenon)
+  const availability = useMemo(() => {
+    const out = {};
+    if (!vig) return out;
+    for (const p of PHENOMENA_FILTERS) {
+      if (p.key === "all") {
+        out.all = (vig.areas || []).filter((a) => a.max_level > 1).length;
+      } else {
+        out[p.key] = (vig.areas || []).filter((a) => {
+          const ph = (a.phenomena || []).find((x) => x.key === p.key);
+          return ph && ph.level > 1;
+        }).length;
+      }
+    }
+    return out;
+  }, [vig]);
+
+  const selectedInfo = filter === "all" ? null : PHENOMENA_FILTERS.find((p) => p.key === filter);
 
   return (
     <div className="min-h-screen bg-slate-50" data-testid="vigilance-page">
@@ -139,22 +187,83 @@ export default function VigilancePage() {
       <div className="max-w-[1800px] mx-auto px-6 py-6 grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Left panel */}
         <aside className="lg:col-span-1 flex flex-col gap-4">
+          {/* Phenomenon filter */}
+          <div className="border border-slate-200 bg-white p-5" data-testid="vigilance-filter">
+            <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-slate-400 mb-3">
+              Filtrer par phénomène
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {PHENOMENA_FILTERS.map((p) => {
+                const active = filter === p.key;
+                const count = availability[p.key] || 0;
+                return (
+                  <button
+                    key={p.key}
+                    type="button"
+                    onClick={() => setFilter(p.key)}
+                    className={`px-2.5 h-7 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.12em] border transition-colors ${
+                      active
+                        ? "bg-slate-900 text-white border-slate-900"
+                        : "bg-white text-slate-700 border-slate-200 hover:border-slate-900 hover:text-slate-900"
+                    }`}
+                    data-testid={`vigilance-filter-${p.key}`}
+                    title={p.key === "all" ? "Niveau global (max)" : `Vigilance ${p.label.toLowerCase()} uniquement`}
+                  >
+                    <span aria-hidden>{p.icon}</span>
+                    <span>{p.label}</span>
+                    {count > 0 && (
+                      <span
+                        className={`ml-0.5 tabular-nums font-semibold ${
+                          active ? "text-white/90" : "text-slate-400"
+                        }`}
+                      >
+                        · {count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {selectedInfo && (
+              <div className="mt-3 font-mono text-[10px] text-slate-500 leading-relaxed">
+                Affichage limité au phénomène «&nbsp;{selectedInfo.label.toLowerCase()}&nbsp;». Les autres alertes restent dans le panneau de détail.
+              </div>
+            )}
+          </div>
+
           {/* Overall */}
           {vig && (
             <div className="border border-slate-200 bg-white p-5" data-testid="vigilance-overall">
               <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-slate-400 mb-2">
-                Niveau général
+                {filter === "all" ? "Niveau général" : `Niveau · ${selectedInfo.label}`}
               </div>
-              <div className="flex items-center gap-3 mb-2">
-                <span
-                  className="w-4 h-4 rounded-full"
-                  style={{ background: vig.overall_color }}
-                />
-                <span className="font-heading text-2xl font-black tracking-tight" style={{ color: vig.overall_color }}>
-                  {vig.overall_level_fr.toUpperCase()}
-                </span>
-              </div>
-              <div className="text-sm text-slate-600">{vig.overall_label}</div>
+              {(() => {
+                // When filter ≠ all, recompute overall = max level across areas for that phenomenon.
+                let level = vig.overall_level;
+                let color = vig.overall_color;
+                let labelFr = vig.overall_level_fr;
+                let label = vig.overall_label;
+                if (filter !== "all") {
+                  level = Math.max(1, ...Object.values(levelBy));
+                  color = LEVEL_STYLE[level].fillColor;
+                  labelFr = LEVEL_NAMES[level];
+                  label = LEVEL_LABELS[level];
+                }
+                return (
+                  <>
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className="w-4 h-4 rounded-full" style={{ background: color }} />
+                      <span
+                        className="font-heading text-2xl font-black tracking-tight"
+                        style={{ color }}
+                      >
+                        {labelFr.toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="text-sm text-slate-600">{label}</div>
+                  </>
+                );
+              })()}
             </div>
           )}
 
@@ -203,7 +312,12 @@ export default function VigilancePage() {
                 {hover.phenomena
                   .filter((p) => p.level > 1)
                   .map((p) => (
-                    <div key={p.key} className="flex items-center gap-2 text-[13px]">
+                    <div
+                      key={p.key}
+                      className={`flex items-center gap-2 text-[13px] ${
+                        filter === p.key ? "ring-1 ring-slate-900 rounded-sm px-1 py-0.5 -mx-1" : ""
+                      }`}
+                    >
                       <span
                         className="w-2 h-2 rounded-full"
                         style={{ background: p.color }}
@@ -264,7 +378,7 @@ export default function VigilancePage() {
             />
             {franceGeo && vig && (
               <GeoJSON
-                key={`fr-${vig.updated_at}`}
+                key={`fr-${vig.updated_at}-${filter}`}
                 data={franceGeo}
                 style={styleFeatureFrance}
                 onEachFeature={onEachFranceDept}
@@ -272,7 +386,7 @@ export default function VigilancePage() {
             )}
             {andorraGeo && vig && (
               <GeoJSON
-                key={`ad-${vig.updated_at}`}
+                key={`ad-${vig.updated_at}-${filter}`}
                 data={andorraGeo}
                 style={styleFeatureAndorra}
                 onEachFeature={onEachAndorra}
