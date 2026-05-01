@@ -313,3 +313,27 @@
 - MongoDB 8.0, Python venv, Node 20 + Yarn
 - SQM (port 8001) toujours fonctionnel sur son propre vhost
 
+
+
+## Phase 16 (2026-04-30) — Filtre vigilance par phénomène + trajectoire ancrée sur cursorTs
+
+### Feature 1 : Filtre par phénomène sur `/vigilance`
+- ✅ **9 boutons filtre** (`data-testid=vigilance-filter-{all,orage,vent,pluie,canicule,grand-froid,neige,brouillard,avalanche}`) avec compteurs par phénomène
+- ✅ Coloration de la carte bascule entre `max_level` global et niveau du phénomène sélectionné
+- ✅ Panneau "Niveau général" devient "Niveau · {phénomène}" avec recalcul du max
+- ✅ Tooltip département adapté + légende (compteurs par niveau) recomputée en fonction du filtre
+- ✅ Panneau détail département highlight le phénomène actif
+
+### Feature 2 : Trajectoire ancrée sur le cursor de la timeline
+- ✅ **Backend** : `/api/storms/trajectory` + `/api/storms/approach` acceptent un param optionnel `at_ts` (epoch seconds)
+- ✅ `lightning.py StrikeStore.recent` gagne un param `until_ts` filtrant les strikes `ts > until_ts`
+- ✅ `analysis.predict_trajectory` reçoit `now=at_ts` pour ancrer la projection dans le passé
+- ✅ **Frontend** : `TrajectoryLayer` + `TrajectoryBadge` reçoivent `cursorTs` + `isLive` en props
+- ✅ Mode live : comportement inchangé, aucun `at_ts` envoyé, refresh 30s
+- ✅ Mode replay : `at_ts=cursorTs` envoyé, pas d'interval, polyline violet `#7C3AED`, badge "TRAJ · REJEU" avec icône `Clock`
+- ✅ La trajectoire reste cliquable pour fit-zoom même en mode replay
+
+### Tests (iteration_13)
+- Backend 14/14 pytest passent (`test_at_ts_filter.py` créé)
+- Frontend e2e 100% : 9 filter buttons OK, scrub → at_ts envoyé, badge bascule rouge→violet, restore live = OK
+- **Zéro critical, zéro action item, zéro régression**
