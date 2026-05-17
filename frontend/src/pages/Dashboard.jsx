@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, BellOff, Download, Map as MapIcon, Moon, PlayCircle, RefreshCw, Share2, X, Zap } from "lucide-react";
+import { Bell, BellOff, Download, LocateFixed, Map as MapIcon, MapPin, Moon, PlayCircle, RefreshCw, Share2, X, Zap } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import MapPanel from "@/components/MapPanel";
 import AlertBanner from "@/components/AlertBanner";
@@ -50,6 +50,10 @@ export default function Dashboard() {
   const [shareCopied, setShareCopied] = useState(false);
   const [replay, setReplay] = useState(null); // { start_ts, end_ts } when replaying a past event
   const [replayEventsCount, setReplayEventsCount] = useState(0);
+  const [gpsLock, setGpsLock] = useState(() => {
+    try { return localStorage.getItem("storm.gpsLock") === "1"; } catch { return false; }
+  });
+  const [gpsLockError, setGpsLockError] = useState(null);
   const isMobile = useIsMobile();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -85,6 +89,43 @@ export default function Dashboard() {
     setReplay(null);
     setPlaying(false);
     setCursorTs(Math.floor(Date.now() / 1000));
+  }, []);
+
+  // GPS lock — continuously track user position and recenter map + monitoring zone
+  useEffect(() => {
+    if (!gpsLock) return;
+    if (!navigator.geolocation) {
+      setGpsLockError("Géolocalisation non supportée");
+      setGpsLock(false);
+      try { localStorage.setItem("storm.gpsLock", "0"); } catch { /* ignore */ }
+      setTimeout(() => setGpsLockError(null), 4000);
+      return;
+    }
+    const id = navigator.geolocation.watchPosition(
+      (pos) => {
+        setCenter({ lat: pos.coords.latitude, lon: pos.coords.longitude, name: "Ma position" });
+      },
+      () => {
+        setGpsLockError("Position GPS indisponible");
+        setGpsLock(false);
+        try { localStorage.setItem("storm.gpsLock", "0"); } catch { /* ignore */ }
+        setTimeout(() => setGpsLockError(null), 4000);
+      },
+      { enableHighAccuracy: true, maximumAge: 30_000, timeout: 15_000 }
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, [gpsLock]);
+
+  const toggleGpsLock = useCallback(() => {
+    setGpsLock((v) => {
+      const nv = !v;
+      try { localStorage.setItem("storm.gpsLock", nv ? "1" : "0"); } catch { /* ignore */ }
+      // When disabling, return monitoring zone to Lourdes
+      if (!nv) {
+        setCenter({ lat: LOURDES.lat, lon: LOURDES.lon, name: "Lourdes" });
+      }
+      return nv;
+    });
   }, []);
 
   // Fetch count of available replay events periodically so the "Rejouer un orage" CTA is informed
@@ -451,10 +492,48 @@ export default function Dashboard() {
             </span>
           </div>
 
+          {/* GPS lock — track me & recenter monitoring zone */}
+          <button
+            onClick={toggleGpsLock}
+            className={`mt-4 w-full flex items-center justify-between px-4 h-10 border transition-colors ${
+              gpsLock
+                ? "bg-blue-600 text-white border-blue-600"
+                : "bg-white text-slate-900 border-slate-300 hover:border-blue-600"
+            }`}
+            data-testid="toggle-gps-lock"
+            aria-pressed={gpsLock}
+          >
+            <span className="flex items-center gap-2">
+              {gpsLock ? <LocateFixed className="w-4 h-4" strokeWidth={1.8} /> : <MapPin className="w-4 h-4" strokeWidth={1.8} />}
+              <span className="font-mono text-[10px] uppercase tracking-[0.2em]">
+                {gpsLock ? "GPS épinglé · me suivre" : "Épingler ma position GPS"}
+              </span>
+            </span>
+            <span
+              className={`w-8 h-4 rounded-full relative transition-colors ${
+                gpsLock ? "bg-white/20" : "bg-slate-200"
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 w-3 h-3 rounded-full transition-all ${
+                  gpsLock ? "left-[18px] bg-white" : "left-0.5 bg-slate-400"
+                }`}
+              />
+            </span>
+          </button>
+          {gpsLockError && (
+            <div
+              className="mt-2 px-3 py-2 bg-red-50 border border-red-200 text-[11px] font-mono text-red-800"
+              data-testid="gps-lock-error"
+            >
+              {gpsLockError}
+            </div>
+          )}
+
           {/* Notifications toggle */}
           <button
             onClick={toggleNotif}
-            className={`mt-4 w-full flex items-center justify-between px-4 h-10 border transition-colors ${
+            className={`mt-2 w-full flex items-center justify-between px-4 h-10 border transition-colors ${
               notifEnabled
                 ? "bg-slate-900 text-white border-slate-900"
                 : "bg-white text-slate-900 border-slate-300 hover:border-slate-900"
@@ -578,7 +657,16 @@ export default function Dashboard() {
 
           <div className="space-y-4">
             <AuthDialog />
-            <FavoritesList onSelect={setCenter} activeCenter={center} />
+            <FavoritesList
+              onSelect={(c) => {
+                if (gpsLock) {
+                  setGpsLock(false);
+                  try { localStorage.setItem("storm.gpsLock", "0"); } catch { /* ignore */ }
+                }
+                setCenter(c);
+              }}
+              activeCenter={center}
+            />
           </div>
 
           <footer className="pt-6 border-t border-slate-100 text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400 space-y-1">

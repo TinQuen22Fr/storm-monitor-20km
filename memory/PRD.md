@@ -418,3 +418,25 @@ LÉGENDE et TrajectoryBadge inline invisibles.
 - panel.bottom = 781 px, timeline.top = 781 px → **NO OVERLAP**
 - Tous les éléments visibles : Zone surveillée, Nuages/Pluie/Vent/Trajet, Trajectoire, Légende
 - Desktop 1600×900 intact : mobile_panel display:none, map-legend visible
+
+
+## Phase 23 (2026-05-17) — Bouton "Épingler ma position GPS" (toggle activable)
+
+### Fonctionnalité
+Un toggle dans la sidebar (icône MapPin/LocateFixed) permet à l'utilisateur de demander à
+l'app de le suivre en temps réel : la carte et la zone de surveillance (rayon X km) se
+recentrent automatiquement sur sa position GPS au lieu de Lourdes — utile pour les
+randonneurs en Pyrénées.
+
+### Détails techniques (Dashboard.jsx)
+- État `gpsLock` persisté en localStorage (`storm.gpsLock`)
+- `navigator.geolocation.watchPosition` (enableHighAccuracy, maximumAge=30s) ouvert
+  uniquement quand le toggle est ON ; clearWatch au cleanup
+- Désactivation auto + message d'erreur si géoloc indispo ou refus
+- Au passage OFF → re-centre sur Lourdes ({43.0951, -0.0434})
+- Si l'utilisateur clique un favori pendant que le GPS lock est ON → désactive le lock
+- data-testid="toggle-gps-lock" + data-testid="gps-lock-error"
+
+### Fix landscape mobile
+- `MapPanel.jsx` : `h-[60vh] lg:h-auto lg:flex-1 lg:min-h-0` pour que la carte garde 60vh
+  jusqu'à 1023px (mobile portrait, mobile landscape, tablette) puis remplisse en lg+
