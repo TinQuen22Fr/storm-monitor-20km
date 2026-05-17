@@ -1,0 +1,43 @@
+{
+  "summary": "Mobile (390x844) and Desktop (1600x900) viewport testing of Dashboard map-area refactor. Desktop fully passes. MOBILE HAS A CRITICAL LAYOUT OVERLAP BUG: the mobile-info-panel content (Légende + inline TrajectoryBadge + lower half of WeatherLayersPanel) is hidden BEHIND the Timeline component because the parent h-[60vh] div in Dashboard.jsx constrains MapPanel to 506px while the panel inside MapPanel overflows that height to 675px. Timeline is rendered as the next flex/grid child starting at y=506, so it visually covers y=506..637 — exactly where Légende (y=584..675) lives. User-reported symptom ('on ne voit rien sous la carte sur Redmi') is therefore NOT fully fixed: titre + boutons météo are visible but Légende and inline Trajectoire are obscured by Timeline.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Dashboard.jsx map-area / MapPanel.jsx",
+        "issue": "CRITICAL on mobile (<768px): the mobile-info-panel (data-testid=mobile-info-panel) overflows the parent h-[60vh] container (panel bottom=675px vs parent bottom=506px) and the Timeline (rendered as the next child of section data-testid=map-area, starting at y=506) visually overlaps the bottom 169px of the panel — Légende grid (y=584..675) and inline TrajectoryBadge are NOT visible to the user. Measured: inner_map_wrap bottom=506.39, mobile_info_panel bottom=675, timeline_wrap=506..637. timeline_overlaps_panel=true, panel_overflows_parent=true.",
+        "selector": "[data-testid=mobile-info-panel] (overlapped by Timeline below [data-testid=map-area] > div:nth-child(1))",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Mobile / iPhone 14 viewport 390x844",
+        "issues": [
+          "Légende 4-entrée grid not visible (overlapped by Timeline)",
+          "Inline TrajectoryBadge not visible (overlapped by Timeline)",
+          "WeatherLayersPanel bottom rule (source label / frame slider when Pluie active) would also be overlapped"
+        ]
+      }
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "FIX MOBILE LAYOUT: in /app/frontend/src/pages/Dashboard.jsx line 255, the inner div with h-[60vh] is constraining the entire MapPanel (which now contains BOTH the map AND the mobile-info-panel). Options: (a) Change inner wrapper to className=\"lg:flex-1 lg:h-auto lg:min-h-0 relative\" (i.e. remove h-[60vh] on mobile so MapPanel grows to natural height) and let MapPanel.jsx control the map's own 60vh internally via its child div. MapPanel already does this — its inner map wrapper at line 142 should switch from 'flex-1 min-h-[400px] md:min-h-0' to 'h-[60vh] md:flex-1 md:min-h-0' on mobile so the map keeps 60vh while the panel flows below naturally. (b) Alternative: pull the mobile-info-panel block out of MapPanel.jsx and render it as a sibling in Dashboard.jsx between the h-[60vh] map wrapper and the Timeline.",
+    "After fix, verify on 390x844 that: map=0..~506, panel=506..~781 (titre+coords+boutons+légende all visible), Timeline=781..~912 below the panel (may push below the fold but reachable by scroll).",
+    "Optional: add data-testid=\"timeline\" on the Timeline root for clearer selector targeting in future tests."
+  ],
+  "critical_code_review_comments": [
+    "Dashboard.jsx grid uses lg:overflow-hidden on the dashboard-root which is fine on desktop but the section h-auto on mobile relies on natural flow — yet the inner h-[60vh] div clips/visually-conflicts because Timeline is its sibling, not a child. Either the panel must be a sibling of the h-[60vh] div, or the constraint must move inside MapPanel.",
+    "MapPanel.jsx currently mixes two concerns: map (absolute overlays) and mobile-info-panel (flow). The flow-block rendering inside the same root that is also constrained-height by parent will keep producing overlap bugs. Recommend splitting: <MapPanel /> renders only the leaflet+overlays, and <MapMobileInfoPanel /> renders below as a sibling.",
+    "Two <WeatherLayersPanel> instances rendered (one mobile inline, one desktop absolute via hideOnMobile). Acceptable but slightly duplicates DOM + state subscribers. Confirmed DOM count=2, visible count=1 per viewport — OK functionally."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped)", "frontend": "mobile 60%, desktop 100%"},
+  "seed_data_creation": "none",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Desktop 1600x900 is fully validated: mobile-info-panel=display:none, all desktop overlays visible (Zone surveillée top-6 left-6 display:block, map-legend display:block, WeatherLayersPanel visible once, TrajectoryBadge at top:220 right:24), toggle Trajet correctly mounts/unmounts the badge. The MOBILE failure is a layout/CSS issue, not a missing-component issue: every DOM node exists and panel.innerText contains 'ZONE SURVEILLÉE / Lourdes · 20 km / 43.0951°N · -0.0434°E / NUAGES PLUIE VENT TRAJET / TRAJECTOIRE / LÉGENDE / Zone calme / Zone convective / Zone orageuse / Impact foudre'. The panel sits at y=400..675 inside a parent constrained to y=0..506, and Timeline at y=506..637 covers the panel's lower half. Reproduction: viewport 390x844, goto /, evaluate getBoundingClientRect on [data-testid=mobile-info-panel] and the second child of [data-testid=map-area]. After fix, re-run the same evaluate and assert timeline.top >= panel.bottom.",
+  "rca of the issue": "Dashboard.jsx puts MapPanel inside a height-constrained container (h-[60vh] on mobile) and renders Timeline as its sibling immediately below. MapPanel now renders the mobile-info-panel as an in-flow block inside its own root, which OVERFLOWS the h-[60vh] cap (overflow visible by default). The visual result: panel content > 506px is drawn but the section's NEXT child (Timeline) is positioned at y=506 in the parent grid flow, overlapping the panel's lower portion. Mitigation: either move the h-[60vh] constraint from Dashboard's wrapper down INTO MapPanel's inner map div only, or hoist the mobile-info-panel out of MapPanel and into Dashboard between the map wrapper and Timeline."
+}

@@ -249,10 +249,10 @@ export default function Dashboard() {
       <section
         className={`${
           fullscreen ? "lg:col-span-12" : "lg:col-span-8"
-        } col-span-1 order-1 lg:order-2 h-[70vh] lg:h-full relative z-0 flex flex-col`}
+        } col-span-1 order-1 lg:order-2 h-auto lg:h-full relative z-0 flex flex-col`}
         data-testid="map-area"
       >
-        <div className="flex-1 min-h-0 relative">
+        <div className="h-[60vh] lg:flex-1 lg:h-auto lg:min-h-0 relative">
           <MapPanel
             zones={zones?.zones || []}
             strikes={displayedStrikes}

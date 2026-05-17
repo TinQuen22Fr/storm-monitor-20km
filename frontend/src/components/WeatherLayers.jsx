@@ -201,13 +201,14 @@ export function WeatherLayersPanel({
   frameLabel,
   isMobile = false,
   timelineDriven = false,
+  hideOnMobile = false,
 }) {
   return (
     <div
       className={`bg-white border border-slate-200 shadow-[0_2px_24px_rgba(0,0,0,0.06)] flex flex-col ${
         isMobile
-          ? "static border-t border-b"
-          : "absolute z-[600] bottom-20 right-6"
+          ? "static border-0"
+          : `absolute z-[600] bottom-20 right-6 ${hideOnMobile ? "hidden md:flex" : ""}`
       }`}
       data-testid="weather-layers-panel"
     >

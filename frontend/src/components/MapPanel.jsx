@@ -289,7 +289,7 @@ export default function MapPanel({
         </div>
       )}
 
-      <WeatherLayersPanel {...wx} isMobile={isMobile} timelineDriven />
+      <WeatherLayersPanel {...wx} isMobile={false} timelineDriven hideOnMobile />
       <TrajectoryBadge
         center={center}
         enabled={wx.showTrajectory && !isMobile}
@@ -300,61 +300,30 @@ export default function MapPanel({
       </div>
 
       {/* ============================================================ */}
-      {/* MOBILE info panel — placed BELOW the map, replaces overlays   */}
+      {/* MOBILE info panel — placed BELOW the map (visible on Redmi etc) */}
+      {/* All controls and info that were absolute overlays on desktop  */}
+      {/* are mirrored here in static flow so the map stays clean.      */}
       {/* ============================================================ */}
       <div className="md:hidden bg-white border-t border-slate-200" data-testid="mobile-info-panel">
-        {/* Zone title compact */}
-        <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-          <div className="min-w-0">
-            <div className="text-[9px] font-mono uppercase tracking-[0.3em] text-slate-400">Zone surveillée</div>
-            <div className="font-heading text-base font-bold text-slate-900 leading-tight">
-              Lourdes · {radiusKm} km
-            </div>
+        {/* Zone surveillée — same content as desktop overlay */}
+        <div className="px-4 py-3 border-b border-slate-100">
+          <div className="text-[10px] font-mono uppercase tracking-[0.3em] text-slate-400">Zone surveillée</div>
+          <div className="font-heading text-lg font-bold text-slate-900 leading-tight">
+            Lourdes · {radiusKm} km
           </div>
-          {strikes.length > 0 && (
-            <div className="flex items-center gap-2 shrink-0 ml-3" data-testid="strikes-badge-mobile">
-              <span className="live-dot" />
-              <div className="text-right">
-                <div className="text-[9px] font-mono uppercase tracking-[0.2em] text-slate-400 leading-tight">Impacts 1h</div>
-                <div className="font-mono text-base font-medium text-slate-900 leading-none mt-0.5">
-                  {strikes.length}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Compact legend row */}
-        <div className="px-4 py-2 border-b border-slate-100 flex items-center gap-4 text-[11px] overflow-x-auto">
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#10B981" }} />
-            <span className="text-slate-600">Calme</span>
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#D97706" }} />
-            <span className="text-slate-600">Convectif</span>
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#DC2626" }} />
-            <span className="text-slate-600">Orageux</span>
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <svg viewBox="0 0 24 24" width="11" height="11">
-              <path
-                d="M13 2L3 14h7l-1 8 11-12h-7l0-8z"
-                fill="#FDE047"
-                stroke="#FACC15"
-                strokeWidth="1.5"
-                strokeLinejoin="round"
-              />
-            </svg>
-            <span className="text-slate-600">Foudre</span>
+          <div className="font-mono text-[10px] text-slate-500 mt-1">
+            43.0951°N · -0.0434°E
           </div>
         </div>
 
-        {/* Trajectory info if detected (mobile inline) */}
+        {/* Weather layer toggles (Nuages / Pluie / Vent / Trajet) */}
+        <div className="border-b border-slate-100">
+          <WeatherLayersPanel {...wx} isMobile timelineDriven />
+        </div>
+
+        {/* Trajectory inline detail when active */}
         {wx.showTrajectory && (
-          <div className="px-4 py-2 border-b border-slate-100">
+          <div className="px-4 py-3 border-b border-slate-100">
             <TrajectoryBadge
               center={center}
               enabled={wx.showTrajectory}
@@ -365,6 +334,37 @@ export default function MapPanel({
             />
           </div>
         )}
+
+        {/* Full legend — same as desktop overlay */}
+        <div className="px-4 py-3">
+          <div className="font-mono text-[10px] uppercase tracking-[0.3em] text-slate-400 mb-2">Légende</div>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[12px]">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#10B981" }} />
+              <span className="text-slate-700">Zone calme</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#D97706" }} />
+              <span className="text-slate-700">Zone convective</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#DC2626" }} />
+              <span className="text-slate-700">Zone orageuse</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <svg viewBox="0 0 24 24" width="13" height="13">
+                <path
+                  d="M13 2L3 14h7l-1 8 11-12h-7l0-8z"
+                  fill="#FDE047"
+                  stroke="#FACC15"
+                  strokeWidth="1.5"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <span className="text-slate-700">Impact foudre</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
