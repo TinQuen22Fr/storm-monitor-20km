@@ -1,0 +1,27 @@
+{
+  "summary": "Frontend-only validation of the mobile-responsive MapPanel rework for the Direct page (/). All 7 specified behaviours verified on both mobile (390x844) and desktop (1600x900) viewports. Mobile: overlays (.map-legend, Zone surveillée top-left, absolute TrajectoryBadge) are correctly hidden via 'hidden md:block'; the new data-testid='mobile-info-panel' renders BELOW the map with Zone surveillée title, Lourdes · 20 km, compact horizontal legend (Calme/Convectif/Orageux/Foudre), and inline TrajectoryBadge when wx.showTrajectory=true; WeatherLayersPanel switches to position:static. Desktop: mobile-info-panel is display:none (md:hidden), map-legend bottom-left and Zone surveillée top-left are visible, WeatherLayersPanel is position:absolute, absolute TrajectoryBadge with class 'absolute top-[220px] right-6' is present. Regression: clicking toggle-trajectory toggles showTrajectory correctly on both viewports (badge appears/disappears).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "MapPanel.jsx: clean refactor — outer wrapper uses 'flex flex-col' with the map in a 'flex-1 min-h-[400px] md:min-h-0' container so the mobile panel naturally appears under the map without overlap. Overlay desktop blocks use 'hidden md:block' consistently (map-legend, Zone surveillée title). The mobile info panel uses 'md:hidden bg-white border-t border-slate-200' — verified hidden at >=768px and visible <768px.",
+    "TrajectoryBadge.jsx: new 'inline' prop neatly switches the root <button> between absolute floating badge (desktop) and a transparent in-flow element (mobile). Disabled state when !detected || !onFit is preserved in both modes — verified 'Pas assez d'impacts' state renders correctly in mip during testing.",
+    "WeatherLayers.jsx: WeatherLayersPanel root className branches on isMobile — 'static border-t border-b' vs 'absolute z-[600] bottom-20 right-6'. Computed position confirmed: static on 390px viewport, absolute on 1600px. useIsMobile() hook uses matchMedia 'max-width:768px' which matches Tailwind md breakpoint exactly — consistent with the CSS-driven hidden/md:hidden classes.",
+    "Minor consistency note (non-blocking): on mobile the absolute TrajectoryBadge is gated by 'enabled={wx.showTrajectory && !isMobile}' in MapPanel, AND the desktop overlay block isn't wrapped in hidden md:block (it's positioned via 'absolute top-[220px]' inside TrajectoryBadge itself). The dual gating (JS via !isMobile + the inline alternative inside mobile-info-panel) means there's no double render on mobile — confirmed only 1 trajectory-badge element exists in mobile DOM, 2 on desktop (1 absolute + 1 from the md:hidden mobile-info-panel which is display:none).",
+    "Pre-existing Recharts width(-1)/height(-1) console warnings remain (unrelated; documented since iteration 18).",
+    "TrajectoryBadge fit-zoom click on desktop could not be functionally asserted because the live trajectory was 'not detected' ('Pas assez d'impacts') during this test run, so the button correctly rendered as disabled. The disabled/enabled gating logic itself is verified intact (detected && onFit ? onFit : undefined / disabled={!detected || !onFit}). Main agent can manually verify the fit-zoom behaviour during an actual storm window."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100% (7/7 mobile+desktop scenarios pass)"},
+  "test_credentials": "N/A — public Direct page, no auth.",
+  "seed_data_creation": "None.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Mobile/desktop split for Direct map: viewport <768px shows data-testid='mobile-info-panel' below the map (md:hidden) with Zone title + compact legend + optional inline TrajectoryBadge; viewport >=768px shows desktop overlays (.map-legend, top-left Zone surveillée block, absolute top-[220px] TrajectoryBadge) and WeatherLayersPanel as absolute bottom-20 right-6. useIsMobile() in /app/frontend/src/lib/useIsMobile.js uses matchMedia(max-width:768px) — aligned with Tailwind md. To re-test, ALWAYS set viewport before page.goto, then check element visibility + computed position. trajectory-badge data-testid is reused for both inline and absolute variants — count is 1 on mobile (inline), 2 on desktop (absolute visible + md:hidden inline hidden). toggle-trajectory on either viewport flips wx.showTrajectory state.",
+  "rca of the issue": "N/A — feature validated end-to-end, no bug found."
+}

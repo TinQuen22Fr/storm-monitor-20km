@@ -204,8 +204,10 @@ export function WeatherLayersPanel({
 }) {
   return (
     <div
-      className={`absolute z-[600] bg-white border border-slate-200 shadow-[0_2px_24px_rgba(0,0,0,0.06)] flex flex-col ${
-        isMobile ? "bottom-4 left-4 right-4" : "bottom-20 right-6"
+      className={`bg-white border border-slate-200 shadow-[0_2px_24px_rgba(0,0,0,0.06)] flex flex-col ${
+        isMobile
+          ? "static border-t border-b"
+          : "absolute z-[600] bottom-20 right-6"
       }`}
       data-testid="weather-layers-panel"
     >

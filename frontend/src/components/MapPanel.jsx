@@ -138,7 +138,8 @@ export default function MapPanel({
   const zoomOverride = wx.showRain ? 7 : null;
 
   return (
-    <div className="relative h-full w-full" data-testid="map-panel">
+    <div className="relative h-full w-full flex flex-col" data-testid="map-panel">
+      <div className="relative flex-1 min-h-[400px] md:min-h-0">
       <MapContainer
         center={centerLL}
         zoom={zoom}
@@ -200,9 +201,9 @@ export default function MapPanel({
         ))}
       </MapContainer>
 
-      {/* Floating legend - bottom left */}
+      {/* Floating legend - bottom left — DESKTOP ONLY */}
       <div
-        className="absolute bottom-6 left-6 z-[500] bg-white border border-slate-200 p-4 shadow-[0_2px_16px_rgba(0,0,0,0.04)]"
+        className="hidden md:block absolute bottom-6 left-6 z-[500] bg-white border border-slate-200 p-4 shadow-[0_2px_16px_rgba(0,0,0,0.04)]"
         data-testid="map-legend"
       >
         <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400 mb-3">Légende</div>
@@ -234,8 +235,8 @@ export default function MapPanel({
         </div>
       </div>
 
-      {/* Floating map title */}
-      <div className="absolute top-6 left-6 z-[500] bg-white/90 backdrop-blur-md border border-slate-200 px-5 py-3">
+      {/* Floating map title — DESKTOP layout. On mobile, compact version moved below */}
+      <div className="hidden md:block absolute top-6 left-6 z-[500] bg-white/90 backdrop-blur-md border border-slate-200 px-5 py-3">
         <div className="text-[10px] font-mono uppercase tracking-[0.3em] text-slate-400">Zone surveillée</div>
         <div className="font-heading text-lg font-bold text-slate-900 leading-tight">
           Lourdes · {radiusKm} km
@@ -291,11 +292,80 @@ export default function MapPanel({
       <WeatherLayersPanel {...wx} isMobile={isMobile} timelineDriven />
       <TrajectoryBadge
         center={center}
-        enabled={wx.showTrajectory}
+        enabled={wx.showTrajectory && !isMobile}
         onFit={() => setFitSignal((s) => s + 1)}
         cursorTs={cursorTs}
         isLive={isLive}
       />
+      </div>
+
+      {/* ============================================================ */}
+      {/* MOBILE info panel — placed BELOW the map, replaces overlays   */}
+      {/* ============================================================ */}
+      <div className="md:hidden bg-white border-t border-slate-200" data-testid="mobile-info-panel">
+        {/* Zone title compact */}
+        <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+          <div className="min-w-0">
+            <div className="text-[9px] font-mono uppercase tracking-[0.3em] text-slate-400">Zone surveillée</div>
+            <div className="font-heading text-base font-bold text-slate-900 leading-tight">
+              Lourdes · {radiusKm} km
+            </div>
+          </div>
+          {strikes.length > 0 && (
+            <div className="flex items-center gap-2 shrink-0 ml-3" data-testid="strikes-badge-mobile">
+              <span className="live-dot" />
+              <div className="text-right">
+                <div className="text-[9px] font-mono uppercase tracking-[0.2em] text-slate-400 leading-tight">Impacts 1h</div>
+                <div className="font-mono text-base font-medium text-slate-900 leading-none mt-0.5">
+                  {strikes.length}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Compact legend row */}
+        <div className="px-4 py-2 border-b border-slate-100 flex items-center gap-4 text-[11px] overflow-x-auto">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#10B981" }} />
+            <span className="text-slate-600">Calme</span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#D97706" }} />
+            <span className="text-slate-600">Convectif</span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#DC2626" }} />
+            <span className="text-slate-600">Orageux</span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <svg viewBox="0 0 24 24" width="11" height="11">
+              <path
+                d="M13 2L3 14h7l-1 8 11-12h-7l0-8z"
+                fill="#FDE047"
+                stroke="#FACC15"
+                strokeWidth="1.5"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span className="text-slate-600">Foudre</span>
+          </div>
+        </div>
+
+        {/* Trajectory info if detected (mobile inline) */}
+        {wx.showTrajectory && (
+          <div className="px-4 py-2 border-b border-slate-100">
+            <TrajectoryBadge
+              center={center}
+              enabled={wx.showTrajectory}
+              onFit={() => setFitSignal((s) => s + 1)}
+              cursorTs={cursorTs}
+              isLive={isLive}
+              inline
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

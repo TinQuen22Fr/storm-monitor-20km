@@ -13,6 +13,7 @@ export default function TrajectoryBadge({
   onFit,
   cursorTs = null,
   isLive = true,
+  inline = false,
 }) {
   const [traj, setTraj] = useState(null);
 
@@ -58,8 +59,12 @@ export default function TrajectoryBadge({
     <button
       onClick={detected && onFit ? onFit : undefined}
       disabled={!detected || !onFit}
-      className={`absolute top-[220px] right-6 z-[500] bg-white border border-slate-200 px-4 py-3 shadow-[0_2px_16px_rgba(0,0,0,0.04)] max-w-[220px] text-left ${
-        detected && onFit ? `${borderHover} cursor-pointer` : "cursor-default"
+      className={`${
+        inline
+          ? "w-full border border-transparent px-0 py-0 bg-transparent text-left"
+          : `absolute top-[220px] right-6 z-[500] bg-white border border-slate-200 px-4 py-3 shadow-[0_2px_16px_rgba(0,0,0,0.04)] max-w-[220px] text-left ${
+              detected && onFit ? `${borderHover} cursor-pointer` : "cursor-default"
+            }`
       } transition-colors`}
       data-testid="trajectory-badge"
       title={detected ? "Cliquer pour cadrer la carte sur la trajectoire" : undefined}
