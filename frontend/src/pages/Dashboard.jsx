@@ -252,7 +252,7 @@ export default function Dashboard() {
         } col-span-1 order-1 lg:order-2 h-auto lg:h-full relative z-0 flex flex-col`}
         data-testid="map-area"
       >
-        <div className="h-[60vh] lg:flex-1 lg:h-auto lg:min-h-0 relative">
+        <div className="lg:flex-1 lg:min-h-0 relative">
           <MapPanel
             zones={zones?.zones || []}
             strikes={displayedStrikes}

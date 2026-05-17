@@ -139,7 +139,7 @@ export default function MapPanel({
 
   return (
     <div className="relative h-full w-full flex flex-col" data-testid="map-panel">
-      <div className="relative flex-1 min-h-[400px] md:min-h-0">
+      <div className="relative h-[60vh] md:h-auto md:flex-1 md:min-h-0">
       <MapContainer
         center={centerLL}
         zoom={zoom}

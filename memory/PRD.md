@@ -400,3 +400,21 @@ Détection automatique des épisodes orageux (bursts de strikes) dans les 24h pa
 - Frontend 100% : section démos, 2 cards, dialog progress→player→download/whatsapp/copy, navigation play→Dashboard banner
 - **Zéro critical, zéro action item, zéro régression**
 
+
+
+## Phase 22 (2026-05-17) — Fix overlap mobile mobile-info-panel × Timeline
+
+### Problème
+Sur mobile (<768px), le `mobile-info-panel` (ZONE SURVEILLÉE, boutons Nuages/Pluie/Vent/Trajet,
+TRAJECTOIRE, LÉGENDE) débordait du conteneur `h-[60vh]` parent dans `Dashboard.jsx` et la
+Timeline (sibling next-in-flow) recouvrait visuellement la moitié basse du panneau, rendant
+LÉGENDE et TrajectoryBadge inline invisibles.
+
+### Fix
+- `Dashboard.jsx` ligne 255 : `h-[60vh] lg:flex-1 lg:h-auto lg:min-h-0 relative` → `lg:flex-1 lg:min-h-0 relative` (suppression de la contrainte de hauteur sur mobile)
+- `MapPanel.jsx` ligne 142 : `relative flex-1 min-h-[400px] md:min-h-0` → `relative h-[60vh] md:h-auto md:flex-1 md:min-h-0` (la map garde 60vh sur mobile, le panneau coule naturellement en dessous)
+
+### Vérification (smoke screenshot 390×844)
+- panel.bottom = 781 px, timeline.top = 781 px → **NO OVERLAP**
+- Tous les éléments visibles : Zone surveillée, Nuages/Pluie/Vent/Trajet, Trajectoire, Légende
+- Desktop 1600×900 intact : mobile_panel display:none, map-legend visible
