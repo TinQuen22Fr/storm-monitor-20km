@@ -481,3 +481,26 @@ randonneurs en Pyrénées.
 - `curl POST` heartbeat → stocké
 - Re-check status → online:true, stats_24h.lightnings=1, closest_km=4.2, max_energy=51.3
 - Screenshot UI : tous les éléments présents, onglet actif, charts rendus
+
+
+## Phase 25 (2026-06-10) — Fix NavTabs + version SPI + Tune_Antenna
+
+### NavTabs (grille responsive)
+- Refactor `/app/frontend/src/components/NavTabs.jsx` : passage d'un `flex` à un
+  `grid grid-cols-3 min-[480px]:grid-cols-5` → 5 onglets sur 1 ligne ≥ 480px,
+  sinon 3 onglets × 2 lignes (3 + 2). Plus de troncature de "HISTORIQUE".
+- `whitespace-nowrap` + `truncate` pour blinder.
+
+### Sketch SPI
+- `/app/hardware/Arduino_StormDetector_SPI.ino` : variante SPI (CS=D6, MOSI/MISO/SCK partagés
+  avec Ethernet Shield, SI à GND). Mêmes constantes/logique que la version I2C, même endpoint
+  POST JSON `/api/upload_storm`, mêmes 3 types d'événements.
+
+### Tune_Antenna
+- `/app/hardware/Tune_Antenna/Example3_Tune_Antenna_I2C.ino` — version officielle SparkFun
+  adaptée FR (commentaires détaillés)
+- `/app/hardware/Tune_Antenna/Example3_Tune_Antenna_SPI.ino` — idem en SPI
+- `/app/hardware/Tune_Antenna/README.md` — guide FR pas-à-pas : traduction du paragraphe
+  officiel SparkFun (496 kHz vs 500 kHz, ±3,5 %), procédure de mesure à l'oscilloscope/
+  analyseur logique, table de correspondance fréquence/écart, recommandations pratiques
+- `/app/hardware/README.md` — README global du dossier hardware avec matrice I2C/SPI et liens
