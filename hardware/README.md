@@ -37,14 +37,45 @@ lecture des registres).
 Modifie en haut du fichier `.ino` :
 
 ```c++
-const char SERVER_HOST[] = "192.168.1.10";  // IP LAN du serveur Kimsufi
-const int  SERVER_PORT   = 8003;            // port FastAPI backend
-const char API_KEY[]     = "...";           // = UPLOAD_API_KEY côté backend/.env
+const char SERVER_HOST[] = "storm.ton-domaine.fr"; // domaine public du Kimsufi
+const int  SERVER_PORT   = 8080;                   // port HTTP non chiffré dédié
+const char API_KEY[]     = "...";                  // = UPLOAD_API_KEY côté backend/.env
 const char DEVICE_ID[]   = "as3935-lourdes-01";
 ```
 
 La clé `API_KEY` doit correspondre **exactement** à `UPLOAD_API_KEY` dans
 `/app/backend/.env` côté serveur, sinon le backend renvoie `401`.
+
+### Accès au Kimsufi depuis l'Internet (datacenter Roubaix)
+
+L'Arduino Uno + Ethernet Shield ne fait **pas** de HTTPS/TLS. Comme le Kimsufi
+est en datacenter (pas en LAN local), il faut une des stratégies suivantes :
+
+| Option | Avantages | Inconvénients |
+|---|---|---|
+| **1. Port HTTP dédié** (ex: `:8080`) ouvert sur le pare-feu Kimsufi, Nginx redirige vers `127.0.0.1:8003` | Simple, marche tout de suite | Trafic en clair (API_KEY visible en sniff passif) |
+| **2. VPN Tailscale/WireGuard** : un petit routeur OpenWRT ou mini-PC chez toi rejoint le réseau Tailscale, le Kimsufi est joignable via une IP `100.x.y.z` | Chiffrement bout en bout, le Kimsufi reste fermé sur Internet | Setup VPN à monter côté maison |
+| **3. Upgrade hardware** : remplacer Uno+Ethernet par ESP32 ou MKR1010 | HTTPS natif, le plus propre à terme | Coût matériel + refonte sketch |
+
+**Recommandé pour démarrer** : Option 1 + clé API longue et changée régulièrement.
+Exemple de bloc Nginx à ajouter sur le Kimsufi (HTTP plaintext sur 8080,
+uniquement pour `/api/upload_storm`) :
+
+```nginx
+server {
+    listen 8080;
+    server_name storm.ton-domaine.fr;
+    # Permet uniquement l'upload du détecteur (lecture, push, etc. restent en HTTPS:443)
+    location = /api/upload_storm {
+        proxy_pass http://127.0.0.1:8003;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+    }
+    location / { return 404; }
+}
+```
+
+Puis ouvre le port 8080 sur le firewall Kimsufi (`ufw allow 8080/tcp`).
 
 ## Bibliothèques Arduino requises
 
@@ -60,7 +91,8 @@ La clé `API_KEY` doit correspondre **exactement** à `UPLOAD_API_KEY` dans
 
 ```
 AS3935  →  Arduino Uno
-  VCC   →  3V3              (NE PAS mettre en 5V)
+  VCC   →  5V   (recommandé sur module SparkFun — LDO embarqué, plus stable
+                 que le 3V3 Arduino qui plafonne à 50 mA)
   GND   →  GND
   SDA   →  A4
   SCL   →  A5
@@ -71,7 +103,7 @@ AS3935  →  Arduino Uno
 
 ```
 AS3935  →  Arduino Uno
-  VCC   →  3V3
+  VCC   →  5V   (idem ci-dessus, module SparkFun avec LDO 3V3 embarqué)
   GND   →  GND
   MOSI  →  D11 (SPI partagé)
   MISO  →  D12 (SPI partagé)

@@ -35,7 +35,9 @@
  CONNEXIONS SPI
  --------------
    AS3935  →  Arduino Uno
-     VCC   →  3V3 (NE PAS mettre en 5V)
+     VCC   →  5V   (recommandé sur module SparkFun — LDO embarqué, plus stable
+                    que 3V3 Arduino qui chute sous charge ; sur puce AS3935
+                    nue sans breakout : 3V3 uniquement)
      GND   →  GND
      MOSI  →  D11 (SPI MOSI partagé avec Ethernet)
      MISO  →  D12 (SPI MISO partagé)
@@ -71,15 +73,20 @@
 #include <SparkFun_AS3935.h>
 
 // ============================================================================
-// CONFIGURATION — modifiez ces valeurs avant flash
+// CONFIGURATION RÉSEAU — modifiez ces valeurs avant flash
 // ============================================================================
+//
+// Le serveur Storm Monitor tourne sur un Kimsufi en datacenter (Roubaix),
+// donc accessible via Internet — pas en LAN. L'Arduino Uno + Ethernet Shield
+// ne fait PAS de TLS/HTTPS, voir 3 options dans le sketch I2C ou DEPLOY.md.
+// Par défaut on cible un port HTTP non chiffré dédié au détecteur (cf. Nginx).
 
-// MAC arbitraire (doit être unique sur le LAN)
+// MAC arbitraire (doit être unique sur le LAN local de l'Arduino)
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0x08 };
 
-// Cible du backend
-const char SERVER_HOST[] = "192.168.1.10";  // <-- adapter (IP LAN du Kimsufi ou tunnel)
-const int  SERVER_PORT   = 8003;
+// Cible du backend (domaine public Kimsufi + port HTTP non chiffré)
+const char SERVER_HOST[] = "storm.ton-domaine.fr";   // <-- adapte
+const int  SERVER_PORT   = 8080;                     // port HTTP dédié (cf. Nginx)
 const char ENDPOINT[]    = "/api/upload_storm";
 
 // Authentification (doit correspondre à UPLOAD_API_KEY côté backend .env)

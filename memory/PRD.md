@@ -504,3 +504,28 @@ randonneurs en Pyrénées.
   officiel SparkFun (496 kHz vs 500 kHz, ±3,5 %), procédure de mesure à l'oscilloscope/
   analyseur logique, table de correspondance fréquence/écart, recommandations pratiques
 - `/app/hardware/README.md` — README global du dossier hardware avec matrice I2C/SPI et liens
+
+
+## Phase 26 (2026-06-10) — Corrections hardware (5V, Kimsufi datacenter, schémas)
+
+### Alim 5V
+- Les 2 sketches (I2C + SPI) + README global : précisent que le module SparkFun
+  AS3935 accepte 5V sur VCC grâce à son LDO embarqué, et que 5V Arduino est
+  plus stable que 3V3 (qui plafonne à 50 mA). Avertissement clair que c'est
+  valable UNIQUEMENT pour le module breakout SparkFun, pas la puce nue.
+
+### Kimsufi en datacenter (pas LAN)
+- Suppression des IP `192.168.1.x` dans les sketches → exemple `storm.ton-domaine.fr:8080`
+- 3 options réseau documentées (port HTTP dédié via Nginx / VPN Tailscale-WireGuard /
+  upgrade ESP32) dans le sketch I2C et `/app/hardware/README.md`
+- Snippet Nginx prêt-à-coller pour exposer uniquement `/api/upload_storm` en HTTP
+  plaintext sur :8080 (le reste de l'app reste en HTTPS:443)
+
+### Schémas de mesure Tune_Antenna
+- Ajout dans `Tune_Antenna/README.md` :
+  - 2 schémas ASCII détaillés (variante I2C + variante SPI) montrant où placer
+    la sonde "+" de l'oscilloscope/analyseur logique (sur D4 = broche IRQ du
+    capteur) et où mettre la masse de mesure (GND commun avec l'Arduino)
+  - Tableau des réglages oscilloscope recommandés (couplage DC, 1V/div, 10µs/div,
+    trigger 1,6 V front montant)
+  - Tableau des réglages analyseur logique (≥1 MS/s, capture 10 ms)

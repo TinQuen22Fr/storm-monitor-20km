@@ -38,6 +38,107 @@ Les cartes SparkFun sont déjà à <1 % d'écart vs 500 kHz. Le tuning n'est
 - L'AS3935 câblé selon ton mode de communication (I2C ou SPI)
 - Une sonde sur la broche **IRQ** du capteur (D4 par défaut sur Uno)
 
+## Où brancher la sonde de mesure ?
+
+La fréquence à mesurer sort sur la **broche IRQ du capteur AS3935**, qui est
+reliée à la broche **D4 de l'Arduino**. C'est **le même fil** vu de deux côtés.
+Tu peux donc piquer la sonde n'importe où sur ce fil.
+
+⚠️ **Important** : ta masse de mesure (pince crocodile noire de l'oscilloscope
+ou GND de l'analyseur logique) doit être **commune avec la masse de l'Arduino**.
+Sinon les mesures seront flottantes ou ramèneront du bruit secteur.
+
+### Schéma — variante I2C
+
+```
+                  ┌──────────────────────────────┐
+                  │       Arduino Uno            │
+                  │                              │
+                  │   5V ●──────────┐            │
+                  │  3V3 ●          │            │
+                  │  GND ●──────┐   │            │
+                  │             │   │            │
+                  │   D4 ●──────┼───┼────────┐   │  ← piquer la sonde "+"
+                  │       │ │   │   │        │   │     ici (au plus près
+                  │   A4 ●┼─┼───┼───┼──────┐ │   │     du connecteur D4)
+                  │   A5 ●┼─┼───┼───┼─────┐│ │   │
+                  └───────┼─┼───┼───┼─────┼┼─┼───┘
+                          │ │   │   │     ││ │
+                          │ │   │   │     ││ │       ┌────────────┐
+                          │ │   └───┼─────┼┼─┼───── ●│ VCC        │
+                          │ │       │     ││ │       │            │
+                          │ └───────┘     ││ └─────●│ IRQ  AS3935 │
+                          │               │└──────●│ SDA          │
+                          │               └───────●│ SCL          │
+                          └───────────────────────●│ GND          │
+                                                   └────────────┘
+                                                          │
+                                                          │
+            ┌─────────────────┐                           │
+            │  OSCILLOSCOPE   │                           │
+            │   ou ANALYSEUR  │                           │
+            │     LOGIQUE     │                           │
+            │                 │                           │
+            │  CH1 +   ●──────┴──── sur D4 (= IRQ AS3935)
+            │  CH1 GND ●─────────── sur GND (Arduino ou capteur, même fil)
+            └─────────────────┘
+```
+
+### Schéma — variante SPI
+
+```
+                  ┌──────────────────────────────┐
+                  │       Arduino Uno            │
+                  │                              │
+                  │   5V ●──────────┐            │
+                  │  GND ●─────┐    │            │
+                  │            │    │            │
+                  │   D4 ●─────┼────┼────────┐   │  ← piquer la sonde "+"
+                  │   D6 ●─────┼────┼───────┐│   │     ici (D4 = IRQ)
+                  │  D11 ●─────┼────┼──────┐││   │
+                  │  D12 ●─────┼────┼─────┐│││   │
+                  │  D13 ●─────┼────┼────┐││││   │
+                  └────────────┼────┼────┼┼┼┼┼───┘
+                               │    │    │││││
+                               │    │    │││││           ┌────────────┐
+                               │    └────┼┼┼┼┼─────────●│ VCC        │
+                               │         ││││└─────────●│ IRQ        │
+                               │         │││└──────────●│ CS         │
+                               │         ││└───────────●│ MOSI AS3935│
+                               │         │└────────────●│ MISO       │
+                               │         └─────────────●│ SCK        │
+                               └───────────────────────●│ GND        │
+                                                       │ SI ─── GND  │
+                                                       └────────────┘
+                                                              │
+            ┌─────────────────┐                               │
+            │  OSCILLOSCOPE   │                               │
+            │   ou ANALYSEUR  │                               │
+            │     LOGIQUE     │                               │
+            │                 │                               │
+            │  CH1 +   ●──────┴──────── sur D4 (= IRQ AS3935)
+            │  CH1 GND ●──────────────── sur GND
+            └─────────────────┘
+```
+
+### Réglages oscilloscope recommandés
+
+| Paramètre              | Valeur conseillée                |
+|------------------------|----------------------------------|
+| Couplage               | DC                               |
+| Échelle verticale      | 1 V/div (signal logique 0–3,3 V) |
+| Base de temps          | 10 µs/div (pour voir ~3 périodes du signal à 31 kHz) |
+| Trigger                | Rising edge, niveau 1,6 V        |
+| Sonde                  | ×1 (ou ×10 si signal trop fort)  |
+
+### Réglages analyseur logique recommandés
+
+| Paramètre              | Valeur conseillée                |
+|------------------------|----------------------------------|
+| Échantillonnage        | ≥ 1 MS/s (10× le signal à 31 kHz) |
+| Durée capture          | 10 ms (= 310 périodes à 31 kHz) suffisant pour mesurer la fréquence avec précision |
+| Trigger                | Front montant sur le canal D4    |
+
 ## Comment ça marche
 
 Le sketch active une fonction interne du AS3935 qui **route l'oscillateur de

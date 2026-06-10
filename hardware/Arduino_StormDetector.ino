@@ -22,7 +22,12 @@
  CONNEXIONS
  ----------
    AS3935  →  Arduino
-     VCC   →  3V3
+     VCC   →  5V   (recommandé — LDO embarqué sur le module SparkFun)
+                    ATTENTION : ne PAS mettre 5V si tu utilises la puce AS3935
+                    nue sans module breakout. Sur le module SparkFun la pin VCC
+                    accepte 3-5V grâce au régulateur 3,3V onboard, et le 5V
+                    est en pratique plus stable que le 3V3 de l'Arduino Uno
+                    (qui plafonne à 50 mA et chute sous charge).
      GND   →  GND
      SDA   →  A4 (I2C)
      SCL   →  A5 (I2C)
@@ -61,15 +66,41 @@
 #include <SparkFun_AS3935.h>
 
 // ============================================================================
-// CONFIGURATION — modifiez ces valeurs avant flash
+// CONFIGURATION RÉSEAU — modifiez ces valeurs avant flash
 // ============================================================================
+//
+// IMPORTANT : le serveur Storm Monitor tourne sur un Kimsufi en datacenter
+// (Roubaix), accessible via Internet. L'Arduino Uno + Ethernet Shield ne fait
+// PAS de TLS/HTTPS — on a donc 3 options possibles :
+//
+//   OPTION 1 (la plus simple, recommandée pour démarrer)
+//     Ouvre un port HTTP non chiffré sur le Kimsufi vers le backend FastAPI.
+//     Par défaut Nginx écoute le 443 (HTTPS) — il faut ajouter une règle pour
+//     accepter du HTTP plaintext SUR UN PORT DÉDIÉ (ex: 8080) qui forwarde
+//     vers le backend. Voir DEPLOY.md > section "Détecteur AS3935".
+//     SERVER_HOST = "ton-domaine.fr"   SERVER_PORT = 8080
+//
+//   OPTION 2 (la plus propre, anti-MITM)
+//     Mettre un VPN type Tailscale/WireGuard sur le réseau de l'Arduino (via
+//     un mini-PC ou routeur OpenWRT qui sert de gateway VPN). Le Kimsufi
+//     apparaît alors comme une IP "LAN" (100.x.y.z avec Tailscale).
+//     SERVER_HOST = "100.64.0.1"        SERVER_PORT = 8003
+//
+//   OPTION 3 (hardware upgrade)
+//     Remplacer l'Arduino Uno + Ethernet Shield par un ESP32 ou MKR1010 qui
+//     gère HTTPS nativement. Hors scope de ce sketch.
+//
+// Dans tous les cas, l'authentification se fait par le header X-API-Key, qui
+// est partagé côté backend dans /app/backend/.env (variable UPLOAD_API_KEY).
+// Sans TLS, ce secret transite en clair — change-le régulièrement et
+// considère qu'il peut être intercepté par un sniff passif.
 
-// MAC arbitraire (doit être unique sur le LAN)
+// MAC arbitraire (doit être unique sur le LAN local de l'Arduino)
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0x07 };
 
-// Cible du backend (IP locale du serveur Kimsufi en LAN OU exposé via VPN)
-const char SERVER_HOST[] = "192.168.1.10";  // <-- adapter
-const int  SERVER_PORT   = 8003;            // backend FastAPI (Storm Monitor)
+// Cible du backend (domaine public Kimsufi + port HTTP non chiffré)
+const char SERVER_HOST[] = "storm.ton-domaine.fr";   // <-- adapte
+const int  SERVER_PORT   = 8080;                     // port HTTP dédié (cf. Nginx)
 const char ENDPOINT[]    = "/api/upload_storm";
 
 // Authentification (doit correspondre à UPLOAD_API_KEY côté backend .env)
