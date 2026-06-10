@@ -34,7 +34,13 @@ async def _write_all(items: List[Dict[str, Any]]) -> None:
     tmp.replace(p)
 
 
-async def append(distance: float, energy: float, timestamp: Optional[str] = None) -> Dict[str, Any]:
+async def append(
+    distance: float,
+    energy: float,
+    timestamp: Optional[str] = None,
+    kind: str = "lightning",
+    device_id: Optional[str] = None,
+) -> Dict[str, Any]:
     """Append a storm record. Returns the stored record."""
     async with _LOCK:
         items = await _read_all()
@@ -44,6 +50,8 @@ async def append(distance: float, energy: float, timestamp: Optional[str] = None
             "energy": float(energy),
             "timestamp": timestamp or datetime.now(timezone.utc).isoformat(),
             "received_at": datetime.now(timezone.utc).isoformat(),
+            "kind": kind,
+            "device_id": device_id,
         }
         items.append(record)
         await _write_all(items)

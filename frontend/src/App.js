@@ -2,6 +2,7 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import "leaflet/dist/leaflet.css";
 import "@/App.css";
 import Dashboard from "@/pages/Dashboard";
+import DetectorPage from "@/pages/DetectorPage";
 import History from "@/pages/History";
 import VigilancePage from "@/pages/VigilancePage";
 import ReplayPage from "@/pages/ReplayPage";
@@ -16,6 +17,7 @@ function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/vigilance" element={<VigilancePage />} />
           <Route path="/replay" element={<ReplayPage />} />
+          <Route path="/detector" element={<DetectorPage />} />
           <Route path="/historique" element={<History />} />
         </Routes>
       </BrowserRouter>

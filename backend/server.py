@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -500,6 +500,8 @@ class StormUploadInput(BaseModel):
     distance: float = Field(..., description="Distance in km")
     energy: float = Field(..., description="Energy (kA, kJ or arbitrary)")
     timestamp: Optional[str] = None
+    kind: Optional[str] = Field(default="lightning", description="lightning | disturber | heartbeat")
+    device_id: Optional[str] = None
 
 
 def _require_upload_api_key(request: Request) -> None:
@@ -515,8 +517,65 @@ def _require_upload_api_key(request: Request) -> None:
 async def upload_storm(payload: StormUploadInput, request: Request):
     """Upload a storm data point. Requires header 'X-API-Key'."""
     _require_upload_api_key(request)
-    record = await uploads_mod.append(payload.distance, payload.energy, payload.timestamp)
+    record = await uploads_mod.append(
+        payload.distance,
+        payload.energy,
+        payload.timestamp,
+        kind=payload.kind or "lightning",
+        device_id=payload.device_id,
+    )
     return {"ok": True, "record": record}
+
+
+@api_router.get("/detector/status")
+async def detector_status(device_id: Optional[str] = None, online_window_min: int = 10):
+    """Return liveness + latest events for the AS3935 hardware detector page."""
+    items = await uploads_mod.list_all(None)
+    if device_id:
+        items = [it for it in items if it.get("device_id") == device_id]
+    # items are already sorted desc by timestamp
+    now = datetime.now(timezone.utc)
+    last = items[0] if items else None
+    online = False
+    last_seen_ts = None
+    if last:
+        try:
+            ts = last.get("received_at") or last.get("timestamp")
+            last_dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            last_seen_ts = last_dt.isoformat()
+            online = (now - last_dt).total_seconds() <= online_window_min * 60
+        except (ValueError, AttributeError, TypeError):
+            online = False
+
+    # 24h slice for charts/feed
+    cutoff = now - timedelta(hours=24)
+    last_24h = []
+    for it in items:
+        try:
+            t = datetime.fromisoformat((it.get("timestamp") or "").replace("Z", "+00:00"))
+            if t >= cutoff:
+                last_24h.append(it)
+        except (ValueError, AttributeError, TypeError):
+            continue
+
+    lightnings = [it for it in last_24h if (it.get("kind") or "lightning") == "lightning"]
+    disturbers = [it for it in last_24h if it.get("kind") == "disturber"]
+
+    closest_km = min((it["distance"] for it in lightnings), default=None)
+    max_energy = max((it["energy"] for it in lightnings), default=None)
+
+    return {
+        "online": online,
+        "last_seen": last_seen_ts,
+        "window_minutes": online_window_min,
+        "stats_24h": {
+            "lightnings": len(lightnings),
+            "disturbers": len(disturbers),
+            "closest_km": closest_km,
+            "max_energy": max_energy,
+        },
+        "recent": last_24h[:50],
+    }
 
 
 @api_router.get("/storm_uploads")

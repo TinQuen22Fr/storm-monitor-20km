@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { Activity, AlertTriangle, BarChart3, PlayCircle } from "lucide-react";
+import { Activity, AlertTriangle, BarChart3, Cpu, PlayCircle } from "lucide-react";
 
 export default function NavTabs({ variant = "inline" }) {
   const base =
@@ -23,6 +23,10 @@ export default function NavTabs({ variant = "inline" }) {
       <NavLink to="/replay" className={tabCls} data-testid="nav-replay">
         <PlayCircle className="w-3.5 h-3.5" strokeWidth={2} />
         Replay
+      </NavLink>
+      <NavLink to="/detector" className={tabCls} data-testid="nav-detector">
+        <Cpu className="w-3.5 h-3.5" strokeWidth={2} />
+        Détecteur
       </NavLink>
       <NavLink to="/historique" className={tabCls} data-testid="nav-history">
         <BarChart3 className="w-3.5 h-3.5" strokeWidth={2} />

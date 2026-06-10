@@ -440,3 +440,44 @@ randonneurs en Pyrénées.
 ### Fix landscape mobile
 - `MapPanel.jsx` : `h-[60vh] lg:h-auto lg:flex-1 lg:min-h-0` pour que la carte garde 60vh
   jusqu'à 1023px (mobile portrait, mobile landscape, tablette) puis remplisse en lg+
+
+
+## Phase 24 (2026-06-10) — Intégration détecteur matériel AS3935 + page dédiée
+
+### Cible GitHub
+- Dépôt : https://github.com/TinQuen22Fr/storm-monitor-20km
+- Branche : `Version_With_Detector` (à créer/cibler via "Save to GitHub", NE PAS écraser `Testing`)
+
+### Sketch Arduino — `/app/hardware/Arduino_StormDetector.ino`
+- AS3935 (I2C) + Ethernet Shield W5100/W5500
+- HTTP POST JSON sur `/api/upload_storm` (au lieu du GET vers NAS local)
+- Header `X-API-Key` = `UPLOAD_API_KEY` côté backend (.env)
+- 3 types d'événements envoyés : `lightning`, `disturber`, `heartbeat` (toutes les 5 min)
+- Constantes en haut du fichier : `SERVER_HOST`, `SERVER_PORT=8003`, `API_KEY`, `DEVICE_ID="as3935-lourdes-01"`
+- Bibliothèques requises : `SparkFun_AS3935`, `Ethernet`, `ArduinoJson` (v6+)
+- LEDs conservées : bleu=foudre, vert=upload OK, rouge=upload KO
+
+### Backend (rétro-compatible)
+- `StormUploadInput` étendu : `kind: Optional[str]="lightning"`, `device_id: Optional[str]=None`
+- `uploads_mod.append()` stocke `kind` + `device_id` dans `storm_data.json`
+- **Nouvel endpoint** `GET /api/detector/status?device_id=...&online_window_min=10` :
+  - `online: bool` (basé sur dernier événement < 10 min)
+  - `last_seen` (ISO)
+  - `stats_24h: {lightnings, disturbers, closest_km, max_energy}`
+  - `recent: [...]` (50 derniers, ordre desc)
+
+### Frontend
+- Nouvelle page `/detector` (`/app/frontend/src/pages/DetectorPage.jsx`)
+  - Bandeau status EN LIGNE/HORS LIGNE (data-testid=`detector-status-banner`)
+  - 4 tuiles 24h
+  - Charts Recharts (énergie temps + scatter distance×énergie)
+  - Feed temps réel avec KindBadge (Foudre / Parasite / Ping), auto-refresh 15s
+- Onglet nav **DÉTECTEUR** ajouté entre Replay et Historique (icône `Cpu`)
+- Route `/detector` dans `App.js`
+
+### Tests
+- `curl /api/detector/status` → online:false avant upload
+- `curl POST /api/upload_storm` avec kind=lightning, device_id → stocké correctement
+- `curl POST` heartbeat → stocké
+- Re-check status → online:true, stats_24h.lightnings=1, closest_km=4.2, max_energy=51.3
+- Screenshot UI : tous les éléments présents, onglet actif, charts rendus
