@@ -529,3 +529,42 @@ randonneurs en Pyrénées.
   - Tableau des réglages oscilloscope recommandés (couplage DC, 1V/div, 10µs/div,
     trigger 1,6 V front montant)
   - Tableau des réglages analyseur logique (≥1 MS/s, capture 10 ms)
+
+
+## Phase 27 (2026-06-10) — Module CJMCU + Wizard Autotune assisté
+
+### Câblage CJMCU (PCB violet)
+- Sketches I2C/SPI + READMEs mis à jour avec le câblage spécifique CJMCU :
+  - Pin **EN_V** documentée (active le LDO embarqué SGM2019-3.3)
+  - Mode I2C : pastille **MOSI sert physiquement de SDA** (particularité PCB)
+  - Mode I2C : SI à VCC pour forcer I2C ; CS et MISO à GND
+  - 5V autorisé UNIQUEMENT si EN_V est tiré à VCC ; sinon → 3V3 strict
+
+### Wizard autotune `/detector/tune`
+- **Backend** :
+  - `StormUploadInput` étendu : `raw_freq_hz: Optional[float]`, `tune_cap: Optional[int]`
+  - `uploads.append()` stocke ces 2 nouveaux champs quand présents
+  - Nouvel endpoint `GET /api/detector/tune?device_id=&window_min=10` :
+    retourne les samples récents + un objet `current` (freq, delta_hz, delta_pct, in_spec)
+    + un objet `suggestion` (tune_cap optimal calculé linéairement via ~1400 Hz/pas)
+- **Frontend** :
+  - Page `/detector/tune` (`DetectorTunePage.jsx`) avec :
+    - Bandeau status MESURES REÇUES / EN ATTENTE
+    - 4 stat tiles : fréquence, écart %, capacité actuelle, capacité suggérée (encadré sombre)
+    - Gauge visuelle horizontale (490-510 kHz) avec marqueur cible 500 kHz + aiguille rouge live
+    - Carte action noire avec snippet `lightning.tuneCap(N);` + bouton **Copier le snippet** (toast sonner)
+    - Table des 15 dernières mesures avec couleur verte/rouge selon in-spec
+    - Section "Comment ça marche" affichée en absence de données
+  - Bouton **AUTOTUNE ANTENNE** ajouté sur `/detector` (à côté de Rafraîchir, style sombre, icône Target)
+  - Route `/detector/tune` câblée dans `App.js`
+- **2 nouveaux sketches** :
+  - `hardware/Tune_Antenna/Autotune_To_Backend_I2C.ino`
+  - `hardware/Tune_Antenna/Autotune_To_Backend_SPI.ino`
+  - Lisent `lightning.readAntennaFreq()` toutes les 2 s, POSTent `kind=tune_freq` au backend
+- README Tune_Antenna : **Option B (sans oscilloscope)** documentée en premier,
+  Option A (oscilloscope) conservée en méthode classique
+
+### Tests
+- POST `kind=tune_freq` raw_freq_hz=507000, tune_cap=0 → suggestion tune_cap=5 ✓
+- Vérif UI : page wizard affiche 507.00 kHz / +1.40% / suggestion 5 / "Reflashe avec lightning.tuneCap(5)" ✓
+- Bouton "AUTOTUNE ANTENNE" présent sur /detector ✓

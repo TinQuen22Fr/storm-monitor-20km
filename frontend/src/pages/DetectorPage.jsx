@@ -11,7 +11,8 @@ import {
   YAxis,
   ZAxis,
 } from "recharts";
-import { Activity, Cpu, RefreshCw, Wifi, WifiOff, Zap } from "lucide-react";
+import { Activity, Cpu, RefreshCw, Target, Wifi, WifiOff, Zap } from "lucide-react";
+import { Link } from "react-router-dom";
 import NavTabs from "@/components/NavTabs";
 import { api } from "@/lib/api";
 
@@ -198,6 +199,14 @@ export default function DetectorPage() {
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} strokeWidth={1.8} />
             {loading ? "…" : "Rafraîchir"}
           </button>
+          <Link
+            to="/detector/tune"
+            className="shrink-0 inline-flex items-center gap-2 px-4 h-10 border border-slate-900 bg-slate-900 text-white hover:bg-violet-700 hover:border-violet-700 transition-colors font-mono text-[10px] uppercase tracking-[0.2em]"
+            data-testid="open-tune-wizard"
+          >
+            <Target className="w-4 h-4" strokeWidth={2} />
+            Autotune antenne
+          </Link>
         </section>
 
         {error && (

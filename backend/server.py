@@ -500,8 +500,10 @@ class StormUploadInput(BaseModel):
     distance: float = Field(..., description="Distance in km")
     energy: float = Field(..., description="Energy (kA, kJ or arbitrary)")
     timestamp: Optional[str] = None
-    kind: Optional[str] = Field(default="lightning", description="lightning | disturber | heartbeat")
+    kind: Optional[str] = Field(default="lightning", description="lightning | disturber | heartbeat | tune_freq")
     device_id: Optional[str] = None
+    raw_freq_hz: Optional[float] = Field(default=None, description="Antenna frequency (Hz) for kind=tune_freq")
+    tune_cap: Optional[int] = Field(default=None, description="Current tuneCap value (0-15) for kind=tune_freq")
 
 
 def _require_upload_api_key(request: Request) -> None:
@@ -523,8 +525,83 @@ async def upload_storm(payload: StormUploadInput, request: Request):
         payload.timestamp,
         kind=payload.kind or "lightning",
         device_id=payload.device_id,
+        raw_freq_hz=payload.raw_freq_hz,
+        tune_cap=payload.tune_cap,
     )
     return {"ok": True, "record": record}
+
+
+@api_router.get("/detector/tune")
+async def detector_tune_status(device_id: Optional[str] = None, window_min: int = 10):
+    """
+    Return the latest tune_freq samples + a suggested optimal tuneCap value.
+
+    Each step of tuneCap on the AS3935 adds ~8 pF to the antenna LC. Empirical
+    sensitivity is around -1400 Hz per step (varies by board, decreases with
+    capacitor count). We use a simple linear approximation to suggest the
+    nearest integer tuneCap that should bring f as close to 500 kHz as possible.
+    """
+    TARGET_HZ = 500_000.0
+    HZ_PER_STEP = 1400.0  # rough average — see AS3935 datasheet p.35
+    items = await uploads_mod.list_all(None)
+    if device_id:
+        items = [it for it in items if it.get("device_id") == device_id]
+    tune = [it for it in items if it.get("kind") == "tune_freq" and it.get("raw_freq_hz")]
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(minutes=window_min)
+    recent = []
+    for it in tune:
+        try:
+            t = datetime.fromisoformat((it.get("timestamp") or "").replace("Z", "+00:00"))
+            if t >= cutoff:
+                recent.append(it)
+        except (ValueError, AttributeError, TypeError):
+            continue
+
+    if not recent:
+        return {
+            "online": False,
+            "samples": [],
+            "current": None,
+            "suggestion": None,
+            "window_minutes": window_min,
+        }
+
+    latest = recent[0]
+    f = float(latest["raw_freq_hz"])
+    cur_cap = int(latest.get("tune_cap") or 0)
+    delta_hz = f - TARGET_HZ
+    delta_pct = (delta_hz / TARGET_HZ) * 100.0
+    # Linear suggestion: need to add (f - 500k) / step_hz steps to compensate.
+    # f > 500k → need more capacitance → higher cap. f < 500k → lower cap.
+    needed_steps = round(delta_hz / HZ_PER_STEP)
+    suggested_cap = max(0, min(15, cur_cap + needed_steps))
+
+    return {
+        "online": True,
+        "samples": [
+            {
+                "timestamp": s.get("timestamp"),
+                "freq_hz": float(s.get("raw_freq_hz", 0)),
+                "tune_cap": int(s.get("tune_cap") or 0),
+            }
+            for s in recent[:50]
+        ],
+        "current": {
+            "freq_hz": f,
+            "delta_hz": delta_hz,
+            "delta_pct": delta_pct,
+            "in_spec": abs(delta_pct) <= 3.5,
+            "tune_cap": cur_cap,
+            "timestamp": latest.get("timestamp"),
+        },
+        "suggestion": {
+            "tune_cap": suggested_cap,
+            "expected_delta_hz_after": delta_hz - (suggested_cap - cur_cap) * HZ_PER_STEP,
+            "note": "Approximation linéaire (~1400 Hz par pas). Reflasher avec lightning.tuneCap(N) puis remesurer.",
+        },
+        "window_minutes": window_min,
+    }
 
 
 @api_router.get("/detector/status")

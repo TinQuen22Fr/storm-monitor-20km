@@ -3,6 +3,7 @@ import "leaflet/dist/leaflet.css";
 import "@/App.css";
 import Dashboard from "@/pages/Dashboard";
 import DetectorPage from "@/pages/DetectorPage";
+import DetectorTunePage from "@/pages/DetectorTunePage";
 import History from "@/pages/History";
 import VigilancePage from "@/pages/VigilancePage";
 import ReplayPage from "@/pages/ReplayPage";
@@ -18,6 +19,7 @@ function App() {
           <Route path="/vigilance" element={<VigilancePage />} />
           <Route path="/replay" element={<ReplayPage />} />
           <Route path="/detector" element={<DetectorPage />} />
+          <Route path="/detector/tune" element={<DetectorTunePage />} />
           <Route path="/historique" element={<History />} />
         </Routes>
       </BrowserRouter>

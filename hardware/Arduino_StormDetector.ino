@@ -21,17 +21,33 @@
 
  CONNEXIONS
  ----------
-   AS3935  →  Arduino
-     VCC   →  5V   (recommandé — LDO embarqué sur le module SparkFun)
-                    ATTENTION : ne PAS mettre 5V si tu utilises la puce AS3935
-                    nue sans module breakout. Sur le module SparkFun la pin VCC
-                    accepte 3-5V grâce au régulateur 3,3V onboard, et le 5V
-                    est en pratique plus stable que le 3V3 de l'Arduino Uno
-                    (qui plafonne à 50 mA et chute sous charge).
-     GND   →  GND
-     SDA   →  A4 (I2C)
-     SCL   →  A5 (I2C)
-     IRQ   →  D4
+   ⚠️ IMPORTANT : le câblage ci-dessous est valable POUR LE MODULE CJMCU
+   (PCB violet, repérage A1/A0/EN_V/IRQ/SI/CS/MISO/MOSI/SCL/GND/VCC).
+   En mode I2C sur CJMCU, la pin "MOSI" sert physiquement de **SDA** —
+   c'est normal, c'est une particularité du PCB. La librairie SparkFun_AS3935
+   gère ça en interne via Wire.begin().
+
+   AS3935 (CJMCU, mode I2C)   →  Arduino Uno
+     VCC                       →  5V   (recommandé — voir note ci-dessous)
+     EN_V                      →  VCC  (active le LDO embarqué — INDISPENSABLE en 5V)
+     SI                        →  VCC  (force le mode I2C)
+     A0, A1                    →  NC   (laissés en l'air → adresse I2C par défaut 0x03)
+     MOSI (= SDA en I2C)       →  A4
+     SCL                       →  A5
+     IRQ                       →  D4
+     CS                        →  GND
+     MISO                      →  GND
+     GND                       →  GND
+
+   NOTE 5V vs 3V3 sur CJMCU :
+     - Les modules CJMCU ont un LDO SGM2019-3.3 (ou équivalent) qui accepte
+       2,7-5,5V sur VCC, MAIS uniquement si **EN_V est tiré à VCC** comme
+       sur ce câblage. Sans EN_V tiré haut, le LDO est désactivé et il
+       faut rester strictement en 3V3.
+     - Le 5V Arduino est en pratique plus stable (rail moins chargé que la
+       pin 3V3 du Uno qui plafonne à 50 mA).
+     - Si tu observes un comportement bizarre (resets, lectures bruitées),
+       teste d'abord en 3V3 pour voir si ton LDO embarqué fonctionne bien.
 
    LEDs                Pin
      Bleue (foudre)    D8

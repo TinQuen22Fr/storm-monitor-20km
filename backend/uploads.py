@@ -40,6 +40,8 @@ async def append(
     timestamp: Optional[str] = None,
     kind: str = "lightning",
     device_id: Optional[str] = None,
+    raw_freq_hz: Optional[float] = None,
+    tune_cap: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Append a storm record. Returns the stored record."""
     async with _LOCK:
@@ -53,6 +55,10 @@ async def append(
             "kind": kind,
             "device_id": device_id,
         }
+        if raw_freq_hz is not None:
+            record["raw_freq_hz"] = float(raw_freq_hz)
+        if tune_cap is not None:
+            record["tune_cap"] = int(tune_cap)
         items.append(record)
         await _write_all(items)
         return record

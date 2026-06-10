@@ -87,31 +87,50 @@ Puis ouvre le port 8080 sur le firewall Kimsufi (`ufw allow 8080/tcp`).
 
 ## Câblage rapide
 
-### I2C (Arduino Uno + Ethernet Shield)
+### I2C (Arduino Uno + Ethernet Shield) — module CJMCU
 
 ```
-AS3935  →  Arduino Uno
-  VCC   →  5V   (recommandé sur module SparkFun — LDO embarqué, plus stable
-                 que le 3V3 Arduino qui plafonne à 50 mA)
-  GND   →  GND
-  SDA   →  A4
-  SCL   →  A5
-  IRQ   →  D4
+AS3935 CJMCU  →  Arduino Uno
+  VCC          →  5V   (si EN_V câblé — voir note ci-dessous)
+  EN_V         →  VCC  (active le LDO — INDISPENSABLE pour fonctionner en 5V)
+  SI           →  VCC  (force le mode I2C)
+  MOSI (=SDA)  →  A4   (oui, sur CJMCU la pastille MOSI sert de SDA en I2C)
+  SCL          →  A5
+  IRQ          →  D4
+  CS           →  GND
+  MISO         →  GND
+  A0, A1       →  NC   (laissés en l'air → adresse I2C = 0x03 par défaut)
+  GND          →  GND
 ```
 
-### SPI (Arduino Uno + Ethernet Shield)
+### SPI (Arduino Uno + Ethernet Shield) — module CJMCU
 
 ```
-AS3935  →  Arduino Uno
-  VCC   →  5V   (idem ci-dessus, module SparkFun avec LDO 3V3 embarqué)
-  GND   →  GND
-  MOSI  →  D11 (SPI partagé)
-  MISO  →  D12 (SPI partagé)
-  SCK   →  D13 (SPI partagé)
-  CS    →  D6  (Chip Select DÉDIÉ — ne PAS prendre D10 = Ethernet)
-  IRQ   →  D4
-  SI    →  GND (force le mode SPI)
+AS3935 CJMCU  →  Arduino Uno
+  VCC          →  5V   (si EN_V câblé)
+  EN_V         →  VCC  (active le LDO embarqué)
+  SI           →  GND  (force le mode SPI)
+  MOSI         →  D11
+  MISO         →  D12
+  SCK          →  D13
+  CS           →  D6   (Chip Select DÉDIÉ — ne PAS prendre D10 = Ethernet)
+  IRQ          →  D4
+  A0, A1       →  NC
+  GND          →  GND
 ```
+
+### ⚠️ Note 5V vs 3V3 sur CJMCU
+
+Les modules CJMCU ont un LDO embarqué (typiquement SGM2019-3.3 ou équivalent)
+qui accepte 2,7–5,5V sur VCC. **Pour activer ce LDO, la pin EN_V DOIT être
+tirée à VCC** (comme dans les schémas ci-dessus). Sans cette connexion, le
+LDO est désactivé et il faut rester strictement en 3V3.
+
+Recommandation : si tu n'es pas sûr de la qualité de ton clone CJMCU,
+**commence par câbler en 3V3** (`VCC → 3V3` Arduino, EN_V non connecté).
+Une fois que tout fonctionne, tu peux passer en **5V** (`VCC → 5V` +
+`EN_V → 5V`) pour gagner en stabilité (le rail 3V3 du Uno plafonne à 50 mA
+et chute sous charge).
 
 ### LEDs (communes I2C + SPI)
 

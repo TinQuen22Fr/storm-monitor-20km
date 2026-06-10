@@ -32,19 +32,28 @@
    - ArduinoJson           (par Benoit Blanchon, v6+)
    - SPI                   (incluse Arduino)
 
- CONNEXIONS SPI
- --------------
-   AS3935  →  Arduino Uno
-     VCC   →  5V   (recommandé sur module SparkFun — LDO embarqué, plus stable
-                    que 3V3 Arduino qui chute sous charge ; sur puce AS3935
-                    nue sans breakout : 3V3 uniquement)
-     GND   →  GND
-     MOSI  →  D11 (SPI MOSI partagé avec Ethernet)
-     MISO  →  D12 (SPI MISO partagé)
-     SCK   →  D13 (SPI SCK partagé)
-     CS    →  D6  (Chip Select dédié — distinct de D10 utilisé par Ethernet)
-     IRQ   →  D4
-     SI    →  GND  (force le mode SPI sur le module SparkFun)
+ CONNEXIONS SPI (Arduino Uno)
+ ----------------------------
+   ⚠️ Câblage pour le module CJMCU (PCB violet). En mode SPI, SI doit être à
+   GND. Le PCB CJMCU expose MOSI/MISO/SCK séparément (contrairement au mode
+   I2C où MOSI sert de SDA).
+
+   AS3935 (CJMCU, mode SPI)   →  Arduino Uno
+     VCC                       →  5V   (recommandé si EN_V câblé — voir note)
+     EN_V                      →  VCC  (active le LDO embarqué — INDISPENSABLE en 5V)
+     SI                        →  GND  (force le mode SPI)
+     MOSI                      →  D11
+     MISO                      →  D12
+     SCK                       →  D13
+     CS                        →  D6   (Chip Select dédié — NE PAS prendre D10 = Ethernet)
+     IRQ                       →  D4
+     A0, A1                    →  NC
+     GND                       →  GND
+
+   NOTE 5V vs 3V3 (idem version I2C) :
+     Le LDO CJMCU n'est actif que si EN_V est tiré à VCC. Sans cette
+     connexion → rester en 3V3 strict. Si doute, commence en 3V3 et passe
+     en 5V une fois que tout fonctionne pour gagner en stabilité.
 
    LEDs                Pin
      Bleue (foudre)    D8

@@ -29,7 +29,41 @@ Les cartes SparkFun sont déjà à <1 % d'écart vs 500 kHz. Le tuning n'est
 - Aucune détection alors qu'un orage est confirmé par Blitzortung à proximité
 - Une carte « cliché » ou stockée longtemps dans un environnement humide
 
-## Matériel nécessaire
+## ✨ Option B (sans oscilloscope) — Autotune assisté par l'app
+
+Si tu n'as pas d'oscilloscope ni d'analyseur logique, tu peux laisser l'app
+**lire toute seule la fréquence d'antenne** et te proposer la valeur optimale
+de `tuneCap`.
+
+1. Flashe `Autotune_To_Backend_I2C.ino` (ou SPI) sur ton Arduino — pense à
+   adapter `SERVER_HOST` / `API_KEY` en haut du fichier comme pour le sketch
+   principal.
+2. Ouvre la page **`/detector/tune`** de l'app (bouton « Autotune antenne »
+   sur `/detector`).
+3. La page affiche en direct :
+   - La fréquence mesurée par le capteur
+   - L'écart en % vs 500 kHz
+   - La valeur de `tuneCap` à appliquer (calcul automatique)
+4. Clique sur **« Copier le snippet »**, colle la ligne
+   `lightning.tuneCap(N);` dans `Arduino_StormDetector.ino` juste après
+   `lightning.resetSettings();`, reflashe — c'est fini.
+
+Comment ça marche en interne ? Le capteur AS3935 a une fonction matérielle
+`readAntennaFreq()` qui compte le nombre de pulses sur l'oscillateur d'antenne
+pendant 100 ms et retourne directement la fréquence en Hz multipliée par le
+division ratio. C'est moins précis qu'un oscilloscope (±500 Hz typiquement)
+mais largement suffisant pour ramener l'écart sous 3,5 % et même souvent sous
+1 %.
+
+> ⚠️ Le calcul de suggestion utilise une approximation linéaire (~1400 Hz par
+> pas de capacité). En pratique : reflashe avec la valeur suggérée, remesure,
+> et ajuste de ±1 si tu veux gratter le dernier % d'écart.
+
+---
+
+## Option A (avec oscilloscope) — méthode classique
+
+### Matériel nécessaire
 
 - L'un de ces outils de mesure :
   - **Oscilloscope** (idéalement ≥ 5 MHz de bande passante)
@@ -37,6 +71,7 @@ Les cartes SparkFun sont déjà à <1 % d'écart vs 500 kHz. Le tuning n'est
   - À défaut, un **multimètre avec mode fréquence** peut donner une lecture grossière (~31 kHz)
 - L'AS3935 câblé selon ton mode de communication (I2C ou SPI)
 - Une sonde sur la broche **IRQ** du capteur (D4 par défaut sur Uno)
+
 
 ## Où brancher la sonde de mesure ?
 
