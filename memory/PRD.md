@@ -568,3 +568,30 @@ randonneurs en Pyrénées.
 - POST `kind=tune_freq` raw_freq_hz=507000, tune_cap=0 → suggestion tune_cap=5 ✓
 - Vérif UI : page wizard affiche 507.00 kHz / +1.40% / suggestion 5 / "Reflashe avec lightning.tuneCap(5)" ✓
 - Bouton "AUTOTUNE ANTENNE" présent sur /detector ✓
+
+
+## Phase 28 (2026-06-10) — Autotune adaptatif (régression linéaire)
+
+### Backend
+- `/api/detector/tune` enrichi : groupe les samples par valeur de `tune_cap`,
+  prend la **médiane** de fréquence par groupe pour filtrer le bruit, puis
+  calcule une **régression linéaire** `freq = a + b·cap` quand ≥ 2 valeurs
+  distinctes de `tune_cap` sont mesurées.
+- Renvoie un objet `calibration` : `{adaptive: bool, hz_per_step, points[], r_squared}`
+- Sanity-check : la pente apprise n'est utilisée que si `|slope| > 100 Hz/pas`
+  (sinon fallback ~1400 Hz/pas par défaut).
+- Fenêtre de capture étendue à 60 min (vs 10 min) pour absorber plusieurs reflashs.
+
+### Frontend
+- Nouveau panneau **Auto-calibration** sur `/detector/tune` (entre la gauge et
+  la carte action) :
+  - Bandeau vert quand actif, blanc quand approximation par défaut
+  - Affiche `XXXX Hz / pas de capacité`, le nombre de points utilisés et R²
+  - Chips montrant les points appris (`cap=0 → 507.00 kHz`, etc.)
+  - Aide pédagogique en mode "approximation" pour inviter l'utilisateur à
+    refaire 2-3 reflashs avec des valeurs différentes
+
+### Tests
+- Simulé 3 sweeps × 3 samples : cap=0/5/8 → 507/500.2/496 kHz
+- Régression apprend pente = 1373.5 Hz/pas (vs 1400 par défaut), R²=0.9999
+- Suggestion finale : tune_cap=5 avec fréquence attendue 500.12 kHz (+0.02 %)

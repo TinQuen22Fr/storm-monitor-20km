@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, CheckCircle2, Copy, Radio, RefreshCw, Target } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Copy, Radio, RefreshCw, Sliders, Target } from "lucide-react";
 import { toast } from "sonner";
 import NavTabs from "@/components/NavTabs";
 import { api } from "@/lib/api";
@@ -280,6 +280,69 @@ export default function DetectorTunePage() {
               <span>500</span>
               <span>505</span>
               <span>510 kHz</span>
+            </div>
+          </section>
+        )}
+
+        {/* Calibration panel — shows whether we use defaults or learned slope */}
+        {data?.calibration && (
+          <section
+            className={`border p-6 lg:p-8 ${
+              data.calibration.adaptive
+                ? "border-emerald-300 bg-emerald-50"
+                : "border-slate-200 bg-white"
+            }`}
+            data-testid="tune-calibration-panel"
+          >
+            <div className="flex items-start gap-4 flex-col md:flex-row">
+              <div className="flex items-center gap-2 shrink-0">
+                <Sliders
+                  className={`w-5 h-5 ${data.calibration.adaptive ? "text-emerald-700" : "text-slate-400"}`}
+                  strokeWidth={2}
+                />
+                <span
+                  className={`font-mono text-[10px] uppercase tracking-[0.25em] font-semibold ${
+                    data.calibration.adaptive ? "text-emerald-800" : "text-slate-500"
+                  }`}
+                >
+                  {data.calibration.adaptive ? "Auto-calibration active" : "Approximation par défaut"}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-baseline gap-2">
+                  <span className="font-mono text-2xl font-medium text-slate-900 tabular-nums leading-none">
+                    {data.calibration.hz_per_step.toFixed(0)}
+                  </span>
+                  <span className="font-mono text-sm text-slate-500">Hz / pas de capacité</span>
+                </div>
+                {data.calibration.adaptive ? (
+                  <p className="text-[12px] text-slate-700 mt-2 leading-relaxed">
+                    Sensibilité calibrée sur <strong>{(data.calibration.points || []).length}</strong>
+                    {" "}valeur(s) de <code className="font-mono">tuneCap</code> mesurées, R² ={" "}
+                    <span className="font-mono">{data.calibration.r_squared?.toFixed(4)}</span>.
+                    Les suggestions ci-dessous utilisent cette sensibilité réelle au lieu de l&apos;approximation théorique (~1400 Hz/pas).
+                  </p>
+                ) : (
+                  <p className="text-[12px] text-slate-600 mt-2 leading-relaxed">
+                    Pour calibrer ton capteur précisément, fais 2 ou 3 reflashs successifs avec des
+                    valeurs différentes de <code className="font-mono">lightning.tuneCap()</code>{" "}
+                    (par ex. 0, 5, 10) — le wizard apprendra alors la sensibilité réelle{" "}
+                    <strong>de ton module</strong> et améliorera ses suggestions.
+                  </p>
+                )}
+                {data.calibration.points && data.calibration.points.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2" data-testid="tune-calibration-points">
+                    {data.calibration.points.map((p) => (
+                      <span
+                        key={p.tune_cap}
+                        className="inline-flex items-center gap-2 px-2.5 h-6 font-mono text-[10px] border border-slate-300 bg-white text-slate-700"
+                      >
+                        cap={p.tune_cap} → {(p.median_freq_hz / 1000).toFixed(2)} kHz
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </section>
         )}

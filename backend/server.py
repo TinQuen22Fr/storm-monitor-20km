@@ -532,17 +532,16 @@ async def upload_storm(payload: StormUploadInput, request: Request):
 
 
 @api_router.get("/detector/tune")
-async def detector_tune_status(device_id: Optional[str] = None, window_min: int = 10):
+async def detector_tune_status(device_id: Optional[str] = None, window_min: int = 60):
     """
     Return the latest tune_freq samples + a suggested optimal tuneCap value.
 
-    Each step of tuneCap on the AS3935 adds ~8 pF to the antenna LC. Empirical
-    sensitivity is around -1400 Hz per step (varies by board, decreases with
-    capacitor count). We use a simple linear approximation to suggest the
-    nearest integer tuneCap that should bring f as close to 500 kHz as possible.
+    Adaptive: if we observe samples at multiple tuneCap values, we compute the
+    actual Hz/step sensitivity of THIS specific board via linear regression.
+    Otherwise we fall back to the rough ~1400 Hz/step from the datasheet.
     """
     TARGET_HZ = 500_000.0
-    HZ_PER_STEP = 1400.0  # rough average — see AS3935 datasheet p.35
+    DEFAULT_HZ_PER_STEP = 1400.0  # fallback when only 1 distinct tune_cap observed
     items = await uploads_mod.list_all(None)
     if device_id:
         items = [it for it in items if it.get("device_id") == device_id]
@@ -564,18 +563,62 @@ async def detector_tune_status(device_id: Optional[str] = None, window_min: int 
             "samples": [],
             "current": None,
             "suggestion": None,
+            "calibration": {"adaptive": False, "hz_per_step": DEFAULT_HZ_PER_STEP, "points": 0, "r_squared": None},
             "window_minutes": window_min,
         }
 
+    # ---- Adaptive calibration ----
+    # Group recent samples by tune_cap, take median frequency per group
+    by_cap: dict = {}
+    for s in recent:
+        cap = int(s.get("tune_cap") or 0)
+        by_cap.setdefault(cap, []).append(float(s["raw_freq_hz"]))
+    points = []  # list of (cap, median_freq)
+    for cap, freqs in by_cap.items():
+        freqs.sort()
+        median = freqs[len(freqs) // 2]
+        points.append((cap, median))
+    points.sort(key=lambda p: p[0])
+
+    adaptive = False
+    hz_per_step = DEFAULT_HZ_PER_STEP
+    r_squared = None
+    if len(points) >= 2:
+        # Linear regression: freq = a + b * cap, we want b (negative usually)
+        n = len(points)
+        sx = sum(p[0] for p in points)
+        sy = sum(p[1] for p in points)
+        sxx = sum(p[0] ** 2 for p in points)
+        sxy = sum(p[0] * p[1] for p in points)
+        denom = n * sxx - sx * sx
+        if denom != 0:
+            slope = (n * sxy - sx * sy) / denom  # Hz per step (typically negative)
+            intercept = (sy - slope * sx) / n
+            # Compute R²
+            mean_y = sy / n
+            ss_tot = sum((p[1] - mean_y) ** 2 for p in points)
+            ss_res = sum((p[1] - (intercept + slope * p[0])) ** 2 for p in points)
+            r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 1.0
+            # Use |slope| as Hz/step; keep sign convention "positive = how much added cap reduces freq"
+            if abs(slope) > 100:  # sanity check: slope must be plausible
+                hz_per_step = abs(slope)
+                adaptive = True
+
+    # ---- Current state + suggestion ----
     latest = recent[0]
     f = float(latest["raw_freq_hz"])
     cur_cap = int(latest.get("tune_cap") or 0)
     delta_hz = f - TARGET_HZ
     delta_pct = (delta_hz / TARGET_HZ) * 100.0
-    # Linear suggestion: need to add (f - 500k) / step_hz steps to compensate.
-    # f > 500k → need more capacitance → higher cap. f < 500k → lower cap.
-    needed_steps = round(delta_hz / HZ_PER_STEP)
+    needed_steps = round(delta_hz / hz_per_step)
     suggested_cap = max(0, min(15, cur_cap + needed_steps))
+    expected_delta = delta_hz - (suggested_cap - cur_cap) * hz_per_step
+
+    note = (
+        f"Calibré sur ce capteur ({len(points)} points, R²={r_squared:.3f})."
+        if adaptive
+        else "Approximation linéaire par défaut (~1400 Hz/pas). Reflashe avec plusieurs valeurs de tuneCap pour calibrer."
+    )
 
     return {
         "online": True,
@@ -597,8 +640,14 @@ async def detector_tune_status(device_id: Optional[str] = None, window_min: int 
         },
         "suggestion": {
             "tune_cap": suggested_cap,
-            "expected_delta_hz_after": delta_hz - (suggested_cap - cur_cap) * HZ_PER_STEP,
-            "note": "Approximation linéaire (~1400 Hz par pas). Reflasher avec lightning.tuneCap(N) puis remesurer.",
+            "expected_delta_hz_after": expected_delta,
+            "note": note,
+        },
+        "calibration": {
+            "adaptive": adaptive,
+            "hz_per_step": hz_per_step,
+            "points": [{"tune_cap": c, "median_freq_hz": float(f_)} for c, f_ in points],
+            "r_squared": r_squared,
         },
         "window_minutes": window_min,
     }
