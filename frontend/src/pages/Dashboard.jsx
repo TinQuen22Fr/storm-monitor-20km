@@ -59,6 +59,8 @@ export default function Dashboard() {
     try { return localStorage.getItem("storm.gpsLock") === "1"; } catch { return false; }
   });
   const [gpsLockError, setGpsLockError] = useState(null);
+  const [visibleFavs, setVisibleFavs] = useState([]); // list of {id, lat, lon, name} from FavoritesList
+  const [overlayData, setOverlayData] = useState({}); // { favId: { zones, strikes } }
   const isMobile = useIsMobile();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -185,6 +187,26 @@ export default function Dashboard() {
     return s.ts <= cursorTs && s.ts >= cursorTs - DISPLAY_WINDOW_S;
   });
 
+  // Secondary monitoring zones (multi-favoris): keep only the visible ones that are
+  // NOT the current focus (the center is already drawn by the main fetch).
+  const extraFavs = (visibleFavs || []).filter(
+    (f) =>
+      !(Math.abs(f.lat - center.lat) < 0.001 && Math.abs(f.lon - center.lon) < 0.001)
+  );
+
+  // Merge fetched data with the favs descriptors so MapPanel always knows the names
+  const visibleOverlays = extraFavs.map((f) => ({
+    id: f.id,
+    lat: f.lat,
+    lon: f.lon,
+    name: f.name,
+    radiusKm: radius,
+    zones: overlayData[f.id]?.zones || [],
+    strikes: (overlayData[f.id]?.strikes || []).filter((s) =>
+      isLive ? nowSec - s.ts <= DISPLAY_WINDOW_S : s.ts <= cursorTs && s.ts >= cursorTs - DISPLAY_WINDOW_S
+    ),
+  }));
+
   const prevStormActive = useRef(false);
   const seenStrikeTs = useRef(new Set());
 
@@ -210,7 +232,7 @@ export default function Dashboard() {
       if (c?.timezone) setLocalTimezone(c.timezone);
 
       if (z.storm_active && !prevStormActive.current) {
-        notif.notify("Alerte orage — Lourdes", `Activité orageuse détectée (CAPE ${Math.round(z.max_cape || 0)} J/kg)`);
+        notif.notify(`Alerte orage — ${center.name}`, `Activité orageuse détectée (CAPE ${Math.round(z.max_cape || 0)} J/kg)`);
       }
       prevStormActive.current = z.storm_active;
     } catch (e) {
@@ -218,7 +240,7 @@ export default function Dashboard() {
     } finally {
       setRefreshing(false);
     }
-  }, [center.lat, center.lon, radius]);
+  }, [center.lat, center.lon, center.name, radius]);
 
   const loadStrikes = useCallback(async () => {
     try {
@@ -231,7 +253,7 @@ export default function Dashboard() {
         const closest = fresh.reduce((m, s) => (s.distance_km < m.distance_km ? s : m), fresh[0]);
         notif.notify(
           `⚡ ${fresh.length} impact${fresh.length > 1 ? "s" : ""} de foudre`,
-          `Le plus proche à ${closest.distance_km.toFixed(1)} km de Lourdes`
+          `Le plus proche à ${closest.distance_km.toFixed(1)} km de ${center.name}`
         );
       }
       for (const s of data.strikes || []) seenStrikeTs.current.add(s.ts);
@@ -254,7 +276,7 @@ export default function Dashboard() {
         }
       } catch { /* ignore */ }
     } catch { /* silent */ }
-  }, [center.lat, center.lon, radius, approach?.approaching]);
+  }, [center.lat, center.lon, center.name, radius, approach?.approaching]);
 
   useEffect(() => {
     loadWeather();
@@ -266,6 +288,50 @@ export default function Dashboard() {
       clearInterval(st);
     };
   }, [loadWeather, loadStrikes]);
+
+  // Fetch zones + strikes for each secondary (non-focus) visible favorite.
+  // Refresh every 30s to keep the multi-zone overlay live without hammering the API.
+  // Stable signature so we don't re-trigger on object identity changes.
+  const overlayKey = visibleFavs
+    .map((f) => `${f.id}:${f.lat.toFixed(3)},${f.lon.toFixed(3)}`)
+    .join("|");
+  useEffect(() => {
+    const targets = (visibleFavs || []).filter(
+      (f) => !(Math.abs(f.lat - center.lat) < 0.001 && Math.abs(f.lon - center.lon) < 0.001)
+    );
+    if (targets.length === 0) {
+      setOverlayData((prev) => (Object.keys(prev).length === 0 ? prev : {}));
+      return;
+    }
+    let cancel = false;
+    const fetchAll = async () => {
+      const since = Date.now() / 1000 - STRIKES_WINDOW_S;
+      const results = await Promise.allSettled(
+        targets.map(async (f) => {
+          const [z, s] = await Promise.all([
+            getZones(f.lat, f.lon, radius),
+            getStrikes(f.lat, f.lon, radius, since),
+          ]);
+          return { id: f.id, zones: z.zones || [], strikes: s.strikes || [] };
+        })
+      );
+      if (cancel) return;
+      setOverlayData(() => {
+        const next = {};
+        for (const r of results) {
+          if (r.status === "fulfilled") next[r.value.id] = { zones: r.value.zones, strikes: r.value.strikes };
+        }
+        return next;
+      });
+    };
+    fetchAll();
+    const t = setInterval(fetchAll, 30_000);
+    return () => {
+      cancel = true;
+      clearInterval(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overlayKey, center.lat, center.lon, radius]);
 
   const toggleNotif = async () => {
     if (notifEnabled) {
@@ -302,8 +368,8 @@ export default function Dashboard() {
         const file = new File([blob], "orage-lourdes.png", { type: "image/png" });
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
           await navigator.share({
-            title: "Suivi d'orage · Lourdes",
-            text: "État actuel autour de Lourdes",
+            title: `Suivi d'orage · ${center.name}`,
+            text: `État actuel autour de ${center.name}`,
             files: [file],
           });
           return;
@@ -338,6 +404,7 @@ export default function Dashboard() {
             onToggleFullscreen={() => setFullscreen((v) => !v)}
             cursorTs={cursorTs}
             isLive={isLive}
+            overlays={visibleOverlays}
           />
         </div>
         <Timeline
@@ -447,10 +514,10 @@ export default function Dashboard() {
         <div className="px-6 pt-8 pb-6 border-b border-slate-100 grain relative shrink-0">
           <NavTabs variant="inline" />
           <div className="flex items-start justify-between mb-4 mt-5">
-            <div className="flex items-center gap-2">
-              <Zap className="w-4 h-4 text-slate-900" strokeWidth={2.5} />
-              <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-slate-500 font-semibold">
-                Orage · Lourdes
+            <div className="flex items-center gap-2 min-w-0">
+              <Zap className="w-4 h-4 text-slate-900 shrink-0" strokeWidth={2.5} />
+              <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-slate-500 font-semibold truncate">
+                Orage · {center.name}
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -469,7 +536,16 @@ export default function Dashboard() {
           </h1>
           <p className="text-sm text-slate-500 mt-4 leading-relaxed max-w-xs">
             Surveillance de l&apos;activité électrique et convective dans un rayon
-            de <span className="font-mono text-slate-900">{radius}&nbsp;km</span> autour de <span className="font-mono text-slate-900">{center.name}</span>.
+            de <span className="font-mono text-slate-900">{radius}&nbsp;km</span> autour de <span className="font-mono text-slate-900">{center.name}</span>
+            {visibleOverlays.length > 0 && (
+              <>
+                {" "}
+                <span className="font-mono text-blue-700">
+                  + {visibleOverlays.length} autre{visibleOverlays.length > 1 ? "s" : ""} zone{visibleOverlays.length > 1 ? "s" : ""}
+                </span>
+              </>
+            )}
+            .
           </p>
 
           {/* Credibility badge — TOA Blitzortung */}
@@ -702,6 +778,7 @@ export default function Dashboard() {
                 }
                 setCenter(c);
               }}
+              onVisibleChange={setVisibleFavs}
               activeCenter={center}
             />
           </div>

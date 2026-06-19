@@ -24,6 +24,20 @@ function buildCenterIcon() {
   });
 }
 
+function buildOverlayCenterIcon(name) {
+  // Smaller, blue-toned center pin for secondary zones, labelled with the place name
+  const label = (name || "").replace(/[<>&"']/g, "");
+  return L.divIcon({
+    className: "",
+    html: `<div style="display:flex;align-items:center;gap:6px;transform:translateX(8px)">
+      <span style="width:10px;height:10px;border-radius:9999px;background:#2563EB;border:2px solid #fff;box-shadow:0 0 0 1px #2563EB"></span>
+      <span style="font:600 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.04em;background:rgba(255,255,255,.92);border:1px solid #DBEAFE;color:#1E3A8A;padding:3px 6px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.06)">${label}</span>
+    </div>`,
+    iconSize: [10, 10],
+    iconAnchor: [5, 5],
+  });
+}
+
 function buildUserIcon() {
   return L.divIcon({
     className: "",
@@ -100,6 +114,7 @@ export default function MapPanel({
   onToggleFullscreen,
   cursorTs = null,
   isLive = true,
+  overlays = [],
 }) {
   const centerLL = useMemo(() => [center.lat, center.lon], [center.lat, center.lon]);
   const centerIcon = useMemo(() => buildCenterIcon(), []);
@@ -185,6 +200,46 @@ export default function MapPanel({
         />
         <Marker position={centerLL} icon={centerIcon} />
         {userPos && <Marker position={userPos} icon={userIcon} />}
+        {/* Secondary monitoring zones (multi-favoris) */}
+        {overlays.map((ov) => (
+          <Circle
+            key={`ov-circle-${ov.id}`}
+            center={[ov.lat, ov.lon]}
+            radius={(ov.radiusKm ?? radiusKm) * 1000}
+            pathOptions={{
+              color: "#2563EB",
+              weight: 1.5,
+              dashArray: "4 6",
+              fillColor: "#2563EB",
+              fillOpacity: 0.05,
+            }}
+          />
+        ))}
+        {overlays.map((ov) => (
+          <Marker
+            key={`ov-marker-${ov.id}`}
+            position={[ov.lat, ov.lon]}
+            icon={buildOverlayCenterIcon(ov.name)}
+          />
+        ))}
+        {overlays.flatMap((ov) =>
+          (ov.zones || []).map((z, i) => (
+            <Marker
+              key={`ov-zone-${ov.id}-${z.lat}-${z.lon}-${i}`}
+              position={[z.lat, z.lon]}
+              icon={buildStormIcon(z)}
+            />
+          ))
+        )}
+        {overlays.flatMap((ov) =>
+          (ov.strikes || []).map((s, i) => (
+            <Marker
+              key={`ov-strike-${ov.id}-${s.ts}-${i}`}
+              position={[s.lat, s.lon]}
+              icon={buildStrikeIcon(now - s.ts)}
+            />
+          ))
+        )}
         {zones.map((z, i) => (
           <Marker
             key={`zone-${z.lat}-${z.lon}-${i}`}
@@ -236,14 +291,19 @@ export default function MapPanel({
       </div>
 
       {/* Floating map title — DESKTOP layout. On mobile, compact version moved below */}
-      <div className="hidden md:block absolute top-6 left-6 z-[500] bg-white/90 backdrop-blur-md border border-slate-200 px-5 py-3">
+      <div className="hidden md:block absolute top-6 left-6 z-[500] bg-white/90 backdrop-blur-md border border-slate-200 px-5 py-3 max-w-[280px]">
         <div className="text-[10px] font-mono uppercase tracking-[0.3em] text-slate-400">Zone surveillée</div>
-        <div className="font-heading text-lg font-bold text-slate-900 leading-tight">
-          Lourdes · {radiusKm} km
+        <div className="font-heading text-lg font-bold text-slate-900 leading-tight truncate">
+          {center.name} · {radiusKm} km
         </div>
-        <div className="font-mono text-[10px] text-slate-500 mt-1">
-          43.0951°N · -0.0434°E
+        <div className="font-mono text-[10px] text-slate-500 mt-1 tabular-nums">
+          {center.lat.toFixed(4)}°N · {center.lon.toFixed(4)}°E
         </div>
+        {overlays.length > 0 && (
+          <div className="mt-2 pt-2 border-t border-slate-200 font-mono text-[10px] text-blue-700 uppercase tracking-[0.15em]">
+            + {overlays.length} zone{overlays.length > 1 ? "s" : ""} secondaire{overlays.length > 1 ? "s" : ""}
+          </div>
+        )}
       </div>
 
       {/* Floating controls - top right */}
@@ -309,11 +369,16 @@ export default function MapPanel({
         <div className="px-4 py-3 border-b border-slate-100">
           <div className="text-[10px] font-mono uppercase tracking-[0.3em] text-slate-400">Zone surveillée</div>
           <div className="font-heading text-lg font-bold text-slate-900 leading-tight">
-            Lourdes · {radiusKm} km
+            {center.name} · {radiusKm} km
           </div>
-          <div className="font-mono text-[10px] text-slate-500 mt-1">
-            43.0951°N · -0.0434°E
+          <div className="font-mono text-[10px] text-slate-500 mt-1 tabular-nums">
+            {center.lat.toFixed(4)}°N · {center.lon.toFixed(4)}°E
           </div>
+          {overlays.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-slate-200 font-mono text-[10px] text-blue-700 uppercase tracking-[0.15em]">
+              + {overlays.length} zone{overlays.length > 1 ? "s" : ""} secondaire{overlays.length > 1 ? "s" : ""}
+            </div>
+          )}
         </div>
 
         {/* Weather layer toggles (Nuages / Pluie / Vent / Trajet) */}

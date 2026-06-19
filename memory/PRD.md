@@ -795,3 +795,37 @@ La branche `Testing` reste **générique et sans matériel** (web app pure) pour
 le monde puisse l'installer. Le dossier `hardware/` (firmwares Arduino AS3935) est isolé
 dans `Version_With_Detector` uniquement, et sera à terme extrait dans un repo dédié
 `storm-monitor-firmware`.
+
+
+
+## Phase 33 (2026-02-XX) — Multi-zones + Fix "Lourdes en dur"
+
+### Bug "Zone surveillée figée sur Lourdes" (P0)
+Le titre carte (desktop + mobile), le bandeau sidebar (`Orage · Lourdes`),
+les notifications (`Alerte orage — Lourdes`, `... km de Lourdes`) et le
+partage natif (`navigator.share`) référençaient Lourdes en dur même quand
+l'utilisateur changeait de favori. Toutes les occurrences remplacées par
+`center.name` / `center.lat` / `center.lon`.
+
+### Surveillance multi-zones
+- `FavoritesList.jsx` : nouvelle case Eye/EyeOff par favori (gauche du
+  label), persistée dans `localStorage.storm.favVisibility = {favId: bool}`.
+  Clic sur le label = devient la zone active (focus sidebar). La zone
+  active a sa checkbox verrouillée. Boutons rapides "tout / aucun".
+  Compteur "N/M affichés" dans l'entête.
+- `Dashboard.jsx` : état `visibleFavs` (poussé par `onVisibleChange`),
+  effect `fetchAll` qui interroge `getZones` + `getStrikes` en parallèle
+  pour chaque favori extra (refresh 30s). Centre principal garde son
+  refresh dédié (2 min weather + 15 s strikes).
+- `MapPanel.jsx` : prop `overlays = [{id, lat, lon, name, radiusKm, zones, strikes}]`.
+  Pour chaque overlay : cercle bleu pointillé, pin bleu avec label nom,
+  markers zones grille + strikes. Badge "+N zones secondaires" dans le
+  titre carte.
+- Sidebar reste compacte : `Conditions actuelles`, `CAPE`, `Historique`,
+  `Forecast` continuent d'afficher uniquement le focus. H1 mentionne
+  "+ N autres zones" quand multi-zones actif (pas de liste interminable).
+
+### Cas d'usage clé
+Suivre une trajectoire d'orage Saint-Brieuc → Rennes → Laval : l'utilisateur
+active les 3 favoris, clique sur celui qu'il veut détailler dans la sidebar,
+et voit les impacts foudre simultanément sur les 3 zones.

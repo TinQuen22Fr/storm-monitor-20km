@@ -1,10 +1,29 @@
-import { useEffect, useRef, useState } from "react";
-import { Loader2, MapPin, Plus, Search, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Eye, EyeOff, Loader2, MapPin, Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth";
 import { createFavorite, deleteFavorite, geocodeSearch, listFavorites } from "@/lib/api";
 import { toast } from "sonner";
+
+const VIS_KEY = "storm.favVisibility";
+
+function loadVisibility() {
+  try {
+    const raw = localStorage.getItem(VIS_KEY);
+    if (!raw) return {};
+    const v = JSON.parse(raw);
+    return v && typeof v === "object" ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveVisibility(map) {
+  try {
+    localStorage.setItem(VIS_KEY, JSON.stringify(map));
+  } catch { /* ignore */ }
+}
 
 function AddFavoriteForm({ onCreated, onClose }) {
   const [query, setQuery] = useState("");
@@ -153,10 +172,23 @@ function AddFavoriteForm({ onCreated, onClose }) {
   );
 }
 
-export default function FavoritesList({ onSelect, activeCenter }) {
+/**
+ * Multi-zone favorites manager.
+ *
+ * Props:
+ *   - onSelect({lat, lon, name, id})  : called when user clicks a favorite → becomes the focus zone
+ *   - onVisibleChange(favs)           : called when the list of visible favorites changes
+ *   - activeCenter                    : current focus center (lat/lon) — for the active highlight
+ *
+ * Visibility is persisted in localStorage[VIS_KEY] = {favId: true/false}.
+ * Default (undefined entry) = visible.
+ * The favorite that matches the current activeCenter is force-visible (lock checkbox).
+ */
+export default function FavoritesList({ onSelect, onVisibleChange, activeCenter }) {
   const { user } = useAuth();
   const [favs, setFavs] = useState([]);
   const [adding, setAdding] = useState(false);
+  const [visibility, setVisibility] = useState(() => loadVisibility());
 
   const load = async () => {
     if (!user) return;
@@ -172,24 +204,85 @@ export default function FavoritesList({ onSelect, activeCenter }) {
     load();
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Active favorite id (the one whose coords match the current center)
+  const activeFavId = useMemo(() => {
+    if (!activeCenter) return null;
+    const f = favs.find(
+      (x) =>
+        Math.abs(activeCenter.lat - x.lat) < 0.001 &&
+        Math.abs(activeCenter.lon - x.lon) < 0.001
+    );
+    return f?.id || null;
+  }, [favs, activeCenter]);
+
+  const isVisible = (id) => {
+    if (id === activeFavId) return true; // focus zone is always visible
+    return visibility[id] !== false; // default true
+  };
+
+  // Emit the current visible list whenever it changes
+  useEffect(() => {
+    const visible = favs.filter((f) => isVisible(f.id));
+    onVisibleChange?.(visible);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [favs, visibility, activeFavId]);
+
+  const toggleVisible = (id) => {
+    if (id === activeFavId) {
+      toast.info("Cette zone est la zone active — clique sur une autre pour la masquer");
+      return;
+    }
+    setVisibility((prev) => {
+      const next = { ...prev, [id]: prev[id] === false ? true : false };
+      saveVisibility(next);
+      return next;
+    });
+  };
+
+  const setAll = (val) => {
+    setVisibility((prev) => {
+      const next = { ...prev };
+      for (const f of favs) {
+        if (f.id !== activeFavId) next[f.id] = val;
+      }
+      saveVisibility(next);
+      return next;
+    });
+  };
+
   if (!user) return null;
 
   const remove = async (id) => {
     try {
       await deleteFavorite(id);
       setFavs((f) => f.filter((x) => x.id !== id));
+      setVisibility((v) => {
+        const n = { ...v };
+        delete n[id];
+        saveVisibility(n);
+        return n;
+      });
       toast.success("Lieu retiré");
     } catch {
       toast.error("Erreur");
     }
   };
 
+  const visibleCount = favs.filter((f) => isVisible(f.id)).length;
+
   return (
     <div className="border border-slate-200 bg-white" data-testid="favorites-list">
       <div className="flex items-center justify-between p-5 border-b border-slate-100">
         <div>
           <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400">Favoris</div>
-          <div className="font-heading text-sm font-bold text-slate-900">Mes lieux</div>
+          <div className="font-heading text-sm font-bold text-slate-900">
+            Mes lieux
+            {favs.length > 0 && (
+              <span className="font-mono text-[10px] font-normal text-slate-400 ml-2">
+                · {visibleCount}/{favs.length} affiché{visibleCount > 1 ? "s" : ""}
+              </span>
+            )}
+          </div>
         </div>
         <button
           onClick={() => setAdding((v) => !v)}
@@ -200,6 +293,27 @@ export default function FavoritesList({ onSelect, activeCenter }) {
           <Plus className={`w-3.5 h-3.5 transition-transform ${adding ? "rotate-45" : ""}`} />
         </button>
       </div>
+
+      {favs.length > 1 && (
+        <div className="flex items-center gap-2 px-5 py-2 border-b border-slate-100 bg-slate-50/60">
+          <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400">Affichage carte :</span>
+          <button
+            onClick={() => setAll(true)}
+            className="font-mono text-[10px] uppercase tracking-[0.15em] text-slate-700 hover:text-slate-900 underline-offset-2 hover:underline"
+            data-testid="favorites-show-all"
+          >
+            tout
+          </button>
+          <span className="text-slate-300">·</span>
+          <button
+            onClick={() => setAll(false)}
+            className="font-mono text-[10px] uppercase tracking-[0.15em] text-slate-700 hover:text-slate-900 underline-offset-2 hover:underline"
+            data-testid="favorites-show-none"
+          >
+            aucun (sauf zone active)
+          </button>
+        </div>
+      )}
 
       {adding && (
         <AddFavoriteForm
@@ -213,18 +327,49 @@ export default function FavoritesList({ onSelect, activeCenter }) {
           <li className="p-5 text-xs text-slate-400 font-mono">Aucun lieu enregistré</li>
         )}
         {favs.map((f) => {
-          const isActive =
-            activeCenter && Math.abs(activeCenter.lat - f.lat) < 0.001 && Math.abs(activeCenter.lon - f.lon) < 0.001;
+          const isActive = f.id === activeFavId;
+          const visible = isVisible(f.id);
           return (
-            <li key={f.id} className={`flex items-center justify-between px-5 py-3 group ${isActive ? "bg-slate-50" : "hover:bg-slate-50"}`}>
+            <li key={f.id} className={`flex items-center px-5 py-3 group ${isActive ? "bg-slate-50" : "hover:bg-slate-50"}`}>
+              {/* Visibility toggle */}
               <button
-                onClick={() => onSelect?.({ lat: f.lat, lon: f.lon, name: f.name })}
+                onClick={() => toggleVisible(f.id)}
+                disabled={isActive}
+                className={`mr-3 w-6 h-6 flex items-center justify-center border transition-colors ${
+                  isActive
+                    ? "bg-slate-900 text-white border-slate-900 cursor-default"
+                    : visible
+                    ? "bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100"
+                    : "bg-white text-slate-400 border-slate-300 hover:border-slate-500"
+                }`}
+                data-testid={`favorite-toggle-visible-${f.id}`}
+                aria-label={visible ? "Masquer sur la carte" : "Afficher sur la carte"}
+                title={
+                  isActive
+                    ? "Zone active — toujours visible"
+                    : visible
+                    ? "Masquer sur la carte"
+                    : "Afficher sur la carte"
+                }
+              >
+                {visible ? <Eye className="w-3.5 h-3.5" strokeWidth={2} /> : <EyeOff className="w-3.5 h-3.5" strokeWidth={2} />}
+              </button>
+
+              <button
+                onClick={() => onSelect?.({ id: f.id, lat: f.lat, lon: f.lon, name: f.name })}
                 className="flex items-center gap-3 min-w-0 text-left flex-1"
                 data-testid={`favorite-item-${f.id}`}
               >
                 <MapPin className={`w-3.5 h-3.5 shrink-0 ${isActive ? "text-slate-900" : "text-slate-400"}`} />
                 <div className="min-w-0">
-                  <div className="text-sm font-medium text-slate-900 truncate">{f.name}</div>
+                  <div className="text-sm font-medium text-slate-900 truncate">
+                    {f.name}
+                    {isActive && (
+                      <span className="ml-2 font-mono text-[9px] uppercase tracking-[0.15em] text-slate-500">
+                        · active
+                      </span>
+                    )}
+                  </div>
                   <div className="font-mono text-[10px] text-slate-400">
                     {f.lat.toFixed(3)}, {f.lon.toFixed(3)}
                   </div>
