@@ -22,7 +22,10 @@
 set -euo pipefail
 
 REPO_URL="https://github.com/TinQuen22Fr/storm-monitor-20km.git"
-BRANCH="Testing"
+# Branche cible — surchargeable via la variable d'env BRANCH au lancement :
+#   sudo BRANCH=Testing bash install.sh             # version sans détecteur
+#   sudo BRANCH=Version_With_Detector bash install.sh   # version avec détecteur (défaut)
+BRANCH="${BRANCH:-Version_With_Detector}"
 APP_DIR="/var/www/storm-monitor"
 DOMAIN="storm-monitor.quentin-astro.fr"
 BACKEND_PORT="8003"
