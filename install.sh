@@ -3,29 +3,47 @@
 # Storm Monitor — installation script for Kimsufi (Ubuntu/Debian)
 # Usage:  sudo bash install.sh
 #
-# What it does:
-#   1. Installs Python 3.11+, Node.js 20, Yarn, MongoDB 8, Nginx 1.30+ (from nginx.org)
-#   2. Clones https://github.com/TinQuen22Fr/storm-monitor-20km.git into /var/www/storm-monitor
-#      OR pulls latest if the directory already exists (stash → pull → restore)
-#   3. Configures git remote for future pushes
-#   4. Creates Python venv + installs backend dependencies
-#   5. Generates /var/www/storm-monitor/backend/.env (random secrets + VAPID) ONLY on first install
-#   6. Builds frontend with REACT_APP_BACKEND_URL=https://storm-monitor.quentin-astro.fr
-#   7. Creates Nginx vhost /etc/nginx/sites-available/storm-monitor.conf (HTTP only)
-#   8. Creates systemd unit /etc/systemd/system/storm-monitor.service (port 8003)
-#   9. Starts everything
+# Architecture deux étages (depuis 2026-06-19) :
+#   /opt/storm-monitor       (WORK_DIR)  — Clone Git, source of truth pour pull
+#   /var/www/storm-monitor   (APP_DIR)   — Runtime : venv, build, .env, data
 #
-# Idempotent: safe to run multiple times. First run = fresh install, subsequent runs = update.
+# What it does (idempotent, sûr à relancer) :
+#   1. Installe Python 3.11+, Node.js 20, Yarn, MongoDB, Nginx 1.30+
+#   2. Clone le repo dans /opt/storm-monitor (ou pull si déjà présent)
+#   3. Synchronise /opt → /var/www en PRÉSERVANT : .env, venv/, cache/,
+#      storm_data.json, frontend/build/ (rebuildés ensuite)
+#   4. Met à jour le venv Python (pip install -r requirements.txt)
+#   5. Génère /var/www/storm-monitor/backend/.env si manquant (premier install)
+#      OU ajoute les variables manquantes à un .env existant (mise à jour)
+#   6. Rebuild le frontend
+#   7. Écrit le vhost Nginx + le service systemd
+#   8. Restart everything
 #
-# SSL/HTTPS (Certbot) is intentionally NOT installed — do it manually after.
+# Pour pousser sur la branche Version_With_Detector :
+#   cd /opt/storm-monitor && git pull origin Version_With_Detector
+#   sudo bash install.sh
+#
+# Pour basculer entre branches :
+#   sudo BRANCH=Testing bash install.sh                # sans détecteur
+#   sudo BRANCH=Version_With_Detector bash install.sh  # avec détecteur (défaut)
+#
+# SSL/HTTPS (Certbot) est volontairement NON installé — voir DEPLOY.md.
 
 set -euo pipefail
 
 REPO_URL="https://github.com/TinQuen22Fr/storm-monitor-20km.git"
 # Branche cible — surchargeable via la variable d'env BRANCH au lancement :
-#   sudo BRANCH=Testing bash install.sh             # version sans détecteur
-#   sudo BRANCH=Version_With_Detector bash install.sh   # version avec détecteur (défaut)
+#   sudo BRANCH=Testing bash install.sh                # version sans détecteur
+#   sudo BRANCH=Version_With_Detector bash install.sh  # version avec détecteur (défaut)
 BRANCH="${BRANCH:-Version_With_Detector}"
+
+# Architecture deux étages :
+#   WORK_DIR  = clone Git, où l'utilisateur fait ses git pull (source of truth)
+#   APP_DIR   = répertoire d'exécution (venv, frontend/build, .env, storm_data.json)
+#               Le script synchronise WORK_DIR → APP_DIR sans toucher aux runtime
+#               files (.env, venv/, cache/, *.json), pour qu'une mise à jour ne
+#               casse rien.
+WORK_DIR="/opt/storm-monitor"
 APP_DIR="/var/www/storm-monitor"
 DOMAIN="storm-monitor.quentin-astro.fr"
 BACKEND_PORT="8003"
@@ -45,10 +63,11 @@ if ! id "$RUN_USER" &>/dev/null; then
 fi
 
 echo "==> Storm Monitor — installation on $(hostname)"
-echo "    Domain  : $DOMAIN"
-echo "    Dir     : $APP_DIR"
-echo "    Backend : 127.0.0.1:$BACKEND_PORT"
-echo "    User    : $RUN_USER"
+echo "    Domain   : $DOMAIN"
+echo "    Work dir : $WORK_DIR  (git source of truth)"
+echo "    App dir  : $APP_DIR   (runtime)"
+echo "    Backend  : 127.0.0.1:$BACKEND_PORT"
+echo "    Branch   : $BRANCH"
 
 # ---------------------------------------------------------------------------
 # 1. System dependencies
@@ -222,83 +241,99 @@ fi
 systemctl enable --now mongod
 
 # ---------------------------------------------------------------------------
-# 2. Repository — clone on first install, pull on subsequent runs
+# 2. Repository — clone into WORK_DIR=/opt, then sync to APP_DIR=/var/www
 # ---------------------------------------------------------------------------
-mkdir -p /var/www
-if [[ -d "$APP_DIR/.git" ]]; then
-  # MISE À JOUR : on conserve le clone existant et on pull la branche
-  echo "==> Existing install detected at $APP_DIR — switching to UPDATE mode"
+mkdir -p /opt /var/www
 
-  CURRENT_BRANCH="$(git -C "$APP_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'unknown')"
-  CURRENT_COMMIT="$(git -C "$APP_DIR" rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
-  echo "    Current branch : $CURRENT_BRANCH"
-  echo "    Current commit : $CURRENT_COMMIT"
+# --- 2a. WORK_DIR: clone OR pull ---
+if [[ -d "$WORK_DIR/.git" ]]; then
+  echo "==> Existing clone detected at $WORK_DIR — pulling latest..."
 
-  # Stash uncommitted local changes (e.g. generated .env, build artifacts) so
-  # `git pull --ff-only` cannot fail on a dirty tree. We restore them after.
+  CURRENT_BRANCH="$(git -C "$WORK_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'unknown')"
+  CURRENT_COMMIT="$(git -C "$WORK_DIR" rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
+  echo "    Branch   : $CURRENT_BRANCH"
+  echo "    Commit   : $CURRENT_COMMIT"
+
+  # Discard local runtime junk that should never be tracked (cache pickles, etc.)
+  rm -f "$WORK_DIR/backend/.stale_cache.pkl"
+
+  # Stash other uncommitted changes
   STASH_CREATED=0
-  if ! git -C "$APP_DIR" diff --quiet || ! git -C "$APP_DIR" diff --cached --quiet; then
-    echo "    Local changes detected — stashing them temporarily..."
-    if git -C "$APP_DIR" stash push -u -m "install.sh auto-stash $(date -u +%FT%TZ)" >/dev/null 2>&1; then
+  if ! git -C "$WORK_DIR" diff --quiet || ! git -C "$WORK_DIR" diff --cached --quiet; then
+    echo "    Local changes detected — stashing..."
+    if git -C "$WORK_DIR" stash push -u -m "install.sh auto-stash $(date -u +%FT%TZ)" >/dev/null 2>&1; then
       STASH_CREATED=1
-    else
-      echo "    WARN: stash failed, continuing anyway"
     fi
   fi
 
-  # Make sure the configured remote points to our repo (in case it drifted)
-  git -C "$APP_DIR" remote set-url origin "$REPO_URL"
+  git -C "$WORK_DIR" remote set-url origin "$REPO_URL"
+  git -C "$WORK_DIR" fetch --prune origin
 
-  echo "==> Fetching latest from origin..."
-  git -C "$APP_DIR" fetch --prune origin
-
-  # Switch branch only if needed (avoids gratuitous churn)
   if [[ "$CURRENT_BRANCH" != "$BRANCH" ]]; then
     echo "==> Switching branch: $CURRENT_BRANCH → $BRANCH"
-    git -C "$APP_DIR" checkout "$BRANCH" 2>/dev/null || \
-      git -C "$APP_DIR" checkout -b "$BRANCH" "origin/$BRANCH"
+    git -C "$WORK_DIR" checkout -B "$BRANCH" "origin/$BRANCH"
+  else
+    if ! git -C "$WORK_DIR" pull --ff-only origin "$BRANCH"; then
+      echo "    Fast-forward failed — forcing reset to origin/$BRANCH"
+      git -C "$WORK_DIR" reset --hard "origin/$BRANCH"
+    fi
   fi
 
-  echo "==> Pulling origin/$BRANCH..."
-  if ! git -C "$APP_DIR" pull --ff-only origin "$BRANCH"; then
-    echo "    Fast-forward failed — forcing reset to origin/$BRANCH"
-    git -C "$APP_DIR" reset --hard "origin/$BRANCH"
-  fi
-
-  NEW_COMMIT="$(git -C "$APP_DIR" rev-parse --short HEAD)"
+  NEW_COMMIT="$(git -C "$WORK_DIR" rev-parse --short HEAD)"
   if [[ "$CURRENT_COMMIT" == "$NEW_COMMIT" ]]; then
     echo "    Already up-to-date at $NEW_COMMIT"
   else
     echo "    Updated $CURRENT_COMMIT → $NEW_COMMIT"
-    echo "    Changed files :"
-    git -C "$APP_DIR" log --pretty=format:'      - %h %s' "$CURRENT_COMMIT..$NEW_COMMIT" | head -20
+    git -C "$WORK_DIR" log --pretty=format:'      - %h %s' "$CURRENT_COMMIT..$NEW_COMMIT" 2>/dev/null | head -20 || true
     echo ""
   fi
 
-  # Try to restore the stashed local changes (best-effort, conflicts are kept in stash)
   if [[ $STASH_CREATED -eq 1 ]]; then
-    if git -C "$APP_DIR" stash pop >/dev/null 2>&1; then
-      echo "    Restored local stashed changes"
-    else
-      echo "    WARN: stash conflicts — your local changes are kept in 'git stash list'"
-    fi
+    git -C "$WORK_DIR" stash pop >/dev/null 2>&1 || echo "    WARN: stash conflicts — see 'git stash list'"
   fi
 else
-  # PREMIER INSTALL : clone neuf
-  if [[ -d "$APP_DIR" ]]; then
-    echo "==> Directory $APP_DIR exists but is not a git repo. Removing it..."
-    rm -rf "$APP_DIR"
+  if [[ -d "$WORK_DIR" ]]; then
+    echo "==> $WORK_DIR exists but is not a git repo. Removing..."
+    rm -rf "$WORK_DIR"
   fi
-  echo "==> First install — cloning '$BRANCH' branch into $APP_DIR..."
-  git clone -b "$BRANCH" "$REPO_URL" "$APP_DIR"
+  echo "==> First install — cloning '$BRANCH' into $WORK_DIR..."
+  git clone -b "$BRANCH" "$REPO_URL" "$WORK_DIR"
 fi
 
 # Sanity check
-if [[ ! -d "$APP_DIR/backend" || ! -d "$APP_DIR/frontend" ]]; then
-  echo "ERROR: repository does not contain expected backend/ and frontend/ directories." >&2
-  echo "       Branch '$BRANCH' may not contain the application code." >&2
+if [[ ! -d "$WORK_DIR/backend" || ! -d "$WORK_DIR/frontend" ]]; then
+  echo "ERROR: $WORK_DIR does not contain backend/ and frontend/ — bad branch?" >&2
   exit 1
 fi
+
+# --- 2b. Sync WORK_DIR → APP_DIR (preserve runtime files) ---
+echo "==> Syncing $WORK_DIR → $APP_DIR (preserving .env, venv, data)..."
+mkdir -p "$APP_DIR"
+# Install rsync if missing
+command -v rsync >/dev/null || apt-get install -y rsync
+
+# Files/dirs we MUST NOT overwrite when syncing:
+#   - backend/.env              (secrets, regenerated only on first install)
+#   - backend/venv/             (Python virtual env, expensive to rebuild)
+#   - backend/storm_data.json   (live data uploaded by detector)
+#   - backend/.stale_cache.pkl  (runtime cache)
+#   - frontend/build/           (rebuilt explicitly below)
+#   - frontend/node_modules/    (regenerated by yarn install)
+#   - cache/                    (video export TTL cache)
+#   - .git                      (APP_DIR has no .git, source is in WORK_DIR)
+rsync -a --delete \
+  --exclude='.git' \
+  --exclude='backend/.env' \
+  --exclude='backend/venv' \
+  --exclude='backend/storm_data.json' \
+  --exclude='backend/.stale_cache.pkl' \
+  --exclude='backend/__pycache__' \
+  --exclude='backend/**/__pycache__' \
+  --exclude='frontend/build' \
+  --exclude='frontend/node_modules' \
+  --exclude='frontend/.env' \
+  --exclude='cache' \
+  "$WORK_DIR/" "$APP_DIR/"
 
 chown -R "$RUN_USER":"$RUN_USER" "$APP_DIR"
 
@@ -323,8 +358,9 @@ deactivate
 cd -
 
 # Generate .env only if missing
-if [[ ! -f "$APP_DIR/backend/.env" ]]; then
-  echo "==> Generating backend/.env with fresh secrets..."
+ENV_FILE="$APP_DIR/backend/.env"
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "==> Generating $ENV_FILE with fresh secrets..."
   cd "$APP_DIR/backend"
   # shellcheck disable=SC1091
   source venv/bin/activate
@@ -355,12 +391,41 @@ print('TELEGRAM_BOT_TOKEN=""')
 print('TELEGRAM_CHAT_ID=""')
 print('WEBHOOK_APP_URL="https://storm-monitor.quentin-astro.fr"')
 print('WEBHOOK_COOLDOWN_S="900"')
+# --- Email service (Resend) — REMPLIR APRES INSTALL ---
+print('RESEND_API_KEY=""')
+print('SENDER_EMAIL="Storm Monitoring <noreply@quentin-astro.fr>"')
+print('PUBLIC_APP_URL="https://storm-monitor.quentin-astro.fr"')
+print('ADMIN_EMAIL=""')
 PY
   chmod 600 .env
   deactivate
   cd -
+  echo ""
+  echo "    ⚠️  ACTION REQUISE — Édite $ENV_FILE et renseigne :"
+  echo "       RESEND_API_KEY=\"re_xxx\"     (clé API Resend)"
+  echo "       ADMIN_EMAIL=\"ton@email.com\"  (compte super-admin)"
+  echo ""
 else
-  echo "==> backend/.env already exists, skipping secrets generation"
+  echo "==> $ENV_FILE existe — vérification des variables requises..."
+  # Add any missing variable WITHOUT overwriting existing values.
+  ensure_env_var() {
+    local key="$1"
+    local default_value="$2"
+    if ! grep -qE "^${key}=" "$ENV_FILE"; then
+      echo "${key}=${default_value}" >> "$ENV_FILE"
+      echo "    + ajouté : ${key}"
+    fi
+  }
+  ensure_env_var "RESEND_API_KEY"  '""'
+  ensure_env_var "SENDER_EMAIL"    '"Storm Monitoring <noreply@quentin-astro.fr>"'
+  ensure_env_var "PUBLIC_APP_URL"  '"https://storm-monitor.quentin-astro.fr"'
+  ensure_env_var "ADMIN_EMAIL"     '""'
+  ensure_env_var "DISCORD_WEBHOOK_URL"  '""'
+  ensure_env_var "TELEGRAM_BOT_TOKEN"   '""'
+  ensure_env_var "TELEGRAM_CHAT_ID"     '""'
+  ensure_env_var "WEBHOOK_APP_URL"      '"https://storm-monitor.quentin-astro.fr"'
+  ensure_env_var "WEBHOOK_COOLDOWN_S"   '"900"'
+  chmod 600 "$ENV_FILE"
 fi
 
 # ---------------------------------------------------------------------------
