@@ -209,7 +209,7 @@ async def _fetch_current_impl(lat: float, lon: float) -> Dict[str, Any]:
             "lightning_potential",
             "precipitation_probability",
         ]),
-        "timezone": "Europe/Paris",
+        "timezone": "auto",
         "forecast_days": 1,
     }
     r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=15)
@@ -236,6 +236,9 @@ async def _fetch_current_impl(lat: float, lon: float) -> Dict[str, Any]:
         "lightning_potential": lp,
         "precipitation_probability": pp,
         "time": current.get("time"),
+        "timezone": data.get("timezone") or "Europe/Paris",
+        "timezone_abbreviation": data.get("timezone_abbreviation"),
+        "utc_offset_seconds": data.get("utc_offset_seconds"),
     }
 
 
@@ -257,7 +260,7 @@ async def _fetch_forecast_impl(lat: float, lon: float) -> Dict[str, Any]:
             "lightning_potential",
             "wind_speed_10m",
         ]),
-        "timezone": "Europe/Paris",
+        "timezone": "auto",
         "forecast_days": 2,
         "past_hours": 0,
     }
@@ -304,7 +307,7 @@ async def _fetch_history_24h_impl(lat: float, lon: float) -> Dict[str, Any]:
             "lightning_potential",
             "wind_gusts_10m",
         ]),
-        "timezone": "Europe/Paris",
+        "timezone": "auto",
         "past_days": 1,
         "forecast_days": 1,
     }
@@ -357,7 +360,7 @@ async def _fetch_history_days_impl(lat: float, lon: float, days: int) -> Dict[st
             "wind_gusts_10m",
             "temperature_2m",
         ]),
-        "timezone": "Europe/Paris",
+        "timezone": "auto",
         "past_days": days,
         "forecast_days": 1,
     }
@@ -436,7 +439,7 @@ async def _fetch_storm_risk_impl(lat: float, lon: float, days: int) -> Dict[str,
             "lightning_potential",
             "wind_gusts_10m",
         ]),
-        "timezone": "Europe/Paris",
+        "timezone": "auto",
         "forecast_days": days,
     }
     r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=20)
@@ -519,7 +522,7 @@ async def _fetch_wind_grid_impl(lat: float, lon: float, radius_km: float) -> Dic
         "latitude": lats,
         "longitude": lons,
         "current": "wind_speed_10m,wind_direction_10m,wind_gusts_10m",
-        "timezone": "Europe/Paris",
+        "timezone": "auto",
         "forecast_days": 1,
     }
     r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=20)
@@ -564,7 +567,7 @@ async def _fetch_storm_zones_impl(lat: float, lon: float, radius_km: float) -> D
         "longitude": lons,
         "current": "weather_code,precipitation,wind_gusts_10m",
         "hourly": "cape,lightning_potential",
-        "timezone": "Europe/Paris",
+        "timezone": "auto",
         "forecast_days": 1,
     }
     r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=20)

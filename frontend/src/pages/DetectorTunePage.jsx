@@ -4,6 +4,7 @@ import { ArrowLeft, CheckCircle2, Copy, Radio, RefreshCw, Sliders, Target } from
 import { toast } from "sonner";
 import NavTabs from "@/components/NavTabs";
 import { api } from "@/lib/api";
+import { fmtLocalTime } from "@/lib/timeFormat";
 
 const REFRESH_MS = 5_000;
 const TARGET_HZ = 500_000;
@@ -146,7 +147,7 @@ export default function DetectorTunePage() {
             </div>
             <div className="font-heading text-lg font-bold text-slate-900 mt-0.5">
               {online && cur
-                ? `Dernière trame · ${new Date(cur.timestamp).toLocaleTimeString("fr-FR")}`
+                ? `Dernière trame · ${fmtLocalTime(cur.timestamp)}`
                 : "Lance le sketch Autotune_To_Backend sur ton Arduino"}
             </div>
             <div className="text-[11px] font-mono text-slate-500 mt-0.5">
@@ -413,7 +414,7 @@ export default function DetectorTunePage() {
                   return (
                     <tr key={i} className="border-t border-slate-100 hover:bg-slate-50">
                       <td className="px-6 py-3 font-mono text-slate-900 tabular-nums text-[12px]">
-                        {new Date(s.timestamp).toLocaleTimeString("fr-FR")}
+                        {fmtLocalTime(s.timestamp)}
                       </td>
                       <td className="px-6 py-3 font-mono text-right tabular-nums text-slate-900">
                         {(s.freq_hz / 1000).toFixed(2)} kHz

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "@/lib/api";
+import { fmtLocalDate } from "@/lib/timeFormat";
 
 export default function HistoryDaysChart({ days = 7 }) {
   const [data, setData] = useState([]);
@@ -14,7 +15,7 @@ export default function HistoryDaysChart({ days = 7 }) {
         if (cancelled) return;
         const arr = (r.data?.days || []).map((d) => ({
           date: d.date,
-          label: new Date(d.date + "T00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit" }),
+          label: fmtLocalDate(d.date + "T00:00", { weekday: "short", day: "2-digit" }),
           precipitation: d.precipitation_total,
           storm_hours: d.storm_hours,
           max_cape: d.max_cape,

@@ -1,8 +1,9 @@
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { fmtLocalTime } from "@/lib/timeFormat";
 
 export default function HistoryChart({ hourly = [] }) {
   const data = hourly.map((h) => ({
-    time: new Date(h.time).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
+    time: fmtLocalTime(h.time),
     precipitation: h.precipitation || 0,
     cape: h.cape || 0,
     lp: h.lightning_potential || 0,

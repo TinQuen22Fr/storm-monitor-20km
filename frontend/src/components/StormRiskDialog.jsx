@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { CalendarDays, CloudRain, Gauge, Thermometer, Wind, Zap } from "lucide-react";
 import { api } from "@/lib/api";
+import { fmtLocalDate } from "@/lib/timeFormat";
 
 function RiskBar({ score, color }) {
   return (
@@ -20,7 +21,7 @@ function DayCard({ day, isToday, isTomorrow }) {
     ? "Aujourd'hui"
     : isTomorrow
     ? "Demain"
-    : d.toLocaleDateString("fr-FR", { weekday: "long", day: "2-digit", month: "short" });
+    : fmtLocalDate(d, { weekday: "long", day: "2-digit", month: "short" });
 
   return (
     <div
@@ -30,7 +31,7 @@ function DayCard({ day, isToday, isTomorrow }) {
       <div className="flex items-baseline justify-between mb-4">
         <div>
           <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400">
-            {d.toLocaleDateString("fr-FR", { weekday: "short" })}
+            {fmtLocalDate(d, { weekday: "short" })}
           </div>
           <div className="font-heading text-lg font-bold text-slate-900 leading-tight capitalize">
             {label}

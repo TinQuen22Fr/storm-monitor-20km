@@ -3,6 +3,7 @@ import { MapContainer, GeoJSON, TileLayer } from "react-leaflet";
 import { Info, Pin, X } from "lucide-react";
 import NavTabs from "@/components/NavTabs";
 import { api } from "@/lib/api";
+import { fmtLocal } from "@/lib/timeFormat";
 
 const LEVEL_STYLE = {
   1: { fillColor: "#10B981", fillOpacity: 0.05, color: "#94A3B8", weight: 0.6 },
@@ -406,7 +407,7 @@ export default function VigilancePage() {
               {vig.source_label}
               {vig.updated_at && (
                 <div className="mt-1">
-                  Mis à jour · {new Date(vig.updated_at * 1000).toLocaleString("fr-FR")}
+                  Mis à jour · {fmtLocal(vig.updated_at)}
                 </div>
               )}
             </div>

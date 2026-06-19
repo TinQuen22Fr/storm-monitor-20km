@@ -21,6 +21,7 @@ import { useIsMobile } from "@/lib/useIsMobile";
 import { api, API, getCurrent, getForecast, getHistory, getStrikes, getZones, LOURDES } from "@/lib/api";
 import * as notif from "@/lib/notifications";
 import * as push from "@/lib/push";
+import { setLocalTimezone, fmtLocal, fmtLocalTime } from "@/lib/timeFormat";
 
 const REFRESH_MS = 120_000;
 const STRIKES_MS = 15_000;
@@ -173,6 +174,11 @@ export default function Dashboard() {
       setHistory(h);
       setZones(z);
       setLastFetch(new Date().toISOString());
+
+      // Update the global "monitored location timezone" so all timestamps
+      // displayed in the app use this TZ (Lourdes → Europe/Paris, DST handled
+      // automatically by Open-Meteo via timezone=auto)
+      if (c?.timezone) setLocalTimezone(c.timezone);
 
       if (z.storm_active && !prevStormActive.current) {
         notif.notify("Alerte orage — Lourdes", `Activité orageuse détectée (CAPE ${Math.round(z.max_cape || 0)} J/kg)`);
@@ -346,17 +352,14 @@ export default function Dashboard() {
                 Mode replay · lecture {playing ? "en cours" : "en pause"}
               </div>
               <div className="text-[11px] text-violet-900 font-mono tabular-nums mt-0.5">
-                {new Date(replay.start_ts * 1000).toLocaleString("fr-FR", {
+                {fmtLocal(replay.start_ts, {
                   day: "2-digit",
                   month: "short",
                   hour: "2-digit",
                   minute: "2-digit",
                 })}
                 {" → "}
-                {new Date(replay.end_ts * 1000).toLocaleString("fr-FR", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
+                {fmtLocalTime(replay.end_ts)}
               </div>
             </div>
             <button
@@ -487,7 +490,7 @@ export default function Dashboard() {
             </button>
             <span data-testid="last-fetch-time">
               {lastFetch
-                ? new Date(lastFetch).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+                ? fmtLocalTime(lastFetch, { second: "2-digit" })
                 : "--:--"}
             </span>
           </div>

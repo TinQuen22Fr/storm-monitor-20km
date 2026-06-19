@@ -15,6 +15,7 @@ import { Activity, Cpu, RefreshCw, Target, Wifi, WifiOff, Zap } from "lucide-rea
 import { Link } from "react-router-dom";
 import NavTabs from "@/components/NavTabs";
 import { api } from "@/lib/api";
+import { fmtLocal, fmtLocalTime } from "@/lib/timeFormat";
 
 const REFRESH_MS = 15_000;
 
@@ -105,10 +106,7 @@ export default function DetectorPage() {
         .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
         .map((it) => ({
           t: new Date(it.timestamp).getTime(),
-          label: new Date(it.timestamp).toLocaleTimeString("fr-FR", {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
+          label: fmtLocalTime(it.timestamp),
           energy: it.energy,
           distance: it.distance,
         })),
@@ -183,7 +181,7 @@ export default function DetectorPage() {
             </div>
             <div className="font-heading text-lg font-bold text-slate-900 mt-0.5">
               {status?.last_seen
-                ? `Dernier signal · ${new Date(status.last_seen).toLocaleString("fr-FR")}`
+                ? `Dernier signal · ${fmtLocal(status.last_seen)}`
                 : "Aucune donnée reçue"}
             </div>
             <div className="text-[11px] font-mono text-slate-500 mt-0.5">
@@ -358,7 +356,7 @@ export default function DetectorPage() {
             </div>
             <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400">
               {(status?.recent || []).length} événements · maj{" "}
-              {lastFetch ? lastFetch.toLocaleTimeString("fr-FR") : "--:--"}
+              {lastFetch ? fmtLocalTime(lastFetch) : "--:--"}
             </span>
           </div>
           {(status?.recent || []).length === 0 ? (
@@ -399,7 +397,7 @@ export default function DetectorPage() {
                       data-testid={`detector-row-${it.id}`}
                     >
                       <td className="px-6 py-3 font-mono text-slate-900 tabular-nums">
-                        {new Date(it.timestamp).toLocaleTimeString("fr-FR")}
+                        {fmtLocalTime(it.timestamp)}
                       </td>
                       <td className="px-6 py-3">
                         <KindBadge kind={kind} />

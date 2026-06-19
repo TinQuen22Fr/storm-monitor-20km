@@ -595,3 +595,53 @@ randonneurs en Pyrénées.
 - Simulé 3 sweeps × 3 samples : cap=0/5/8 → 507/500.2/496 kHz
 - Régression apprend pente = 1373.5 Hz/pas (vs 1400 par défaut), R²=0.9999
 - Suggestion finale : tune_cap=5 avec fréquence attendue 500.12 kHz (+0.02 %)
+
+
+## Phase 29 (2026-06-19) — Affichage en heure locale du lieu surveillé
+
+### Demande utilisateur
+Toutes les heures (replay, current, history, detector…) doivent être affichées
+dans le fuseau horaire du **lieu surveillé**, pas dans le fuseau du
+navigateur du visiteur. Et la gestion DST (heure d'été/hiver) doit être
+automatique.
+
+### Backend (`weather.py`)
+- Remplacement de `"timezone": "Europe/Paris"` (hardcodé) par `"timezone": "auto"`
+  dans tous les appels Open-Meteo (6 occurrences via replace_all)
+- Open-Meteo détecte automatiquement la TZ IANA depuis lat/lon et gère DST
+- L'endpoint `/api/weather/current` retourne maintenant 3 champs supplémentaires :
+  `timezone` (ex: "Europe/Paris"), `timezone_abbreviation` ("GMT+2"),
+  `utc_offset_seconds` (7200)
+- Testé : Lourdes → Europe/Paris GMT+2 ; New York → America/New_York GMT-4 ✓
+
+### Frontend (`lib/timeFormat.js` — nouveau helper centralisé)
+- 5 fonctions exportées :
+  - `setLocalTimezone(tz)` : appelé par Dashboard quand `current.timezone` arrive
+  - `getLocalTimezone()` : retourne la TZ courante (default "Europe/Paris")
+  - `fmtLocal(value, opts)` : format complet date+heure
+  - `fmtLocalTime(value, opts)` : HH:MM (avec options surchargeables)
+  - `fmtLocalDate(value, opts)` : date seule
+  - `getTimezoneAbbreviation()` : pour afficher "CEST" / "CET" / etc.
+- Accepte timestamps en s OU ms OU ISO strings OU Date — auto-détection
+
+### Remplacements (toutes les `.toLocaleXxx("fr-FR", ...)` → helpers)
+14 fichiers modifiés en parallèle :
+- `pages/Dashboard.jsx` (3) — last-fetch + replay banner
+- `pages/History.jsx` (3) — labels chart + table records
+- `pages/DetectorPage.jsx` (4) — last_seen, refresh time, chart labels, feed
+- `pages/DetectorTunePage.jsx` (2) — banner timestamp + samples table
+- `pages/ReplayPage.jsx` (1) — event fmtTime helper
+- `pages/VigilancePage.jsx` (1) — "Mis à jour"
+- `components/Timeline.jsx` (1) — cursor date display
+- `components/AlertBanner.jsx` (1) — fetched_at time
+- `components/WeatherLayers.jsx` (2) — frame labels NASA/RainViewer
+- `components/HistoryChart.jsx` (1)
+- `components/ForecastChart.jsx` (1)
+- `components/StormRiskDialog.jsx` (2)
+- `components/HistoryDaysChart.jsx` (1)
+
+### Test E2E
+- Navigateur en UTC : 10:43
+- App affiche partout : 12:42 (= UTC+2 = Europe/Paris CEST été)
+- Quand un utilisateur change de favori → la TZ se met à jour automatiquement
+  à l'appel suivant de `/api/weather/current`

@@ -1,8 +1,9 @@
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { fmtLocalTime } from "@/lib/timeFormat";
 
 export default function ForecastChart({ hourly = [] }) {
   const data = hourly.slice(0, 24).map((h) => ({
-    time: new Date(h.time).toLocaleTimeString("fr-FR", { hour: "2-digit" }),
+    time: fmtLocalTime(h.time, { minute: undefined }),
     prob: h.precipitation_probability || 0,
     lp: h.lightning_potential || 0,
     cape: h.cape || 0,

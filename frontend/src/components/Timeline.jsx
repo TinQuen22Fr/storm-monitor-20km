@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Pause, Play, Rewind } from "lucide-react";
+import { fmtLocal } from "@/lib/timeFormat";
 
 const SPEED_OPTIONS = [1, 2, 4, 8];
 const SPEED_STORAGE_KEY = "storm.timeline.speed";
@@ -85,7 +86,7 @@ export default function Timeline({
   const past24h = nowTs - 24 * 3600;
   const pct = ((cursorTs - past24h) / (nowTs - past24h)) * 100;
 
-  const dateStr = new Date(cursorTs * 1000).toLocaleString("fr-FR", {
+  const dateStr = fmtLocal(cursorTs, {
     weekday: "short",
     day: "2-digit",
     month: "short",

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { TileLayer, useMap } from "react-leaflet";
 import { Activity, Cloud, CloudRain, Pause, Play, Wind } from "lucide-react";
+import { fmtLocalDate, fmtLocalTime } from "@/lib/timeFormat";
 
 const RAINVIEWER_API = "https://api.rainviewer.com/public/weather-maps.json";
 const FRAME_DURATION_MS = 800;
@@ -126,17 +127,14 @@ export function useWeatherLayersState({ cursorTs = null, isLive = true } = {}) {
   let frameLabel = null;
   if (showClouds && currentFrame) {
     url = buildCloudsUrl(currentFrame.date);
-    frameLabel = new Date(currentFrame.time * 1000).toLocaleDateString("fr-FR", {
+    frameLabel = fmtLocalDate(currentFrame.time, {
       weekday: "short",
       day: "2-digit",
       month: "short",
     });
   } else if (showRain && currentFrame && rvData) {
     url = buildRadarUrl(rvData.host, currentFrame.path);
-    frameLabel = new Date(currentFrame.time * 1000).toLocaleTimeString("fr-FR", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    frameLabel = fmtLocalTime(currentFrame.time);
   }
 
   return {

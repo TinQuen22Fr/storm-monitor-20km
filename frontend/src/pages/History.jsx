@@ -18,6 +18,7 @@ import { Copy, Database, RefreshCw, Zap } from "lucide-react";
 import { toast } from "sonner";
 import NavTabs from "@/components/NavTabs";
 import { api } from "@/lib/api";
+import { fmtLocal, fmtLocalTime } from "@/lib/timeFormat";
 
 const sampleCurl = (apiBase) =>
   `curl -X POST ${apiBase}/api/upload_storm \\
@@ -67,7 +68,7 @@ export default function History() {
   const chrono = [...items].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
   const series = chrono.map((it) => ({
     t: new Date(it.timestamp).getTime(),
-    label: new Date(it.timestamp).toLocaleString("fr-FR", {
+    label: fmtLocal(it.timestamp, {
       day: "2-digit",
       month: "short",
       hour: "2-digit",
@@ -385,7 +386,7 @@ export default function History() {
                   {items.slice(0, 25).map((it) => (
                     <tr key={it.id} className="border-t border-slate-100 hover:bg-slate-50">
                       <td className="px-6 py-3 font-mono text-slate-900">
-                        {new Date(it.timestamp).toLocaleString("fr-FR")}
+                        {fmtLocal(it.timestamp)}
                       </td>
                       <td className="px-6 py-3 font-mono text-right tabular-nums text-slate-900">
                         {it.distance.toFixed(2)} km
@@ -394,7 +395,7 @@ export default function History() {
                         {it.energy.toFixed(2)} kJ
                       </td>
                       <td className="px-6 py-3 font-mono text-right text-[11px] text-slate-400">
-                        {new Date(it.received_at).toLocaleTimeString("fr-FR")}
+                        {fmtLocalTime(it.received_at)}
                       </td>
                     </tr>
                   ))}

@@ -1,8 +1,9 @@
 import { AlertTriangle, ShieldCheck } from "lucide-react";
+import { fmtLocalTime } from "@/lib/timeFormat";
 
 export default function AlertBanner({ stormActive, maxCape, maxLp, fetchedAt }) {
   const formatted = fetchedAt
-    ? new Date(fetchedAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    ? fmtLocalTime(fetchedAt, { second: "2-digit" })
     : "--:--:--";
 
   if (stormActive) {

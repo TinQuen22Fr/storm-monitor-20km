@@ -4,6 +4,7 @@ import { ArrowRight, MapPin, PlayCircle, Sparkles, Video, Zap } from "lucide-rea
 import NavTabs from "@/components/NavTabs";
 import VideoExportDialog from "@/components/VideoExportDialog";
 import { api } from "@/lib/api";
+import { fmtLocal } from "@/lib/timeFormat";
 
 /**
  * Replay page — lists detected "storm bursts" from the last 24h strike buffer
@@ -59,7 +60,7 @@ export default function ReplayPage() {
   };
 
   const fmtTime = (ts) =>
-    new Date(ts * 1000).toLocaleString("fr-FR", {
+    fmtLocal(ts, {
       day: "2-digit",
       month: "short",
       hour: "2-digit",
