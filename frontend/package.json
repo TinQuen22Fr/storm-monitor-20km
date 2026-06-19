@@ -57,6 +57,14 @@
     "vaul": "^1.1.2",
     "zod": "^3.24.4"
   },
+  "resolutions": {
+    "_comment": "Overrides correctifs de CVE héritées des sous-dépendances de react-scripts (CRA est en EOL). NE PAS ajouter d'override sur eslint/glob/rimraf/workbox/babel-plugin-proposal-* : leurs API ont breaking changes et casseraient le build CRA.",
+    "nth-check": "^2.1.1",
+    "postcss": "^8.4.49",
+    "cookie": "^0.7.2",
+    "semver": "^7.6.3",
+    "serialize-javascript": "^6.0.2"
+  },
   "scripts": {
     "start": "craco start",
     "build": "craco build",

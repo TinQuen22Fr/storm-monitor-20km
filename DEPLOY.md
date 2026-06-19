@@ -241,6 +241,53 @@ cd /opt/storm-monitor && sudo bash install.sh
 
 ---
 
+## Pourquoi des dizaines de warnings au `yarn install` ?
+
+Court résumé : **react-scripts (Create React App) est en mode maintenance depuis 2023**. Il embarque des versions figées de :
+
+- `eslint@8.57.1` (l'équipe ESLint a marqué la branche 8 comme non supportée)
+- `workbox-*@6.6.1` (toute la famille marquée deprecated)
+- `glob@7.2.3`, `rimraf@3.0.2` (versions pré-v4)
+- `@babel/plugin-proposal-*` (renommés en `plugin-transform-*` côté Babel)
+- `abab`, `svgo@1.x`, `q`, `stable`, `sourcemap-codec`…
+
+Ces packages **fonctionnent toujours** mais ne reçoivent plus de mises à jour. Tant que tu restes sur CRA, ils sont **scellés** dans `react-scripts@5.0.1`. Yarn affiche le warning par hygiène, c'est tout.
+
+### Ce qui a déjà été fait (cosmétique)
+
+1. **Bloc `resolutions` dans `frontend/package.json`** — force les versions corrigeant des CVE sur les sous-dépendances safe :
+   - `nth-check@^2.1.1` · `postcss@^8.4.49` · `cookie@^0.7.2`
+   - `semver@^7.6.3` · `serialize-javascript@^6.0.2`
+
+   Aucune de ces résolutions ne casse CRA, elles font juste taire les outils d'audit type `npm audit`/`yarn audit`.
+
+2. **Filtre dans `install.sh`** — les lignes `warning …` sont archivées dans `/var/log/storm-monitor-yarn-install.log` au lieu d'inonder le terminal. Le récap final affiche juste `[yarn] N warnings cosmétiques filtrés`.
+
+### Pour les éliminer pour de vrai
+
+La seule vraie solution = **migrer hors CRA** (Vite ou Next.js). Effort estimé : 2–4 h de travail, principalement :
+
+- Remplacer `react-scripts` par `vite` + `@vitejs/plugin-react`
+- Renommer `REACT_APP_*` en `VITE_*` (ou garder via plugin de compat)
+- Adapter le service worker (le sw actuel est généré par workbox via CRA)
+- Vérifier que toutes les imports `@/…` continuent de résoudre via le jsconfig
+
+Côté Kimsufi Atom : Vite utilise **esbuild** (binaire compilé en Go, **pas** AVX-dépendant) et fonctionne parfaitement sur ce processeur. Pas de souci de compatibilité matérielle.
+
+> **Statut actuel** : migration Vite mise en backlog (P2). Tant que CRA tourne, on filtre les warnings et on vit avec.
+
+### Inspecter les warnings après installation
+
+```bash
+# Tous les warnings du dernier yarn install
+sudo tail -n 100 /var/log/storm-monitor-yarn-install.log | grep '^warning'
+
+# Compter par catégorie
+sudo grep '^warning' /var/log/storm-monitor-yarn-install.log | sort | uniq -c | sort -rn | head -20
+```
+
+---
+
 ## Arborescence cible
 
 ```

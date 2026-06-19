@@ -450,7 +450,28 @@ REACT_APP_BACKEND_URL=https://storm-monitor.quentin-astro.fr
 EOF
 
 cd "$APP_DIR/frontend"
-yarn install --frozen-lockfile
+
+# Filter yarn install output: keep errors visible, archive the noisy
+# "warning ... is deprecated / no longer supported" lines inherited from
+# react-scripts (CRA EOL) to /var/log so the install output stays readable.
+# The `resolutions` block in package.json already pins safe CVE-fixes for
+# the most critical sub-deps (nth-check, postcss, cookie, semver,
+# serialize-javascript). The remaining warnings are cosmetic noise from
+# packages baked into CRA that we cannot upgrade without migrating to Vite.
+YARN_LOG="/var/log/storm-monitor-yarn-install.log"
+: > "$YARN_LOG"
+set +e
+yarn install --frozen-lockfile 2>&1 | tee "$YARN_LOG" | grep -vE '^warning |^$'
+YARN_RC=${PIPESTATUS[0]}
+set -e
+if [[ $YARN_RC -ne 0 ]]; then
+  echo "ERROR: yarn install failed (rc=$YARN_RC). See $YARN_LOG for details." >&2
+  exit $YARN_RC
+fi
+WARN_COUNT=$(grep -cE '^warning ' "$YARN_LOG" 2>/dev/null || true)
+WARN_COUNT=${WARN_COUNT:-0}
+echo "    [yarn] ${WARN_COUNT} warnings cosmétiques filtrés (héritage react-scripts EOL) — log: $YARN_LOG"
+
 yarn build
 cd -
 
