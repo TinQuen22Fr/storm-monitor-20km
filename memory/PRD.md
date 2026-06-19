@@ -757,3 +757,41 @@ Nouveau composant `DataSourceBadge.jsx` :
 Affiché dans la sidebar du Dashboard, juste après la description du rayon.
 Mention dynamique du `center.name` (au lieu de "Lourdes" en dur) dans le sous-titre,
 cohérent avec le nouveau comportement multi-favoris.
+
+
+
+## Phase 32 (2026-02-XX) — Déploiement durci /opt → /var/www
+
+### Contexte
+Régressions à répétition sur le VPS Kimsufi : `install.sh` faisait `git checkout` directement
+dans `/var/www/storm-monitor`, écrasant la branche `Version_With_Detector` et perdant
+les dépendances (`resend`) entre 2 deployments. Architecture refondue.
+
+### Architecture deux étages
+- **WORK_DIR** = `/opt/storm-monitor` (clone git, source de vérité)
+- **APP_DIR** = `/var/www/storm-monitor` (runtime servi par Nginx + systemd)
+- Synchronisation `/opt` → `/var/www` via `rsync -a --delete` avec exclusions runtime :
+  `.env`, `.env.backups/`, `venv/`, `storm_data.json`, `cache/`, `frontend/build/`,
+  `frontend/node_modules/`, `frontend/.env`.
+
+### `install.sh` durci
+- Clone/pull idempotent dans `/opt/storm-monitor` (stash auto + restore en cas de conflit).
+- Switch de branche via `BRANCH=Testing` ou `BRANCH=Version_With_Detector` (défaut).
+- **Backup auto du `.env`** dans `/var/www/storm-monitor/backend/.env.backups/` avant
+  chaque mise à jour, rotation FIFO sur les 10 derniers.
+- `ensure_env_var` ajoute les nouvelles variables d'env sans toucher aux valeurs existantes.
+- Plus aucun `sleep` cosmétique.
+- Syntaxe validée (`bash -n`).
+
+### `DEPLOY.md` réécrit
+Trois sections distinctes :
+- **A) Installation propre** sur serveur vierge.
+- **B) Mise à jour** d'une install existante (`cd /opt && git pull && sudo bash install.sh`).
+- **C) Migration de branche** `Testing` ↔ `Version_With_Detector` via `BRANCH=...`.
+Plus section diagnostic, restauration `.env` depuis backup, et reset complet en dernier recours.
+
+### Note architecture open-source
+La branche `Testing` reste **générique et sans matériel** (web app pure) pour que tout
+le monde puisse l'installer. Le dossier `hardware/` (firmwares Arduino AS3935) est isolé
+dans `Version_With_Detector` uniquement, et sera à terme extrait dans un repo dédié
+`storm-monitor-firmware`.

@@ -1,330 +1,292 @@
-# Déploiement Storm Monitoring sur Kimsufi
+# Storm Monitoring — Déploiement sur Kimsufi / VPS
 
-Guide complet pour installer et mettre à jour l'application **Storm Monitoring** sur un serveur personnel (Kimsufi / OVH Ubuntu).
+Guide opérationnel pour installer, mettre à jour, et migrer la production sur un serveur Ubuntu/Debian.
 
-**Auteur** : Build & Idea by Quentin Dumont
 **Repo** : https://github.com/TinQuen22Fr/storm-monitor-20km
 **URL prod** : https://storm-monitor.quentin-astro.fr
 
 ---
 
-## 📂 Les 2 dossiers sur votre Kimsufi
+## Architecture
 
-Il y a volontairement **deux copies** du code sur le serveur, chacune avec un rôle différent :
+Deux dossiers, deux rôles **strictement séparés** :
 
-| Dossier | Rôle | Qui le met à jour ? |
+| Dossier | Rôle | Modifié par |
 |---|---|---|
-| `/opt/storm-monitor` | **Copie de travail** (là où vous faites `git pull` manuellement pour récupérer le code depuis GitHub) | **Vous, manuellement** |
-| `/var/www/storm-monitor` | **Copie de déploiement** (lue par Nginx + systemd, c'est ce qui sert réellement l'application en prod) | **Le script `install.sh`** |
+| `/opt/storm-monitor` | **WORK_DIR** — clone git, source de vérité pour `git pull` / `git checkout`. Aucun runtime ici. | Vous, à la main (`git`) |
+| `/var/www/storm-monitor` | **APP_DIR** — runtime servi par Nginx + systemd. Contient `venv/`, `frontend/build/`, `backend/.env`, `cache/`, `storm_data.json`. | Le script `install.sh` (via `rsync`) |
 
-> ℹ️ **Pourquoi deux copies ?** La copie `/opt/storm-monitor` sert de "backup local" / espace pour bidouiller sans impacter la prod. La copie `/var/www/storm-monitor` n'est jamais modifiée à la main — elle est gérée de A à Z par `install.sh`.
+Le script `install.sh` fait `git pull` dans `/opt`, puis `rsync` vers `/var/www` en **excluant** les fichiers runtime :
+`.env`, `.env.backups/`, `venv/`, `storm_data.json`, `cache/`, `frontend/build/`, `frontend/node_modules/`, `frontend/.env`.
+
+Conséquence : **vos secrets, votre venv Python, votre build front, vos données — rien n'est jamais écrasé par une mise à jour.**
 
 ---
 
-## 🚀 Première installation (serveur vierge)
+## Branches Git
 
-Pré-requis : serveur Ubuntu 22.04 / 24.04 / Debian 12, accès root SSH, nom de domaine pointant vers le serveur.
+| Branche | Cible | Contient |
+|---|---|---|
+| `Testing` (défaut public) | Tout le monde, sans matériel | Web app pure : carte, alertes, vigilance, replay. Pas de firmware. |
+| `Version_With_Detector` | Mon serveur Kimsufi | `Testing` + route `/api/upload_storm`, page `/detector`, autotune wizard, dossier `hardware/` (sketches Arduino AS3935). |
+
+> Le firmware Arduino dans `hardware/` est temporairement cohabité dans le repo principal. À terme il sera extrait dans un repo dédié (`storm-monitor-firmware`). En attendant il est **uniquement présent sur `Version_With_Detector`**, la branche `Testing` reste générique.
+
+Le script utilise la variable d'env `BRANCH` (défaut : `Version_With_Detector`) :
 
 ```bash
-# 1. Cloner le repo dans /opt (emplacement de travail)
-sudo git clone -b Testing https://github.com/TinQuen22Fr/storm-monitor-20km.git /opt/storm-monitor
-cd /opt/storm-monitor
+sudo BRANCH=Testing bash install.sh                 # version publique sans détecteur
+sudo BRANCH=Version_With_Detector bash install.sh   # version perso avec détecteur (défaut)
+```
 
-# 2. Lancer le script d'installation complet
+---
+
+## A) Installation propre (serveur vierge)
+
+**Pré-requis** : Ubuntu 22.04 / 24.04 ou Debian 12, accès root SSH, nom de domaine pointant vers le serveur.
+
+```bash
+# 1. Cloner le repo dans /opt (WORK_DIR)
+sudo mkdir -p /opt
+sudo git clone -b Version_With_Detector \
+  https://github.com/TinQuen22Fr/storm-monitor-20km.git \
+  /opt/storm-monitor
+
+# 2. Lancer l'install (clone -> rsync -> venv -> build -> nginx -> systemd)
+cd /opt/storm-monitor
 sudo bash install.sh
 ```
 
-Le script va automatiquement :
-- Installer les dépendances système (Python 3.11+, Node 20, Yarn, MongoDB 8, **Nginx 1.30+** depuis nginx.org, **ffmpeg**, fonts DejaVu)
-- Cloner le repo dans `/var/www/storm-monitor` (copie de déploiement)
-- Créer le venv Python + installer les dépendances backend
-- Générer `/var/www/storm-monitor/backend/.env` avec des secrets aléatoires (JWT, VAPID, clé upload)
-- Builder le frontend en production
-- Écrire le vhost Nginx + le snippet idempotent
-- Créer le service systemd `storm-monitor.service` (port 8003)
-- Démarrer tout
+Le script va :
+1. Installer Python 3.11+, Node 20, Yarn, MongoDB (8.0 si AVX, sinon 4.4), Nginx 1.30+ (depuis nginx.org), ffmpeg, rsync, curl HTTP/3 via snap.
+2. Synchroniser `/opt/storm-monitor` → `/var/www/storm-monitor`.
+3. Créer le venv Python + `pip install -r requirements.txt`.
+4. Générer `/var/www/storm-monitor/backend/.env` avec des secrets aléatoires (JWT, VAPID, UPLOAD_API_KEY).
+5. Builder le frontend.
+6. Écrire le vhost Nginx (HTTP-only au début, HTTPS auto si certs déjà présents) + le service systemd `storm-monitor.service` sur port 8003.
+7. Tout démarrer.
 
-### Activer HTTPS (après la 1ère install)
+### Renseigner les clés tierces (Resend, webhooks)
+
+Le `.env` généré contient des champs vides à remplir :
+
+```bash
+sudo nano /var/www/storm-monitor/backend/.env
+```
+
+À renseigner :
+
+```env
+RESEND_API_KEY="re_xxx"                            # https://resend.com/api-keys
+ADMIN_EMAIL="quentin.dumont.22@gmail.com"          # compte super-admin
+
+# Optionnels — webhooks d'alerte
+DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/..."
+TELEGRAM_BOT_TOKEN="..."
+TELEGRAM_CHAT_ID="..."
+```
+
+Puis :
+
+```bash
+sudo systemctl restart storm-monitor
+```
+
+### Activer HTTPS (Certbot)
 
 ```bash
 sudo apt install -y certbot python3-certbot-nginx
 sudo certbot --nginx -d storm-monitor.quentin-astro.fr
 ```
 
-Certbot ajoutera automatiquement le bloc 443 + la redirection HTTP → HTTPS.
+Au prochain `sudo bash install.sh`, le vhost HTTPS + HTTP/3 sera écrit automatiquement (le script détecte la présence des certs).
 
-### Activer HTTP/3 (QUIC) — optionnel mais recommandé
-
-Storm Monitoring tourne sur Nginx 1.30+ qui supporte HTTP/3 nativement. Le vhost est déjà configuré (`listen 443 quic`, `http3 on`, header `Alt-Svc`). Il reste juste à **ouvrir UDP 443** sur votre pare-feu :
+### Activer HTTP/3 (QUIC)
 
 ```bash
-# UFW
-sudo ufw allow 443/udp
-sudo ufw reload
-
-# OU iptables
+sudo ufw allow 443/udp && sudo ufw reload
+# ou
 sudo iptables -I INPUT -p udp --dport 443 -j ACCEPT
 ```
 
-#### Tester HTTP/3 depuis le serveur
-
-⚠️ Le `curl` fourni par Ubuntu/Debian est **compilé sans HTTP/3** :
-
-```
-curl: option --http3-only: the installed libcurl version doesn't support this
-```
-
-`install.sh` installe automatiquement une version récente de `curl` via snap et expose 2 raccourcis :
-
-| Commande | Effet |
-|---|---|
-| `curl3 --http3-only -sI https://...` | Toujours dispo (binaire snap, symlink dans `/usr/local/bin/`) |
-| `curl --http3-only -sI https://...` | Dispo dans un **nouveau shell root** (alias dans `/etc/profile.d/storm-monitor-curl3.sh`) |
-
-Vérifier que HTTP/3 répond :
+Vérification :
 
 ```bash
-# Méthode rapide (binaire snap, pas besoin de nouveau shell)
 curl3 --http3-only -sI https://storm-monitor.quentin-astro.fr/ | head -3
-# Doit afficher: HTTP/3 200
-
-# Ou en ouvrant un nouveau shell SSH (alias chargé)
-curl --http3-only -sI https://storm-monitor.quentin-astro.fr/ | head -3
+# attendu: HTTP/3 200
 ```
 
-> 💡 **Si le warning Snap apparaît** ("Caution: You are using the Snap version of curl..."), exécuter une fois `/snap/bin/curl.snap-acked` (déjà fait par `install.sh` à la première run).
->
-> **Pour annuler** l'alias système : `sudo rm /etc/profile.d/storm-monitor-curl3.sh /usr/local/bin/curl3 && sudo snap remove curl`
+---
 
-Chrome/Firefox mettront automatiquement à niveau la connexion au deuxième chargement grâce au header `Alt-Svc`.
+## B) Mise à jour d'une install existante
 
-### Activer les webhooks Discord / Telegram — optionnel
-
-L'app envoie automatiquement des alertes sur Discord ou Telegram pour 4 événements :
-- **Orage en cours** (CAPE élevé détecté)
-- **Impacts de foudre** (strikes dans le rayon de 20 km)
-- **Orage en approche** (centroid qui se rapproche avec ETA)
-- **Vigilance orange/rouge** sur le 65 (Hautes-Pyrénées)
-
-Un cooldown de 15 min par type d'alerte évite le flood.
-
-#### Configuration
-
-Éditez `/var/www/storm-monitor/backend/.env` et remplissez selon vos besoins :
-
-```env
-# Discord (créer un webhook dans Paramètres du salon → Intégrations → Webhooks)
-DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/123456/abc..."
-
-# Telegram (parler à @BotFather pour créer un bot, puis @userinfobot pour votre chat_id)
-TELEGRAM_BOT_TOKEN="7123456789:AAHxxxxxxxxxxxxxxxxxxxxxxxxx"
-TELEGRAM_CHAT_ID="-1001234567890"   # ou votre ID perso
-
-# Facultatif
-WEBHOOK_APP_URL="https://storm-monitor.quentin-astro.fr"
-WEBHOOK_COOLDOWN_S="900"   # 15 min par défaut
-```
-
-Puis redémarrer le backend :
+C'est le cas usuel : vous avez poussé du code sur GitHub, vous voulez le déployer.
 
 ```bash
+cd /opt/storm-monitor
+git pull
+sudo bash install.sh
+```
+
+Ou en une ligne :
+
+```bash
+cd /opt/storm-monitor && git pull && sudo bash install.sh
+```
+
+Ce qui se passe :
+1. `git pull` met à jour `/opt/storm-monitor` (WORK_DIR).
+2. `install.sh` détecte le clone existant, fetch+pull à nouveau (idempotent), affiche la liste des commits récupérés.
+3. **Backup auto du `.env`** dans `/var/www/storm-monitor/backend/.env.backups/.env.YYYYMMDDTHHMMSSZ` (rotation : 10 derniers conservés).
+4. `rsync` synchronise `/opt` → `/var/www` en préservant runtime (`.env`, `venv/`, `cache/`, `storm_data.json`, `build/`, `node_modules/`).
+5. `pip install -r requirements.txt` met à jour les dépendances Python.
+6. `ensure_env_var` ajoute les nouvelles variables d'env apparues dans la release **sans toucher aux valeurs existantes**.
+7. `yarn install --frozen-lockfile && yarn build` rebuilds le frontend.
+8. Reload Nginx + restart `storm-monitor.service`.
+
+> Le `.env` n'est jamais écrasé. Les nouveaux champs sont ajoutés vides à la fin. Vous gardez vos clés Resend / VAPID / JWT.
+
+### Restaurer un `.env` depuis un backup
+
+```bash
+ls -lt /var/www/storm-monitor/backend/.env.backups/
+sudo cp /var/www/storm-monitor/backend/.env.backups/.env.YYYYMMDDTHHMMSSZ \
+        /var/www/storm-monitor/backend/.env
 sudo systemctl restart storm-monitor
 ```
 
-#### Tester les webhooks
-
-```bash
-# Récupérer un token d'auth (login)
-TOKEN=$(curl -s -X POST https://storm-monitor.quentin-astro.fr/api/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"test@lourdes.fr","password":"storm123"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
-
-# Voir quels canaux sont actifs (sans secret)
-curl https://storm-monitor.quentin-astro.fr/api/webhooks/status
-
-# Envoyer un test (bypass cooldown)
-curl -X POST https://storm-monitor.quentin-astro.fr/api/webhooks/test \
-  -H "Authorization: Bearer $TOKEN"
-```
-
 ---
 
-## 🔄 Mettre à jour la production (après chaque nouvelle feature)
+## C) Migration de branche (Testing ↔ Version_With_Detector)
 
-### Option 1 — Recommandée (tout via `/opt/storm-monitor`)
+### Méthode 1 — Via variable d'env (recommandée)
+
+```bash
+# Basculer vers Version_With_Detector (avec détecteur AS3935)
+sudo BRANCH=Version_With_Detector bash /opt/storm-monitor/install.sh
+
+# Revenir à Testing (version publique sans matériel)
+sudo BRANCH=Testing bash /opt/storm-monitor/install.sh
+```
+
+Le script :
+1. Détecte que la branche actuelle ≠ `BRANCH` demandée.
+2. Fait `git fetch && git checkout -B "$BRANCH" "origin/$BRANCH"` dans `/opt/storm-monitor`.
+3. Resync `rsync` vers `/var/www/storm-monitor`.
+4. Reinstall les deps si différentes, rebuild front, restart services.
+
+### Méthode 2 — Switch manuel puis install
 
 ```bash
 cd /opt/storm-monitor
-git pull origin Testing
+git fetch origin
+git checkout Version_With_Detector
+git pull
 sudo bash install.sh
 ```
 
-Ou en une seule ligne :
+### Vérifier sur quelle branche tourne la prod
 
 ```bash
-cd /opt/storm-monitor && git pull origin Testing && sudo bash install.sh
+git -C /opt/storm-monitor rev-parse --abbrev-ref HEAD
+git -C /opt/storm-monitor rev-parse --short HEAD
 ```
 
-Quand le script tourne en mode UPDATE, il va :
-1. **Détecter** que `/var/www/storm-monitor` existe déjà → bascule automatiquement en mode UPDATE (pas de `rm -rf`)
-2. **Stasher** les modifications locales éventuelles (fichiers générés, bidouilles)
-3. **Fetch + pull** `origin/Testing` dans `/var/www/storm-monitor`
-4. **Afficher la liste des commits** qui viennent d'être récupérés
-5. **Restaurer** le stash (ou le garder dans `git stash list` si conflit)
-6. **Rebuild** le frontend (`yarn install --frozen-lockfile && yarn build`)
-7. **Reload** systemd + Nginx
-
-> ⚠️ **Le fichier `/var/www/storm-monitor/backend/.env` n'est JAMAIS écrasé** sur update. Vos clés (JWT, VAPID, upload API key) restent stables.
-
-### Option 2 — Zapper le `/opt/storm-monitor`
-
-Si vous n'utilisez pas `/opt/storm-monitor` comme backup de travail, vous pouvez sauter la première étape :
-
-```bash
-cd /opt/storm-monitor
-sudo bash install.sh
-```
-
-Le script ira quand même chercher la dernière version sur GitHub pour la copie `/var/www/storm-monitor`.
-
-### Ce que vous verrez à l'écran sur un update
-
-```
-==> Storm Monitor — installation on ns3020148
-    Domain  : storm-monitor.quentin-astro.fr
-    Dir     : /var/www/storm-monitor
-    Backend : 127.0.0.1:8003
-    User    : root
-==> Installing system packages...
-==> Existing install detected at /var/www/storm-monitor — switching to UPDATE mode
-    Current branch : Testing
-    Current commit : c7be03c
-==> Fetching latest from origin...
-==> Pulling origin/Testing...
-    Updated c7be03c → 43c6a32
-    Changed files :
-      - 43c6a32 Phase 18: Démos Pyrénées + Export MP4
-      - 9f2d81a Phase 17: Mode Replay orages majeurs
-==> Setting up backend...
-==> Building frontend...
-==> Writing Nginx vhost...
-==> Writing systemd unit...
-==> Done.
-```
+> Note : `/var/www/storm-monitor` n'a **pas** de `.git/` (exclu du rsync). La seule source de vérité branche/commit est `/opt/storm-monitor`.
 
 ---
 
-## ⚠️ Point d'attention — modifications locales
-
-Si vous avez **modifié des fichiers en local** dans `/opt/storm-monitor` sans commit/push, le `git pull` peut générer un conflit.
-
-Vérifiez toujours avant de pull :
+## Diagnostic
 
 ```bash
-cd /opt/storm-monitor
-git status        # → doit afficher "nothing to commit, working tree clean"
-git pull origin Testing
-```
-
-Pour `/var/www/storm-monitor`, le script gère les conflits automatiquement (stash auto + restore). En cas de conflit non résolvable, vos modifs sont conservées dans `git stash list` et vous pouvez les récupérer manuellement.
-
----
-
-## 🔍 Commandes de diagnostic utiles
-
-```bash
-# État du service backend
+# Service backend
 sudo systemctl status storm-monitor
-
-# Logs backend en temps réel
 sudo journalctl -u storm-monitor -f
 sudo tail -f /var/log/storm-monitor.err.log
 
-# Logs Nginx
-sudo tail -f /var/log/nginx/error.log
-sudo tail -f /var/log/nginx/access.log
-
-# Test de l'API backend local
-curl http://127.0.0.1:8003/api/weather/current?lat=43.0951\&lon=-0.0434
-
-# Test de la config Nginx
+# Nginx
 sudo nginx -t
+sudo tail -f /var/log/nginx/error.log
 
-# Vider le cache vidéos (libérer l'espace disque)
-sudo rm -rf /var/www/storm-monitor/cache/videos/output/*.mp4
+# MongoDB
+sudo systemctl status mongod
+
+# Test API local
+curl http://127.0.0.1:8003/api/health
+curl 'http://127.0.0.1:8003/api/weather/current?lat=43.0951&lon=-0.0434'
 ```
 
 ---
 
-## 🗂️ Arborescence sur le serveur après install
+## En cas de problème
 
-```
-/opt/storm-monitor/              # Votre copie de travail (git pull manuel)
-│
-/var/www/storm-monitor/          # Copie de déploiement (managée par install.sh)
-├── backend/
-│   ├── .env                     # Secrets (NE PAS committer, NE PAS écraser)
-│   ├── venv/                    # Python virtualenv
-│   ├── server.py
-│   └── ...
-├── frontend/
-│   ├── build/                   # Bundle React production (servi par Nginx)
-│   ├── .env                     # REACT_APP_BACKEND_URL=https://...
-│   └── src/
-├── cache/
-│   └── videos/                  # Cache tuiles CARTO + MP4 générés (TTL 24h)
-└── storm_data.json              # Uploads storm JSON local
-
-/etc/nginx/
-├── sites-available/storm-monitor.conf     # vhost
-├── sites-enabled/storm-monitor.conf       # → symlink
-├── snippets/storm-monitor-app.conf        # config snippet partagée
-└── conf.d/00-default-catchall.conf        # anti vhost-bleed
-
-/etc/systemd/system/storm-monitor.service  # unit systemd
-/var/log/storm-monitor.{log,err.log}       # logs backend
-```
-
----
-
-## 🧠 Pense-bête rapide
-
-| Je veux... | Commande |
+| Symptôme | Action |
 |---|---|
-| Récupérer les dernières features | `cd /opt/storm-monitor && git pull origin Testing && sudo bash install.sh` |
-| Redémarrer juste le backend | `sudo systemctl restart storm-monitor` |
-| Recharger juste Nginx | `sudo systemctl reload nginx` |
-| Voir les dernières erreurs backend | `sudo journalctl -u storm-monitor -n 100` |
-| Purger le cache des MP4 générés | `sudo rm -rf /var/www/storm-monitor/cache/videos/output/*.mp4` |
-| Renouveler le certificat SSL | `sudo certbot renew` |
-| Vérifier que tout tourne | `sudo systemctl status storm-monitor nginx mongod` |
+| `storm-monitor.service` en boucle de crash | `sudo journalctl -u storm-monitor -n 200` → lire la stack. Souvent : variable `.env` manquante ou venv corrompu. |
+| 502 Bad Gateway | Backend down → `systemctl restart storm-monitor`. |
+| 404 sur l'app | Build front absent → `cd /var/www/storm-monitor/frontend && yarn build`. |
+| Nginx reload échoue | `sudo nginx -t` pour voir l'erreur de syntaxe. |
+| `.env` corrompu / mal édité | Restaurer un backup (voir section B). |
+| Update a cassé un truc | `cd /opt/storm-monitor && git log --oneline -10`, `git checkout <commit_précédent>`, `sudo bash install.sh`. |
 
----
-
-## 🔗 URL importantes
-
-- **App prod** : https://storm-monitor.quentin-astro.fr
-- **Page Direct** : `/`
-- **Carte Vigilance** : `/vigilance`
-- **Mode Replay + MP4** : `/replay`
-- **Historique** : `/historique`
-- **API racine** : `/api/` (toutes les routes backend préfixées par `/api`)
-
----
-
-## 🆘 En cas de problème
-
-1. **Service ne démarre pas** : `sudo journalctl -u storm-monitor -n 200` → regarder la pile d'erreurs
-2. **404 sur l'app** : vérifier le build frontend (`ls /var/www/storm-monitor/frontend/build/index.html`)
-3. **502/503** : le backend est down, vérifier `systemctl status storm-monitor`
-4. **Nginx refuse le reload** : `sudo nginx -t` pour voir l'erreur de syntaxe
-5. **MP4 ne se génère pas** : vérifier `which ffmpeg` (doit retourner `/usr/bin/ffmpeg`) et les logs backend
-
-En dernier recours, vous pouvez toujours repartir de zéro :
+### Reset complet (dernier recours)
 
 ```bash
+sudo systemctl stop storm-monitor
 sudo rm -rf /var/www/storm-monitor
 cd /opt/storm-monitor && sudo bash install.sh
 ```
 
-Le script détectera l'absence de `/var/www/storm-monitor` et refera une install complète. Vos clés `.env` seront **régénérées** (donc les abonnements push existants seront invalidés — c'est le seul effet de bord à accepter).
+⚠️ Régénère les secrets `.env` (JWT, VAPID, UPLOAD_API_KEY). Les abonnements push existants deviendront invalides. **Pensez à `cp /var/www/storm-monitor/backend/.env ~/env.save` avant** si vous voulez les conserver.
+
+---
+
+## Arborescence cible
+
+```
+/opt/storm-monitor/                  # WORK_DIR (git, jamais de runtime ici)
+├── .git/
+├── backend/
+├── frontend/
+├── hardware/                        # branche Version_With_Detector uniquement
+└── install.sh
+
+/var/www/storm-monitor/              # APP_DIR (runtime, géré par install.sh)
+├── backend/
+│   ├── .env                         # secrets — JAMAIS écrasé
+│   ├── .env.backups/                # rotation 10 derniers
+│   ├── venv/                        # Python virtualenv
+│   ├── server.py
+│   └── ...
+├── frontend/
+│   ├── build/                       # bundle React servi par Nginx
+│   ├── .env                         # REACT_APP_BACKEND_URL=https://...
+│   └── src/
+├── cache/videos/                    # cache MP4 (TTL 24h)
+└── storm_data.json                  # uploads détecteur AS3935
+
+/etc/nginx/
+├── sites-available/storm-monitor.conf
+├── sites-enabled/storm-monitor.conf -> ../sites-available/storm-monitor.conf
+├── snippets/storm-monitor-app.conf
+└── conf.d/00-default-catchall.conf
+
+/etc/systemd/system/storm-monitor.service
+/var/log/storm-monitor.{log,err.log}
+```
+
+---
+
+## Aide-mémoire
+
+| Action | Commande |
+|---|---|
+| Déployer la dernière version | `cd /opt/storm-monitor && git pull && sudo bash install.sh` |
+| Basculer sur la branche détecteur | `sudo BRANCH=Version_With_Detector bash /opt/storm-monitor/install.sh` |
+| Basculer sur la branche publique | `sudo BRANCH=Testing bash /opt/storm-monitor/install.sh` |
+| Redémarrer le backend | `sudo systemctl restart storm-monitor` |
+| Recharger Nginx | `sudo systemctl reload nginx` |
+| Voir les 100 dernières lignes de logs | `sudo journalctl -u storm-monitor -n 100` |
+| Renouveler le certif SSL | `sudo certbot renew` |
+| Lister les backups `.env` | `ls -lt /var/www/storm-monitor/backend/.env.backups/` |
+| Vérifier branche en prod | `git -C /opt/storm-monitor rev-parse --abbrev-ref HEAD` |

@@ -324,6 +324,7 @@ command -v rsync >/dev/null || apt-get install -y rsync
 rsync -a --delete \
   --exclude='.git' \
   --exclude='backend/.env' \
+  --exclude='backend/.env.backups' \
   --exclude='backend/venv' \
   --exclude='backend/storm_data.json' \
   --exclude='backend/.stale_cache.pkl' \
@@ -406,7 +407,19 @@ PY
   echo "       ADMIN_EMAIL=\"ton@email.com\"  (compte super-admin)"
   echo ""
 else
-  echo "==> $ENV_FILE existe — vérification des variables requises..."
+  echo "==> $ENV_FILE existe — backup + vérification des variables requises..."
+  # --- Backup automatique du .env avant toute modification ---
+  # On garde les 10 derniers backups (rotation FIFO) pour pouvoir restaurer
+  # rapidement si une mise à jour casse quelque chose.
+  BACKUP_DIR="$APP_DIR/backend/.env.backups"
+  mkdir -p "$BACKUP_DIR"
+  BACKUP_FILE="$BACKUP_DIR/.env.$(date -u +%Y%m%dT%H%M%SZ)"
+  cp -a "$ENV_FILE" "$BACKUP_FILE"
+  chmod 600 "$BACKUP_FILE"
+  echo "    backup créé : $BACKUP_FILE"
+  # Rotation : on ne garde que les 10 plus récents
+  ls -1t "$BACKUP_DIR"/.env.* 2>/dev/null | tail -n +11 | xargs -r rm -f
+
   # Add any missing variable WITHOUT overwriting existing values.
   ensure_env_var() {
     local key="$1"
@@ -662,7 +675,6 @@ systemctl enable --now storm-monitor.service
 # ---------------------------------------------------------------------------
 # 7. Final report
 # ---------------------------------------------------------------------------
-sleep 3
 echo ""
 echo "==> Done."
 echo ""
