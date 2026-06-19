@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import Response
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -945,32 +945,71 @@ async def bulletin_pdf(
     lon: float = LOURDES_LON,
     radius_km: float = RADIUS_KM,
     name: str = "Lourdes",
+    z: List[str] = Query(default_factory=list),
 ):
-    current, forecast, history, zones = await asyncio.gather(
-        fetch_current(lat, lon),
-        fetch_forecast(lat, lon),
-        fetch_history_24h(lat, lon),
-        fetch_storm_zones(lat, lon, radius_km),
-    )
-    strikes_data = await lightning_mod.store.recent(lat, lon, radius_km, since_ts=None)
-    strikes_data.sort(key=lambda s: s["ts"], reverse=True)
-    pdf = reports_mod.build_bulletin_pdf(
-        current,
-        zones,
-        history,
-        forecast,
-        strikes_data[:50],
-        location_name=name,
-        lat=lat,
-        lon=lon,
-        radius_km=radius_km,
-        tz_name=(current or {}).get("timezone"),
-    )
-    # Slugify name for filename (ASCII only, no spaces)
-    safe_name = "".join(
-        ch if (ch.isalnum() or ch in "-_") else "-" for ch in (name or "lourdes").lower()
-    ).strip("-") or "lourdes"
-    filename = f"bulletin-orage-{safe_name}-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M')}.pdf"
+    """
+    Generate a storm bulletin PDF.
+
+    Two modes:
+    - Single zone (legacy): pass lat, lon, name, radius_km.
+    - Multi-zone: pass one or more z=name|lat|lon|radius query params.
+      The 'z' parameters take precedence if present.
+    """
+    # ----- Parse zone descriptors -----
+    descriptors: List[Dict[str, Any]] = []
+    if z:
+        for entry in z:
+            try:
+                parts = entry.split("|")
+                if len(parts) != 4:
+                    continue
+                nm, la, lo, rd = parts
+                nm = nm.strip() or "—"
+                la_f, lo_f, rd_f = float(la), float(lo), float(rd)
+                if not (-90 <= la_f <= 90 and -180 <= lo_f <= 180 and 1 <= rd_f <= 500):
+                    continue
+                descriptors.append({"name": nm, "lat": la_f, "lon": lo_f, "radius_km": rd_f})
+            except Exception:
+                continue
+    if not descriptors:
+        descriptors = [{"name": name, "lat": lat, "lon": lon, "radius_km": radius_km}]
+
+    # ----- Fetch all zones in parallel -----
+    async def _fetch_zone(d: Dict[str, Any]) -> Dict[str, Any]:
+        c, f, h, zres = await asyncio.gather(
+            fetch_current(d["lat"], d["lon"]),
+            fetch_forecast(d["lat"], d["lon"]),
+            fetch_history_24h(d["lat"], d["lon"]),
+            fetch_storm_zones(d["lat"], d["lon"], d["radius_km"]),
+        )
+        strikes_data = await lightning_mod.store.recent(d["lat"], d["lon"], d["radius_km"], since_ts=None)
+        strikes_data.sort(key=lambda s: s["ts"], reverse=True)
+        return {
+            **d,
+            "current": c,
+            "zones": zres,
+            "history": h,
+            "forecast": f,
+            "strikes": strikes_data[:50],
+        }
+
+    payload = await asyncio.gather(*[_fetch_zone(d) for d in descriptors])
+    tz_name = (payload[0].get("current") or {}).get("timezone")
+
+    pdf = reports_mod.build_bulletin_pdf(payload, tz_name=tz_name)
+
+    # ----- Slugified filename -----
+    def _slug(v: str) -> str:
+        out = "".join(ch if (ch.isalnum() or ch in "-_") else "-" for ch in (v or "").lower()).strip("-")
+        return out or "zone"
+
+    if len(payload) == 1:
+        slug = _slug(payload[0]["name"])
+    else:
+        head = "-".join(_slug(p["name"])[:12] for p in payload[:3])
+        slug = f"multi-{head}" + (f"-plus{len(payload) - 3}" if len(payload) > 3 else "")
+    filename = f"bulletin-orage-{slug}-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M')}.pdf"
+
     return Response(
         content=pdf,
         media_type="application/pdf",

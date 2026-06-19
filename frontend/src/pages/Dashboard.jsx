@@ -385,7 +385,16 @@ export default function Dashboard() {
   };
 
   const downloadPdf = () => {
-    const url = `${API}/reports/bulletin.pdf?lat=${center.lat}&lon=${center.lon}&radius_km=${radius}&name=${encodeURIComponent(center.name)}`;
+    if (noZone) return;
+    // Build the multi-zone query: active center first, then each secondary visible zone.
+    const all = [
+      { name: center.name, lat: center.lat, lon: center.lon, r: radius },
+      ...visibleOverlays.map((o) => ({ name: o.name, lat: o.lat, lon: o.lon, r: o.radiusKm })),
+    ];
+    const qs = all
+      .map((z) => `z=${encodeURIComponent(`${z.name}|${z.lat}|${z.lon}|${z.r}`)}`)
+      .join("&");
+    const url = `${API}/reports/bulletin.pdf?${qs}`;
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
@@ -750,11 +759,13 @@ export default function Dashboard() {
           {/* PDF bulletin */}
           <button
             onClick={downloadPdf}
-            className="mt-2 w-full flex items-center justify-center gap-2 px-4 h-10 border border-slate-300 bg-white text-slate-900 hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-colors font-mono text-[10px] uppercase tracking-[0.2em]"
+            disabled={noZone}
+            className="mt-2 w-full flex items-center justify-center gap-2 px-4 h-10 border border-slate-300 bg-white text-slate-900 hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-colors font-mono text-[10px] uppercase tracking-[0.2em] disabled:opacity-40 disabled:hover:bg-white disabled:hover:text-slate-900 disabled:hover:border-slate-300 disabled:cursor-not-allowed"
             data-testid="download-bulletin-pdf"
+            title={noZone ? "Coche au moins une zone pour générer un bulletin" : undefined}
           >
             <Download className="w-4 h-4" strokeWidth={1.8} />
-            Bulletin PDF
+            Bulletin PDF{!noZone && visibleOverlays.length > 0 ? ` · ${visibleOverlays.length + 1} zones` : ""}
           </button>
 
           {/* Share card */}
