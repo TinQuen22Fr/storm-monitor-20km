@@ -69,6 +69,25 @@ export default function Dashboard() {
   const nowSec = Math.floor(Date.now() / 1000);
   const isLive = nowSec - cursorTs < 60;
 
+  // No active zone = user is logged in but has unticked all their favorites
+  const noZone = !!user && visibleFavs.length === 0;
+
+  // Callback from FavoritesList: handle visibility changes AND auto-switch focus
+  // when the current center is no longer in the visible list.
+  const handleVisibleChange = useCallback((visible) => {
+    setVisibleFavs(visible);
+    if (!user) return;
+    const centerStillVisible = visible.some(
+      (f) => Math.abs(f.lat - center.lat) < 0.001 && Math.abs(f.lon - center.lon) < 0.001
+    );
+    if (centerStillVisible) return;
+    if (visible.length > 0) {
+      const f = visible[0];
+      setCenter({ id: f.id, lat: f.lat, lon: f.lon, name: f.name });
+    }
+    // else: noZone === true, we keep the last center but stop fetching (see loadWeather/loadStrikes)
+  }, [user, center.lat, center.lon]);
+
   // Bootstrap replay mode from ?replay=start:end (from ReplayPage)
   useEffect(() => {
     const param = searchParams.get("replay");
@@ -211,6 +230,14 @@ export default function Dashboard() {
   const seenStrikeTs = useRef(new Set());
 
   const loadWeather = useCallback(async () => {
+    if (noZone) {
+      setCurrent(null);
+      setForecast(null);
+      setHistory(null);
+      setZones(null);
+      setApproach(null);
+      return;
+    }
     setRefreshing(true);
     setError(null);
     try {
@@ -240,9 +267,13 @@ export default function Dashboard() {
     } finally {
       setRefreshing(false);
     }
-  }, [center.lat, center.lon, center.name, radius]);
+  }, [center.lat, center.lon, center.name, radius, noZone]);
 
   const loadStrikes = useCallback(async () => {
+    if (noZone) {
+      setStrikes([]);
+      return;
+    }
     try {
       const since = Date.now() / 1000 - STRIKES_WINDOW_S;
       const data = await getStrikes(center.lat, center.lon, radius, since);
@@ -276,7 +307,7 @@ export default function Dashboard() {
         }
       } catch { /* ignore */ }
     } catch { /* silent */ }
-  }, [center.lat, center.lon, center.name, radius, approach?.approaching]);
+  }, [center.lat, center.lon, center.name, radius, approach?.approaching, noZone]);
 
   useEffect(() => {
     loadWeather();
@@ -405,6 +436,7 @@ export default function Dashboard() {
             cursorTs={cursorTs}
             isLive={isLive}
             overlays={visibleOverlays}
+            noZone={noZone}
           />
         </div>
         <Timeline
@@ -517,7 +549,7 @@ export default function Dashboard() {
             <div className="flex items-center gap-2 min-w-0">
               <Zap className="w-4 h-4 text-slate-900 shrink-0" strokeWidth={2.5} />
               <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-slate-500 font-semibold truncate">
-                Orage · {center.name}
+                {noZone ? "Aucune zone" : `Orage · ${center.name}`}
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -534,19 +566,33 @@ export default function Dashboard() {
             Suivi d&apos;orage<br />
             <span className="text-slate-400">en temps réel.</span>
           </h1>
-          <p className="text-sm text-slate-500 mt-4 leading-relaxed max-w-xs">
-            Surveillance de l&apos;activité électrique et convective dans un rayon
-            de <span className="font-mono text-slate-900">{radius}&nbsp;km</span> autour de <span className="font-mono text-slate-900">{center.name}</span>
-            {visibleOverlays.length > 0 && (
-              <>
-                {" "}
-                <span className="font-mono text-blue-700">
-                  + {visibleOverlays.length} autre{visibleOverlays.length > 1 ? "s" : ""} zone{visibleOverlays.length > 1 ? "s" : ""}
-                </span>
-              </>
-            )}
-            .
-          </p>
+          {noZone ? (
+            <div
+              className="mt-4 p-4 border border-blue-200 bg-blue-50"
+              data-testid="no-zone-placeholder"
+            >
+              <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-blue-700 font-semibold mb-1">
+                Aucune zone sélectionnée
+              </div>
+              <p className="text-sm text-blue-900 leading-relaxed">
+                Coche un lieu dans <span className="font-mono">Mes lieux</span> pour reprendre la surveillance.
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500 mt-4 leading-relaxed max-w-xs">
+              Surveillance de l&apos;activité électrique et convective dans un rayon
+              de <span className="font-mono text-slate-900">{radius}&nbsp;km</span> autour de <span className="font-mono text-slate-900">{center.name}</span>
+              {visibleOverlays.length > 0 && (
+                <>
+                  {" "}
+                  <span className="font-mono text-blue-700">
+                    + {visibleOverlays.length} autre{visibleOverlays.length > 1 ? "s" : ""} zone{visibleOverlays.length > 1 ? "s" : ""}
+                  </span>
+                </>
+              )}
+              .
+            </p>
+          )}
 
           {/* Credibility badge — TOA Blitzortung */}
           <div className="mt-4">
@@ -752,21 +798,27 @@ export default function Dashboard() {
         </div>
 
         <div className="px-6 py-6 space-y-6 flex-1 shrink-0">
-          <div>
-            <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400 mb-3">
-              Conditions actuelles
+          <div className={noZone ? "opacity-40 pointer-events-none select-none" : ""} aria-hidden={noZone}>
+            <div>
+              <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400 mb-3">
+                Conditions actuelles
+              </div>
+              <CurrentConditions current={current} />
             </div>
-            <CurrentConditions current={current} />
+
+            <div className="mt-6">
+              <CapeGauge
+                cape={current?.cape ?? zones?.max_cape}
+                lightningPotential={current?.lightning_potential ?? zones?.max_lightning_potential}
+              />
+            </div>
+
+            <div className="mt-6 space-y-6">
+              <HistoryChart hourly={history?.hourly || []} />
+              <HistoryDaysChart days={7} />
+              <ForecastChart hourly={forecast?.hourly || []} />
+            </div>
           </div>
-
-          <CapeGauge
-            cape={current?.cape ?? zones?.max_cape}
-            lightningPotential={current?.lightning_potential ?? zones?.max_lightning_potential}
-          />
-
-          <HistoryChart hourly={history?.hourly || []} />
-          <HistoryDaysChart days={7} />
-          <ForecastChart hourly={forecast?.hourly || []} />
 
           <div className="space-y-4">
             <AuthDialog />
@@ -778,7 +830,7 @@ export default function Dashboard() {
                 }
                 setCenter(c);
               }}
-              onVisibleChange={setVisibleFavs}
+              onVisibleChange={handleVisibleChange}
               activeCenter={center}
             />
           </div>

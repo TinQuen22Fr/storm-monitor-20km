@@ -215,23 +215,16 @@ export default function FavoritesList({ onSelect, onVisibleChange, activeCenter 
     return f?.id || null;
   }, [favs, activeCenter]);
 
-  const isVisible = (id) => {
-    if (id === activeFavId) return true; // focus zone is always visible
-    return visibility[id] !== false; // default true
-  };
+  const isVisible = (id) => visibility[id] !== false; // default true
 
   // Emit the current visible list whenever it changes
   useEffect(() => {
     const visible = favs.filter((f) => isVisible(f.id));
     onVisibleChange?.(visible);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [favs, visibility, activeFavId]);
+  }, [favs, visibility]);
 
   const toggleVisible = (id) => {
-    if (id === activeFavId) {
-      toast.info("Cette zone est la zone active — clique sur une autre pour la masquer");
-      return;
-    }
     setVisibility((prev) => {
       const next = { ...prev, [id]: prev[id] === false ? true : false };
       saveVisibility(next);
@@ -242,9 +235,7 @@ export default function FavoritesList({ onSelect, onVisibleChange, activeCenter 
   const setAll = (val) => {
     setVisibility((prev) => {
       const next = { ...prev };
-      for (const f of favs) {
-        if (f.id !== activeFavId) next[f.id] = val;
-      }
+      for (const f of favs) next[f.id] = val;
       saveVisibility(next);
       return next;
     });
@@ -310,7 +301,7 @@ export default function FavoritesList({ onSelect, onVisibleChange, activeCenter 
             className="font-mono text-[10px] uppercase tracking-[0.15em] text-slate-700 hover:text-slate-900 underline-offset-2 hover:underline"
             data-testid="favorites-show-none"
           >
-            aucun (sauf zone active)
+            aucun
           </button>
         </div>
       )}
@@ -334,23 +325,16 @@ export default function FavoritesList({ onSelect, onVisibleChange, activeCenter 
               {/* Visibility toggle */}
               <button
                 onClick={() => toggleVisible(f.id)}
-                disabled={isActive}
                 className={`mr-3 w-6 h-6 flex items-center justify-center border transition-colors ${
-                  isActive
-                    ? "bg-slate-900 text-white border-slate-900 cursor-default"
-                    : visible
-                    ? "bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100"
+                  visible
+                    ? isActive
+                      ? "bg-slate-900 text-white border-slate-900"
+                      : "bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100"
                     : "bg-white text-slate-400 border-slate-300 hover:border-slate-500"
                 }`}
                 data-testid={`favorite-toggle-visible-${f.id}`}
                 aria-label={visible ? "Masquer sur la carte" : "Afficher sur la carte"}
-                title={
-                  isActive
-                    ? "Zone active — toujours visible"
-                    : visible
-                    ? "Masquer sur la carte"
-                    : "Afficher sur la carte"
-                }
+                title={visible ? "Masquer sur la carte" : "Afficher sur la carte"}
               >
                 {visible ? <Eye className="w-3.5 h-3.5" strokeWidth={2} /> : <EyeOff className="w-3.5 h-3.5" strokeWidth={2} />}
               </button>

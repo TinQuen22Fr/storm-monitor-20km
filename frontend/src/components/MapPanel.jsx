@@ -115,6 +115,7 @@ export default function MapPanel({
   cursorTs = null,
   isLive = true,
   overlays = [],
+  noZone = false,
 }) {
   const centerLL = useMemo(() => [center.lat, center.lon], [center.lat, center.lon]);
   const centerIcon = useMemo(() => buildCenterIcon(), []);
@@ -187,18 +188,20 @@ export default function MapPanel({
         />
         <FitToRadius center={centerLL} radiusKm={radiusKm} override={zoomOverride} />
         <InvalidateOnResize trigger={fullscreen} />
-        <Circle
-          center={centerLL}
-          radius={radiusKm * 1000}
-          pathOptions={{
-            color: "#0F172A",
-            weight: 2,
-            dashArray: "6 8",
-            fillColor: "#0F172A",
-            fillOpacity: 0.04,
-          }}
-        />
-        <Marker position={centerLL} icon={centerIcon} />
+        {!noZone && (
+          <Circle
+            center={centerLL}
+            radius={radiusKm * 1000}
+            pathOptions={{
+              color: "#0F172A",
+              weight: 2,
+              dashArray: "6 8",
+              fillColor: "#0F172A",
+              fillOpacity: 0.04,
+            }}
+          />
+        )}
+        {!noZone && <Marker position={centerLL} icon={centerIcon} />}
         {userPos && <Marker position={userPos} icon={userIcon} />}
         {/* Secondary monitoring zones (multi-favoris) */}
         {overlays.map((ov) => (
@@ -293,15 +296,23 @@ export default function MapPanel({
       {/* Floating map title — DESKTOP layout. On mobile, compact version moved below */}
       <div className="hidden md:block absolute top-6 left-6 z-[500] bg-white/90 backdrop-blur-md border border-slate-200 px-5 py-3 max-w-[280px]">
         <div className="text-[10px] font-mono uppercase tracking-[0.3em] text-slate-400">Zone surveillée</div>
-        <div className="font-heading text-lg font-bold text-slate-900 leading-tight truncate">
-          {center.name} · {radiusKm} km
-        </div>
-        <div className="font-mono text-[10px] text-slate-500 mt-1 tabular-nums">
-          {center.lat.toFixed(4)}°N · {center.lon.toFixed(4)}°E
-        </div>
+        {noZone ? (
+          <div className="font-heading text-base font-bold text-blue-700 leading-tight mt-1">
+            Aucune zone sélectionnée
+          </div>
+        ) : (
+          <>
+            <div className="font-heading text-lg font-bold text-slate-900 leading-tight truncate">
+              {center.name} · {radiusKm} km
+            </div>
+            <div className="font-mono text-[10px] text-slate-500 mt-1 tabular-nums">
+              {center.lat.toFixed(4)}°N · {center.lon.toFixed(4)}°E
+            </div>
+          </>
+        )}
         {overlays.length > 0 && (
           <div className="mt-2 pt-2 border-t border-slate-200 font-mono text-[10px] text-blue-700 uppercase tracking-[0.15em]">
-            + {overlays.length} zone{overlays.length > 1 ? "s" : ""} secondaire{overlays.length > 1 ? "s" : ""}
+            {noZone ? "" : "+ "}{overlays.length} zone{overlays.length > 1 ? "s" : ""}{noZone ? " visible" : " secondaire"}{overlays.length > 1 ? "s" : ""}
           </div>
         )}
       </div>
@@ -368,15 +379,23 @@ export default function MapPanel({
         {/* Zone surveillée — same content as desktop overlay */}
         <div className="px-4 py-3 border-b border-slate-100">
           <div className="text-[10px] font-mono uppercase tracking-[0.3em] text-slate-400">Zone surveillée</div>
-          <div className="font-heading text-lg font-bold text-slate-900 leading-tight">
-            {center.name} · {radiusKm} km
-          </div>
-          <div className="font-mono text-[10px] text-slate-500 mt-1 tabular-nums">
-            {center.lat.toFixed(4)}°N · {center.lon.toFixed(4)}°E
-          </div>
+          {noZone ? (
+            <div className="font-heading text-base font-bold text-blue-700 leading-tight mt-1">
+              Aucune zone sélectionnée
+            </div>
+          ) : (
+            <>
+              <div className="font-heading text-lg font-bold text-slate-900 leading-tight">
+                {center.name} · {radiusKm} km
+              </div>
+              <div className="font-mono text-[10px] text-slate-500 mt-1 tabular-nums">
+                {center.lat.toFixed(4)}°N · {center.lon.toFixed(4)}°E
+              </div>
+            </>
+          )}
           {overlays.length > 0 && (
             <div className="mt-2 pt-2 border-t border-slate-200 font-mono text-[10px] text-blue-700 uppercase tracking-[0.15em]">
-              + {overlays.length} zone{overlays.length > 1 ? "s" : ""} secondaire{overlays.length > 1 ? "s" : ""}
+              {noZone ? "" : "+ "}{overlays.length} zone{overlays.length > 1 ? "s" : ""}{noZone ? " visible" : " secondaire"}{overlays.length > 1 ? "s" : ""}
             </div>
           )}
         </div>
