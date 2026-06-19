@@ -38,19 +38,20 @@ LEVEL_LABELS = {
 }
 
 # MeteoAlarm awareness_type code → our phenomenon key
+# Reference: https://feeds.meteoalarm.org/api/v1/documentation
 AWARENESS_TYPE_MAP = {
     "1": "vent",             # Wind
     "2": "neige",            # Snow/Ice
     "3": "orage",            # Thunderstorm
     "4": "brouillard",       # Fog
-    "5": "grand-froid",      # Extreme low temp
-    "6": "canicule",         # Extreme high temp
-    "7": "neige",            # Coastal event (partial)
-    "8": "pluie",             # Rain/flood
-    "9": "pluie",             # Flood
+    "5": "canicule",         # High temperature (extreme heat)
+    "6": "grand-froid",      # Low temperature (extreme cold)
+    "7": "neige",            # Coastal event (partial mapping)
+    "8": "pluie",             # Forest fire / Rain (legacy)
+    "9": "avalanche",        # Avalanche
     "10": "pluie",            # Rain
-    "11": "avalanche",       # Avalanche
-    "12": "vent",             # Strong wind on sea
+    "11": "pluie",            # Flooding
+    "12": "vent",             # Coastal / strong wind
 }
 
 PHENOMENA_META = [
