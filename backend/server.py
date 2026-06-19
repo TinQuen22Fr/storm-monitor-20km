@@ -940,7 +940,12 @@ async def webhooks_test(user=Depends(get_current_user)):
 
 # ---------- PDF bulletin ----------
 @api_router.get("/reports/bulletin.pdf")
-async def bulletin_pdf(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM):
+async def bulletin_pdf(
+    lat: float = LOURDES_LAT,
+    lon: float = LOURDES_LON,
+    radius_km: float = RADIUS_KM,
+    name: str = "Lourdes",
+):
     current, forecast, history, zones = await asyncio.gather(
         fetch_current(lat, lon),
         fetch_forecast(lat, lon),
@@ -949,8 +954,23 @@ async def bulletin_pdf(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radiu
     )
     strikes_data = await lightning_mod.store.recent(lat, lon, radius_km, since_ts=None)
     strikes_data.sort(key=lambda s: s["ts"], reverse=True)
-    pdf = reports_mod.build_bulletin_pdf(current, zones, history, forecast, strikes_data[:50])
-    filename = f"bulletin-orage-lourdes-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M')}.pdf"
+    pdf = reports_mod.build_bulletin_pdf(
+        current,
+        zones,
+        history,
+        forecast,
+        strikes_data[:50],
+        location_name=name,
+        lat=lat,
+        lon=lon,
+        radius_km=radius_km,
+        tz_name=(current or {}).get("timezone"),
+    )
+    # Slugify name for filename (ASCII only, no spaces)
+    safe_name = "".join(
+        ch if (ch.isalnum() or ch in "-_") else "-" for ch in (name or "lourdes").lower()
+    ).strip("-") or "lourdes"
+    filename = f"bulletin-orage-{safe_name}-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M')}.pdf"
     return Response(
         content=pdf,
         media_type="application/pdf",

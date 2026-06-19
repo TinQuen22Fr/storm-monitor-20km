@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from io import BytesIO
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
 from reportlab.lib import colors
@@ -19,11 +19,20 @@ from reportlab.platypus import (
 )
 
 
-LOURDES_TZ = ZoneInfo("Europe/Paris")
+DEFAULT_TZ = ZoneInfo("Europe/Paris")
 
 
-def _utc_to_local_str(iso_or_ts, fmt: str = "%d/%m/%Y · %H:%M") -> str:
-    """Convert an ISO UTC string (or epoch) to Europe/Paris formatted string."""
+def _resolve_tz(tz_name: Optional[str]) -> ZoneInfo:
+    if not tz_name:
+        return DEFAULT_TZ
+    try:
+        return ZoneInfo(tz_name)
+    except Exception:
+        return DEFAULT_TZ
+
+
+def _utc_to_local_str(iso_or_ts, tz: ZoneInfo, fmt: str = "%d/%m/%Y · %H:%M") -> str:
+    """Convert an ISO UTC string (or epoch) to the given timezone formatted string."""
     if iso_or_ts is None or iso_or_ts == "":
         return ""
     try:
@@ -34,7 +43,7 @@ def _utc_to_local_str(iso_or_ts, fmt: str = "%d/%m/%Y · %H:%M") -> str:
             dt = datetime.fromisoformat(s)
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(LOURDES_TZ).strftime(fmt)
+        return dt.astimezone(tz).strftime(fmt)
     except Exception:
         return str(iso_or_ts)
 
@@ -133,7 +142,13 @@ def build_bulletin_pdf(
     history: Dict,
     forecast: Dict,
     strikes: List[Dict],
+    location_name: str = "Lourdes",
+    lat: float = 43.0951,
+    lon: float = -0.0434,
+    radius_km: float = 20.0,
+    tz_name: Optional[str] = None,
 ) -> bytes:
+    tz = _resolve_tz(tz_name or (current or {}).get("timezone"))
     buf = BytesIO()
     doc = SimpleDocTemplate(
         buf,
@@ -142,18 +157,21 @@ def build_bulletin_pdf(
         rightMargin=20 * mm,
         topMargin=18 * mm,
         bottomMargin=18 * mm,
-        title="Bulletin orage — Lourdes",
-        author="Suivi d'orage Lourdes",
+        title=f"Bulletin orage — {location_name}",
+        author=f"Suivi d'orage · {location_name}",
     )
     s = _styles()
     story: List[Any] = []
 
-    now_local = datetime.now(LOURDES_TZ)
-    kicker = f"Bulletin orage · Lourdes · {now_local.strftime('%d %b %Y · %H:%M')} (heure locale)"
+    now_local = datetime.now(tz)
+    radius_int = int(round(float(radius_km)))
+    kicker = f"Bulletin orage · {location_name} · {now_local.strftime('%d %b %Y · %H:%M')} (heure locale)"
     story.append(Paragraph(kicker.upper(), s["kicker"]))
     story.append(Paragraph("Suivi d'orage en temps réel", s["h1"]))
     story.append(Paragraph(
-        "Rayon de surveillance : 20 km autour de Lourdes (43.0951°N, -0.0434°E).", s["body"]
+        f"Rayon de surveillance : {radius_int} km autour de {location_name} "
+        f"({float(lat):.4f}°N, {float(lon):.4f}°E).",
+        s["body"],
     ))
 
     # Status banner
@@ -169,14 +187,14 @@ def build_bulletin_pdf(
         story.append(Spacer(1, 10))
         story.append(Paragraph("● CIEL CALME À MODÉRÉMENT INSTABLE", s["safe"]))
         story.append(Paragraph(
-            "Aucune activité orageuse dans un rayon de 20 km au moment du bulletin.",
+            f"Aucune activité orageuse dans un rayon de {radius_int} km au moment du bulletin.",
             s["body"],
         ))
 
     # Current conditions table
     c = (current or {}).get("current", {})
-    cape = current.get("cape")
-    lp = current.get("lightning_potential")
+    cape = (current or {}).get("cape")
+    lp = (current or {}).get("lightning_potential")
     story.append(Paragraph("CONDITIONS ACTUELLES", s["h2"]))
     data = [
         ["Température", _fmt(c.get("temperature_2m"), " °C", 1), "Vent", _fmt(c.get("wind_speed_10m"), " km/h")],
@@ -249,7 +267,7 @@ def build_bulletin_pdf(
         rows = [["Heure locale", "Lat", "Lon", "Distance"]]
         for st in strikes[:20]:
             rows.append([
-                _utc_to_local_str(st.get("ts") or st.get("iso", ""), "%d/%m %H:%M:%S"),
+                _utc_to_local_str(st.get("ts") or st.get("iso", ""), tz, "%d/%m %H:%M:%S"),
                 f"{st.get('lat'):.4f}",
                 f"{st.get('lon'):.4f}",
                 _fmt(st.get("distance_km"), " km", 1),

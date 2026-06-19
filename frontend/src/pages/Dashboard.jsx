@@ -385,7 +385,7 @@ export default function Dashboard() {
   };
 
   const downloadPdf = () => {
-    const url = `${API}/reports/bulletin.pdf?lat=${center.lat}&lon=${center.lon}&radius_km=${radius}`;
+    const url = `${API}/reports/bulletin.pdf?lat=${center.lat}&lon=${center.lon}&radius_km=${radius}&name=${encodeURIComponent(center.name)}`;
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
