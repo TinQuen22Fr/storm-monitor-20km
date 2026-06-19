@@ -656,7 +656,7 @@ Pas de page admin pour modérer.
 ### Solution P0 — Backend
 - **Resend** intégré (`backend/email_service.py`) avec lecture lazy des env vars
 - `.env` : `RESEND_API_KEY`, `SENDER_EMAIL="Storm Monitoring <noreply@quentin-astro.fr>"`,
-  `PUBLIC_APP_URL="https://storm.quentin-astro.fr"`, `ADMIN_EMAIL="quentin.dumont.22@gmail.com"`
+  `PUBLIC_APP_URL="https://storm-monitor.quentin-astro.fr"`, `ADMIN_EMAIL="quentin.dumont.22@gmail.com"`
 - `requirements.txt` mis à jour via `pip freeze` (resend 2.32.2)
 - **Modèle User étendu** : `email_verified`, `verification_token`, `is_admin`, `disabled`
 - **Register** : génère token (secrets.token_urlsafe), envoie mail, retourne `auto_verified=false`
