@@ -382,3 +382,7 @@ credentials.json
 .credentials
 frontend/node_modules/.cache/default-development/9.pack
 frontend/node_modules/.cache/default-development/13.pack
+
+# Backend runtime cache (généré par weather.py, ne doit jamais être versionné)
+backend/.stale_cache.pkl
+*.pkl
