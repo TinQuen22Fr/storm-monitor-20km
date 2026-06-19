@@ -115,6 +115,29 @@ async def root():
     return {"service": "lourdes-storm-tracker", "center": {"lat": LOURDES_LAT, "lon": LOURDES_LON}, "radius_km": RADIUS_KM}
 
 
+@api_router.get("/health")
+async def health():
+    """Self-diagnostic endpoint — returns the runtime config status for debugging."""
+    try:
+        await db.command("ping")
+        mongo_ok = True
+    except Exception:  # noqa: BLE001
+        mongo_ok = False
+    return {
+        "status": "ok" if mongo_ok else "degraded",
+        "service": "storm-monitoring",
+        "version": "2026-06-19",
+        "mongo_connected": mongo_ok,
+        "env_loaded": {
+            "RESEND_API_KEY": bool(os.environ.get("RESEND_API_KEY")),
+            "SENDER_EMAIL": bool(os.environ.get("SENDER_EMAIL")),
+            "PUBLIC_APP_URL": os.environ.get("PUBLIC_APP_URL", ""),
+            "ADMIN_EMAIL": os.environ.get("ADMIN_EMAIL", ""),
+        },
+        "now": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 # ---------- Auth ----------
 @api_router.post("/auth/register")
 async def register(payload: RegisterInput):
