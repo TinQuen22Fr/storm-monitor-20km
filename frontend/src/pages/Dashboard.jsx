@@ -15,13 +15,15 @@ import HistoryDaysChart from "@/components/HistoryDaysChart";
 import ForecastChart from "@/components/ForecastChart";
 import StormRiskDialog from "@/components/StormRiskDialog";
 import AuthDialog from "@/components/AuthDialog";
+import DataSourceBadge from "@/components/DataSourceBadge";
 import FavoritesList from "@/components/FavoritesList";
 import { Slider } from "@/components/ui/slider";
 import { useIsMobile } from "@/lib/useIsMobile";
-import { api, API, getCurrent, getForecast, getHistory, getStrikes, getZones, LOURDES } from "@/lib/api";
+import { api, API, getCurrent, getForecast, getHistory, getStrikes, getZones, listFavorites, LOURDES } from "@/lib/api";
 import * as notif from "@/lib/notifications";
 import * as push from "@/lib/push";
 import { setLocalTimezone, fmtLocal, fmtLocalTime } from "@/lib/timeFormat";
+import { useAuth } from "@/lib/auth";
 
 const REFRESH_MS = 120_000;
 const STRIKES_MS = 15_000;
@@ -31,7 +33,9 @@ const RADIUS_STEPS = [20, 30, 40, 50, 60, 70];
 const DEFAULT_RADIUS = 20;
 
 export default function Dashboard() {
+  const { user } = useAuth();
   const [center, setCenter] = useState({ lat: LOURDES.lat, lon: LOURDES.lon, name: "Lourdes" });
+  const [centerAutoLoaded, setCenterAutoLoaded] = useState(false);
   const [radius, setRadius] = useState(DEFAULT_RADIUS);
   const [current, setCurrent] = useState(null);
   const [forecast, setForecast] = useState(null);
@@ -91,6 +95,31 @@ export default function Dashboard() {
     setPlaying(false);
     setCursorTs(Math.floor(Date.now() / 1000));
   }, []);
+
+  // When user logs in (or page reloads with token), auto-set center to their first favorite.
+  // Only runs once per user to avoid overriding their explicit selections later.
+  useEffect(() => {
+    if (!user) {
+      // Logout → back to Lourdes if we had auto-loaded a favorite
+      if (centerAutoLoaded) {
+        setCenter({ lat: LOURDES.lat, lon: LOURDES.lon, name: "Lourdes" });
+        setCenterAutoLoaded(false);
+      }
+      return;
+    }
+    if (centerAutoLoaded) return;
+    let cancel = false;
+    (async () => {
+      try {
+        const favs = await listFavorites();
+        if (cancel || !favs || favs.length === 0) return;
+        const first = favs[0];
+        setCenter({ lat: first.lat, lon: first.lon, name: first.name });
+        setCenterAutoLoaded(true);
+      } catch { /* ignore — keep Lourdes */ }
+    })();
+    return () => { cancel = true; };
+  }, [user, centerAutoLoaded]);
 
   // GPS lock — continuously track user position and recenter map + monitoring zone
   useEffect(() => {
@@ -435,13 +464,18 @@ export default function Dashboard() {
             className="font-heading text-4xl md:text-5xl font-black tracking-tighter text-slate-900 leading-[0.95]"
             data-testid="app-title"
           >
-            Suivi d'orage<br />
+            Suivi d&apos;orage<br />
             <span className="text-slate-400">en temps réel.</span>
           </h1>
           <p className="text-sm text-slate-500 mt-4 leading-relaxed max-w-xs">
-            Surveillance de l'activité électrique et convective dans un rayon
-            de <span className="font-mono text-slate-900">{radius}&nbsp;km</span> autour de Lourdes.
+            Surveillance de l&apos;activité électrique et convective dans un rayon
+            de <span className="font-mono text-slate-900">{radius}&nbsp;km</span> autour de <span className="font-mono text-slate-900">{center.name}</span>.
           </p>
+
+          {/* Credibility badge — TOA Blitzortung */}
+          <div className="mt-4">
+            <DataSourceBadge />
+          </div>
 
           {/* Radius slider */}
           <div className="mt-6" data-testid="radius-control">

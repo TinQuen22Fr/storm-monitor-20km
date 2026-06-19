@@ -709,3 +709,51 @@ déjà vérifié chez Resend via projet SQM).
 - P1 : geocoding "Saint-Brieuc France" → lat/lon via Open-Meteo /v1/search
 - P2 : trajectoires en zones polygonales (style Meteorage)
 - P2 : bandeau crédibilité "Données TOA Blitzortung"
+
+
+## Phase 31 (2026-06-19) — P1 + P2 : Favoris perso au login, geocoding, trajectoires zones, bandeau crédibilité
+
+### P1.a — Favoris auto-chargés à la connexion
+`Dashboard.jsx` : nouvel effet `useEffect` qui écoute `user` ; à la connexion, charge
+`listFavorites()` et utilise le **premier favori** comme center initial (au lieu de
+Lourdes par défaut). Au logout → retour à Lourdes. Flag `centerAutoLoaded` pour ne
+pas écraser les sélections manuelles ultérieures de l'utilisateur.
+
+### P1.b — Geocoding par nom (Open-Meteo)
+- `api.js` : helper `geocodeSearch(query)` qui appelle
+  `https://geocoding-api.open-meteo.com/v1/search` (gratuit, pas de clé)
+- `FavoritesList.jsx` refactor complet :
+  - Input avec icône Search
+  - Debounce 350 ms
+  - Liste de résultats (jusqu'à 8) avec ville, région, pays, coords, altitude
+  - Sélection → bloc vert "Lieu sélectionné" + champ "Nom à afficher" pré-rempli
+  - Sauvegarde via `createFavorite` avec lat/lon issus du geocoder
+  - Visuel actif (slate-50) sur le favori courant (compare avec activeCenter)
+
+### P2.a — Trajectoires en zones polygonales (style Meteorage)
+`TrajectoryLayer.jsx` refactor :
+- **Avant** : ligne rouge épaisse + 2 cercles
+- **Après** :
+  - Chaque waypoint = **storm cell** (Circle Leaflet) en gris-slate semi-transparent
+    (radius 6.5 km, grandit pour les points futurs)
+  - Ligne pointillée fine reliant les cells (rôle secondaire)
+  - **Polygone-flèche** au point projeté pour montrer la direction (helper
+    `makeArrowPolygon` qui construit un triangle perpendiculaire à la trajectoire)
+  - Couleur slate (#475569) en live, violet (#7C3AED) en replay/scrub
+  - Couleur opacité plus faible (0.12) pour les points futurs vs (0.22) pour les passés
+- Plus fidèle au visuel Meteorage que demandé : zones grises diffuses + flèche subtile
+
+### P2.b — Bandeau crédibilité TOA Blitzortung
+Nouveau composant `DataSourceBadge.jsx` :
+- Bouton **"DONNÉES VÉRIFIÉES"** avec icône bouclier dans la sidebar
+- Au clic → popover (radix-ui via shadcn/ui) avec 3 sections :
+  1. Texte explicatif TOA / Blitzortung / >500 stations / précision km
+  2. Footer "Méthodologie publique · Sources libres · Non commercial"
+  3. Mini-stats 3 colonnes : 500+, TOA, ~1 km
+- Lien externe vers blitzortung.org en cliquable
+- Phrase clé pour faire taire les sceptiques :
+  "données brutes TOA non agrégées, non filtrées commercialement, et libres"
+
+Affiché dans la sidebar du Dashboard, juste après la description du rayon.
+Mention dynamique du `center.name` (au lieu de "Lourdes" en dur) dans le sous-titre,
+cohérent avec le nouveau comportement multi-favoris.
