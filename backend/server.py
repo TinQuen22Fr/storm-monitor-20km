@@ -44,6 +44,8 @@ import webhooks as webhooks_mod
 import uploads as uploads_mod
 import vigilance as vigilance_mod
 import share_card as share_card_mod
+import email_service as email_mod
+import secrets
 import asyncio
 
 ROOT_DIR = Path(__file__).parent
@@ -74,6 +76,23 @@ class AuthResponse(BaseModel):
     user: dict
 
 
+class ResendVerifyInput(BaseModel):
+    email: EmailStr
+
+
+class VerifyTokenInput(BaseModel):
+    token: str
+
+
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").lower().strip()
+
+
+async def require_admin(user=Depends(get_current_user)):
+    if not ADMIN_EMAIL or user["email"].lower() != ADMIN_EMAIL:
+        raise HTTPException(status_code=403, detail="Accès administrateur requis")
+    return user
+
+
 class FavoriteCreate(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     lat: float
@@ -97,22 +116,45 @@ async def root():
 
 
 # ---------- Auth ----------
-@api_router.post("/auth/register", response_model=AuthResponse)
+@api_router.post("/auth/register")
 async def register(payload: RegisterInput):
     existing = await db.users.find_one({"email": payload.email.lower()}, {"_id": 0})
     if existing:
         raise HTTPException(status_code=400, detail="Un compte existe déjà avec cet email")
     user_id = str(uuid.uuid4())
+    verification_token = secrets.token_urlsafe(32)
+    name = payload.name or payload.email.split("@")[0]
+    is_admin = payload.email.lower() == ADMIN_EMAIL
     doc = {
         "id": user_id,
         "email": payload.email.lower(),
-        "name": payload.name or payload.email.split("@")[0],
+        "name": name,
         "password_hash": hash_password(payload.password),
         "created_at": datetime.now(timezone.utc).isoformat(),
+        # Admin account auto-verified, others must confirm by email
+        "email_verified": is_admin,
+        "verification_token": None if is_admin else verification_token,
+        "is_admin": is_admin,
+        "disabled": False,
     }
     await db.users.insert_one(doc)
-    token = create_token(user_id, payload.email.lower())
-    return AuthResponse(token=token, user={"id": user_id, "email": doc["email"], "name": doc["name"]})
+
+    if is_admin:
+        token = create_token(user_id, payload.email.lower())
+        return {
+            "ok": True,
+            "auto_verified": True,
+            "token": token,
+            "user": {"id": user_id, "email": doc["email"], "name": name, "is_admin": True},
+        }
+
+    sent = await email_mod.send_verification_email(payload.email.lower(), name, verification_token)
+    return {
+        "ok": True,
+        "auto_verified": False,
+        "email_sent": sent,
+        "message": "Compte créé. Vérifie ta boîte mail pour activer ton compte.",
+    }
 
 
 @api_router.post("/auth/login", response_model=AuthResponse)
@@ -120,16 +162,112 @@ async def login(payload: LoginInput):
     doc = await db.users.find_one({"email": payload.email.lower()}, {"_id": 0})
     if not doc or not verify_password(payload.password, doc["password_hash"]):
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
+    if doc.get("disabled"):
+        raise HTTPException(status_code=403, detail="Ce compte a été désactivé par l'administrateur.")
+    if not doc.get("email_verified", False):
+        raise HTTPException(
+            status_code=403,
+            detail="Compte non vérifié. Clique sur le lien envoyé par mail (ou demande un nouveau lien).",
+        )
     token = create_token(doc["id"], doc["email"])
-    return AuthResponse(token=token, user={"id": doc["id"], "email": doc["email"], "name": doc.get("name", "")})
+    return AuthResponse(
+        token=token,
+        user={
+            "id": doc["id"],
+            "email": doc["email"],
+            "name": doc.get("name", ""),
+            "is_admin": doc.get("is_admin", False),
+        },
+    )
+
+
+@api_router.post("/auth/verify-email")
+async def verify_email(payload: VerifyTokenInput):
+    doc = await db.users.find_one({"verification_token": payload.token}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=400, detail="Lien de vérification invalide ou déjà utilisé.")
+    if doc.get("email_verified"):
+        return {"ok": True, "already_verified": True}
+    await db.users.update_one(
+        {"id": doc["id"]},
+        {"$set": {"email_verified": True}, "$unset": {"verification_token": ""}},
+    )
+    token = create_token(doc["id"], doc["email"])
+    return {
+        "ok": True,
+        "token": token,
+        "user": {
+            "id": doc["id"],
+            "email": doc["email"],
+            "name": doc.get("name", ""),
+            "is_admin": doc.get("is_admin", False),
+        },
+    }
+
+
+@api_router.post("/auth/resend-verification")
+async def resend_verification(payload: ResendVerifyInput):
+    doc = await db.users.find_one({"email": payload.email.lower()}, {"_id": 0})
+    # Always return ok=True to avoid email enumeration
+    if doc and not doc.get("email_verified"):
+        new_token = secrets.token_urlsafe(32)
+        await db.users.update_one(
+            {"id": doc["id"]}, {"$set": {"verification_token": new_token}}
+        )
+        await email_mod.send_verification_email(doc["email"], doc.get("name", ""), new_token)
+    return {"ok": True, "message": "Si un compte non vérifié existe, un nouveau mail a été envoyé."}
 
 
 @api_router.get("/auth/me")
 async def me(user=Depends(get_current_user)):
-    doc = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
+    doc = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0, "verification_token": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
     return doc
+
+
+# ---------- Admin ----------
+@api_router.get("/admin/users")
+async def admin_list_users(_=Depends(require_admin)):
+    users = await db.users.find(
+        {}, {"_id": 0, "password_hash": 0, "verification_token": 0}
+    ).sort("created_at", -1).to_list(1000)
+    # Add favorites count for each user
+    for u in users:
+        u["favorites_count"] = await db.favorites.count_documents({"user_id": u["id"]})
+    return users
+
+
+@api_router.delete("/admin/users/{user_id}")
+async def admin_delete_user(user_id: str, admin=Depends(require_admin)):
+    if user_id == admin["id"]:
+        raise HTTPException(status_code=400, detail="Tu ne peux pas supprimer ton propre compte admin.")
+    res = await db.users.delete_one({"id": user_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    await db.favorites.delete_many({"user_id": user_id})
+    return {"ok": True}
+
+
+@api_router.post("/admin/users/{user_id}/verify")
+async def admin_force_verify(user_id: str, _=Depends(require_admin)):
+    res = await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"email_verified": True}, "$unset": {"verification_token": ""}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    return {"ok": True}
+
+
+@api_router.post("/admin/users/{user_id}/disable")
+async def admin_toggle_disable(user_id: str, _=Depends(require_admin)):
+    doc = await db.users.find_one({"id": user_id}, {"_id": 0, "disabled": 1})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    new_state = not doc.get("disabled", False)
+    await db.users.update_one({"id": user_id}, {"$set": {"disabled": new_state}})
+    return {"ok": True, "disabled": new_state}
 
 
 # ---------- Favorites ----------

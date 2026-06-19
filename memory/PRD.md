@@ -645,3 +645,67 @@ automatique.
 - App affiche partout : 12:42 (= UTC+2 = Europe/Paris CEST été)
 - Quand un utilisateur change de favori → la TZ se met à jour automatiquement
   à l'appel suivant de `/api/weather/current`
+
+
+## Phase 30 (2026-06-19) — Sécurité auth : email confirmation obligatoire + page admin
+
+### Problème en production (signalé après installation Kimsufi)
+N'importe qui peut créer un compte sans confirmation email → potentiel spam massif.
+Pas de page admin pour modérer.
+
+### Solution P0 — Backend
+- **Resend** intégré (`backend/email_service.py`) avec lecture lazy des env vars
+- `.env` : `RESEND_API_KEY`, `SENDER_EMAIL="Storm Monitoring <noreply@quentin-astro.fr>"`,
+  `PUBLIC_APP_URL="https://storm.quentin-astro.fr"`, `ADMIN_EMAIL="quentin.dumont.22@gmail.com"`
+- `requirements.txt` mis à jour via `pip freeze` (resend 2.32.2)
+- **Modèle User étendu** : `email_verified`, `verification_token`, `is_admin`, `disabled`
+- **Register** : génère token (secrets.token_urlsafe), envoie mail, retourne `auto_verified=false`
+  - Exception : l'email ADMIN_EMAIL est auto-vérifié et auto-loggué à l'inscription
+- **Login** : bloque si `email_verified=false` (HTTP 403) ou `disabled=true` (HTTP 403)
+- **Nouveaux endpoints** :
+  - `POST /api/auth/verify-email` body `{token}` → marque vérifié + renvoie JWT
+  - `POST /api/auth/resend-verification` body `{email}` → renvoie un nouveau lien
+    (réponse identique même si email inconnu, anti-énumération)
+  - `GET /api/admin/users` (admin only) → liste users + favorites_count
+  - `DELETE /api/admin/users/{id}` → supprime + cascade favoris
+  - `POST /api/admin/users/{id}/verify` → force vérifié
+  - `POST /api/admin/users/{id}/disable` → toggle disabled
+- **Migration DB** : 82 anciens comptes test marqués `email_verified=true` + compte
+  `quentin.dumont.22@gmail.com` reçoit `is_admin=true` + nettoyage 80 comptes `@test.com`
+
+### Solution P0 — Frontend
+- **`api.js`** : 4 nouvelles helpers admin + `authVerifyEmail`, `authResendVerification`,
+  `geocodeSearch` (Open-Meteo geocoding pour P1)
+- **`AuthDialog.jsx`** refactor complet :
+  - Mode "pending verify" après register : message clair "vérifie ton mail"
+  - Banner "Compte non vérifié" sur erreur login avec bouton "Renvoyer le mail"
+  - Badge ADMIN affiché à côté du nom si user.is_admin
+- **`VerifyEmailPage`** (`/verify-email`) : 3 états (loading/success/error), auto-login
+  via le JWT retourné par l'endpoint si succès
+- **`AdminPage`** (`/admin`) avec ProtectedRoute :
+  - 4 tuiles cliquables (Total / Vérifiés / Non vérifiés / Désactivés) qui filtrent
+  - Recherche par email/nom
+  - Table avec actions : Forcer vérification / Activer-désactiver / Supprimer
+  - Compte admin protégé (ne peut pas se supprimer lui-même)
+- **`NavTabs`** : onglet "Admin" affiché uniquement si user.is_admin (grid dynamique)
+
+### Mail HTML (Resend)
+Template inline-CSS noir+blanc fidèle au style de l'app, mentionnant
+"Build & Idea by Quentin Dumont", bouton sombre "Activer mon compte →".
+Sender : `Storm Monitoring <noreply@quentin-astro.fr>` (domaine quentin-astro.fr
+déjà vérifié chez Resend via projet SQM).
+
+### Tests E2E
+- POST /register → email_sent=true (id Resend retourné), compte créé non vérifié ✓
+- POST /login d'un non-vérifié → 403 avec message clair ✓
+- POST /verify-email avec token valide → JWT retourné, login OK derrière ✓
+- GET /admin/users sans auth → 401 ✓
+- GET /admin/users avec non-admin → 403 ✓
+- GET /admin/users avec admin → liste 3 users avec favorites_count ✓
+- /admin sans token → redirect vers / ✓
+
+### À faire ensuite (P1+P2 demandés, repoussés)
+- P1 : favoris perso chargés au login (au lieu de Lourdes par défaut)
+- P1 : geocoding "Saint-Brieuc France" → lat/lon via Open-Meteo /v1/search
+- P2 : trajectoires en zones polygonales (style Meteorage)
+- P2 : bandeau crédibilité "Données TOA Blitzortung"

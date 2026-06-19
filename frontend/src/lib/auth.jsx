@@ -38,9 +38,14 @@ export function AuthProvider({ children }) {
 
   const register = async (email, password, name) => {
     const data = await authRegister(email, password, name);
-    localStorage.setItem("storm_token", data.token);
-    setUser(data.user);
-    return data.user;
+    // New flow: only auto-logged-in if admin (auto_verified true with token)
+    if (data.token) {
+      localStorage.setItem("storm_token", data.token);
+      setUser(data.user);
+      return { user: data.user, autoVerified: true };
+    }
+    // Non-admin: must verify email first
+    return { user: null, autoVerified: false, message: data.message, emailSent: data.email_sent };
   };
 
   const logout = () => {

@@ -36,6 +36,25 @@ export const authLogin = (email, password) =>
 
 export const authMe = () => api.get("/auth/me").then((r) => r.data);
 
+export const authVerifyEmail = (token) =>
+  api.post("/auth/verify-email", { token }).then((r) => r.data);
+
+export const authResendVerification = (email) =>
+  api.post("/auth/resend-verification", { email }).then((r) => r.data);
+
+export const adminListUsers = () => api.get("/admin/users").then((r) => r.data);
+export const adminDeleteUser = (id) => api.delete(`/admin/users/${id}`).then((r) => r.data);
+export const adminForceVerify = (id) => api.post(`/admin/users/${id}/verify`).then((r) => r.data);
+export const adminToggleDisable = (id) => api.post(`/admin/users/${id}/disable`).then((r) => r.data);
+
 export const listFavorites = () => api.get("/favorites").then((r) => r.data);
 export const createFavorite = (fav) => api.post("/favorites", fav).then((r) => r.data);
 export const deleteFavorite = (id) => api.delete(`/favorites/${id}`).then((r) => r.data);
+
+/** Open-Meteo Geocoding API (gratuit, sans clé) */
+export const geocodeSearch = (query) =>
+  axios
+    .get("https://geocoding-api.open-meteo.com/v1/search", {
+      params: { name: query, count: 8, language: "fr", format: "json" },
+    })
+    .then((r) => r.data?.results || []);

@@ -1,10 +1,12 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import "leaflet/dist/leaflet.css";
 import "@/App.css";
+import AdminPage from "@/pages/AdminPage";
 import Dashboard from "@/pages/Dashboard";
 import DetectorPage from "@/pages/DetectorPage";
 import DetectorTunePage from "@/pages/DetectorTunePage";
 import History from "@/pages/History";
+import VerifyEmailPage from "@/pages/VerifyEmailPage";
 import VigilancePage from "@/pages/VigilancePage";
 import ReplayPage from "@/pages/ReplayPage";
 import { AuthProvider } from "@/lib/auth";
@@ -21,6 +23,8 @@ function App() {
           <Route path="/detector" element={<DetectorPage />} />
           <Route path="/detector/tune" element={<DetectorTunePage />} />
           <Route path="/historique" element={<History />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/admin" element={<AdminPage />} />
         </Routes>
       </BrowserRouter>
       <Toaster position="top-right" />
