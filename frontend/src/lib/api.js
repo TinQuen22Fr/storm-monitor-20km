@@ -31,6 +31,12 @@ export const getStrikes = (lat = LOURDES.lat, lon = LOURDES.lon, radius_km = LOU
 export const getSevere = (lat = LOURDES.lat, lon = LOURDES.lon, hours = 24) =>
   api.get("/weather/severe", { params: { lat, lon, hours } }).then((r) => r.data);
 
+export const getSevereGrid = (param = "t850", hour = 0) =>
+  api.get("/weather/severe/grid", { params: { param, hour } }).then((r) => r.data);
+
+export const getSevereProfile = (lat = LOURDES.lat, lon = LOURDES.lon, hour = 0) =>
+  api.get("/weather/severe/profile", { params: { lat, lon, hour } }).then((r) => r.data);
+
 export const authRegister = (email, password, name) =>
   api.post("/auth/register", { email, password, name }).then((r) => r.data);
 

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { LineChart, Line, Tooltip, ResponsiveContainer, XAxis, YAxis, CartesianGrid, ReferenceLine } from "recharts";
 import { Loader2, RefreshCw, TrendingUp, Wind } from "lucide-react";
 import NavTabs from "@/components/NavTabs";
+import FranceMapPanel from "@/components/FranceMapPanel";
+import VerticalProfileChart from "@/components/VerticalProfileChart";
 import { useAuth } from "@/lib/auth";
 import { getSevere, listFavorites, LOURDES } from "@/lib/api";
 import { setLocalTimezone, fmtLocalTime } from "@/lib/timeFormat";
@@ -190,6 +192,11 @@ export default function PrevisionsPage() {
           </div>
         )}
 
+        {/* France-wide interactive map (Windy-style) */}
+        <div className="mb-6">
+          <FranceMapPanel favorites={zones} />
+        </div>
+
         {!data && loading && (
           <div className="border border-slate-200 bg-white p-12 flex items-center justify-center">
             <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
@@ -336,6 +343,17 @@ export default function PrevisionsPage() {
                 </LineChart>
               </ResponsiveContainer>
             </ChartCard>
+          </div>
+        )}
+
+        {/* Vertical temperature profile for the active zone */}
+        {activeZone && (
+          <div className="mt-6">
+            <VerticalProfileChart
+              lat={activeZone.lat}
+              lon={activeZone.lon}
+              name={activeZone.name}
+            />
           </div>
         )}
 

@@ -410,6 +410,29 @@ async def weather_severe(
         return _degraded("severe", e)
 
 
+@api_router.get("/weather/severe/grid")
+async def weather_severe_grid(param: str = "t850", hour: int = 0):
+    """Single-parameter forecast on a 16×12 grid covering France métropolitaine.
+    Used by the front-end France map (Leaflet + canvas IDW overlay)."""
+    if param not in severe_mod.GRID_PARAM_MAP:
+        raise HTTPException(status_code=400, detail=f"unknown param '{param}'")
+    hour = max(0, min(int(hour), 47))
+    try:
+        return await severe_mod.fetch_severe_grid(param, hour)
+    except Exception as e:
+        return _degraded("severe-grid", e)
+
+
+@api_router.get("/weather/severe/profile")
+async def weather_severe_profile(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, hour: int = 0):
+    """Vertical temperature profile (surface + 1000/925/850/700/500/300 hPa)."""
+    hour = max(0, min(int(hour), 47))
+    try:
+        return await severe_mod.fetch_temp_profile(lat, lon, hour)
+    except Exception as e:
+        return _degraded("severe-profile", e)
+
+
 @api_router.get("/weather/vigilance")
 async def weather_vigilance():
     """Vigilance météo calculée localement (Open-Meteo) pour Lourdes + départements voisins."""
