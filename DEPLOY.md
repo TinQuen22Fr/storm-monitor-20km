@@ -28,20 +28,24 @@ Conséquence : **vos secrets, votre venv Python, votre build front, vos données
 
 ## Branches Git
 
-Le repo a deux branches d'usage distinct :
+Le repo a deux branches d'usage **strictement séparé**. **Le choix se fait au moment du `git clone` initial** : la branche que tu clones définit la version que tu auras, et tu y restes.
 
-| Branche | Cible | Contient |
+| Branche | Pour qui | Contient |
 |---|---|---|
-| `Testing` | Web app pure (sans matériel) | Carte, alertes, vigilance, replay. Pas de firmware, pas de route `/api/upload_storm`. Non déployée sur le Kimsufi. |
-| `Version_With_Detector` | **Kimsufi (prod)** | `Testing` + route `/api/upload_storm`, page `/detector`, autotune wizard, dossier `hardware/` (sketches Arduino AS3935). |
+| `Testing` | Quiconque veut la web app sans matériel | Carte, alertes, vigilance, replay. **Pas** de firmware, **pas** de route `/api/upload_storm`, **pas** de page `/detector`. Scripts d'install figés sur `Testing`. |
+| `Version_With_Detector` | Moi (Kimsufi prod) avec détecteur AS3935 | Tout `Testing` **PLUS** : route `/api/upload_storm`, page `/detector`, autotune wizard, dossier `hardware/` (sketches Arduino). Scripts d'install figés sur `Version_With_Detector`. |
 
-> Le firmware Arduino dans `hardware/` est temporairement cohabité dans le repo principal. À terme il sera extrait dans un repo dédié (`storm-monitor-firmware`). En attendant il est **uniquement présent sur `Version_With_Detector`** ; `Testing` reste générique.
+> Le firmware Arduino dans `hardware/` est temporairement cohabité dans le repo principal. À terme il sera extrait dans un repo dédié (`storm-monitor-firmware`). En attendant il est **uniquement présent sur `Version_With_Detector`**.
 
-**Sur le serveur de prod (Kimsufi), `install.sh` et `upgrade.sh` forcent toujours la branche `Version_With_Detector`** — c'est hardcodé dans les scripts, plus paramétrable. Si tu veux jouer avec `Testing` ponctuellement, il faudra le faire à la main en local ou hors du flux de déploiement automatisé.
+**Principe** : chaque branche est **autonome**.
+- Si tu clones `Testing` → tu installes la version sans détecteur, point. Ses scripts `install.sh`/`upgrade.sh` resteront sur `Testing`.
+- Si tu clones `Version_With_Detector` → tu installes la version avec détecteur, point. Ses scripts resteront sur `Version_With_Detector`.
+
+Pas de bascule à chaud entre les deux via une variable d'env : c'est la branche que tu as clonée qui décide. Si un jour tu veux changer de version, tu repars d'un clone propre sur l'autre branche.
 
 ```bash
-# Vérifier la branche actuellement déployée
-git -C /opt/storm-monitor rev-parse --abbrev-ref HEAD   # → Version_With_Detector
+# Vérifier sur quelle branche tu es actuellement
+git -C /opt/storm-monitor rev-parse --abbrev-ref HEAD
 ```
 
 ---
