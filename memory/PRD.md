@@ -30,7 +30,7 @@ React CRA, FastAPI, MongoDB, Leaflet, Leaflet WMS (EUMETSAT Meteosat MSG), Canva
 - Synergie hail = Blitzortung surges + Open-Meteo wind shear
 - Couche nuages EUMETSAT Meteosat MSG géostationnaire (15 min)
 - Scripts `install.sh` (full reset) + `upgrade.sh` (git pull + rsync rapide)
-- **[2026-02-27] Fix CSS calque nuages** : `blur(18px) contrast(1.05) brightness(0.94) saturate(1.0) scale(1.04)` → blocs "Minecraft" éliminés (validé testing agent desktop + mobile, 0 erreur console).
+- **[2026-02-27] Fix CSS calque nuages (itération finale)** : `filter: blur(30px)` strict, sans aucun autre filtre (pas de contrast/brightness/saturate/transform). Le flou massif proportionnel à la taille réelle des blocs source Meteosat (~60-100px à l'écran) force enfin un vrai dégradé continu. Bug Android Chrome `µ` → `M` après uppercase corrigé en isolant `µm` dans un `<span class="normal-case">`. Validé testing agent (iteration_23.json) desktop 1920x800 + mobile 412x915, 0 erreur console.
 
 ## 🟡 Backlog
 - **P2** — Migration React CRA → Vite (élimine warnings `react-scripts`, ~2-4h)
