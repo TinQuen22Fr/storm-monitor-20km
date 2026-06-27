@@ -304,7 +304,7 @@ export function WeatherLayersPanel({
       {(showClouds || showRain || showWind) && (
         <div className="border-t border-slate-200 px-4 py-2 font-mono text-[9px] uppercase tracking-[0.2em] text-slate-400">
           {showClouds
-            ? "Source · EUMETSAT · Meteosat MSG IR 10.8 µm · MAJ 15 min"
+            ? <>Source · EUMETSAT · Meteosat MSG IR <span className="normal-case">10.8 µm</span> · MAJ 15 min</>
             : showRain
             ? "Source · RainViewer radar"
             : "Source · Open-Meteo vent"}
