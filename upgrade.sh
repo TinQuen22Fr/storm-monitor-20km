@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 #
 # Storm Monitor — UPGRADE script (mise à jour rapide, sans réinstall système)
-# Usage:  sudo bash upgrade.sh
-#         sudo BRANCH=Version_With_Detector bash upgrade.sh
+# Usage:  bash upgrade.sh
+#
+# Note Kimsufi/OVH : la machine est déjà root par défaut — pas de `sudo` requis.
 #
 # Différence avec install.sh :
 #   - install.sh = installation complète (nginx, mongo, node, systemd, certbot…)
 #   - upgrade.sh = juste le code et les deps applicatives (rapide, ~30 s à 2 min)
 #
 # Ce que fait upgrade.sh :
-#   1. git pull dans /opt/storm-monitor
+#   1. git pull dans /opt/storm-monitor (branche Version_With_Detector figée)
 #   2. Détecte ce qui a changé (requirements.txt, package.json, frontend, backend)
 #   3. Backup auto du .env
 #   4. rsync /opt → /var/www (en préservant runtime : .env, venv, build, cache, json)
@@ -28,7 +29,8 @@
 set -euo pipefail
 
 REPO_URL="https://github.com/TinQuen22Fr/storm-monitor-20km.git"
-BRANCH="${BRANCH:-Version_With_Detector}"
+# Branche cible FIGÉE — Version_With_Detector est la seule branche prod du Kimsufi.
+BRANCH="Version_With_Detector"
 WORK_DIR="/opt/storm-monitor"
 APP_DIR="/var/www/storm-monitor"
 RUN_USER="root"
@@ -37,19 +39,19 @@ RUN_USER="root"
 # 0. Pre-flight
 # ---------------------------------------------------------------------------
 if [[ $EUID -ne 0 ]]; then
-  echo "ERROR: ce script doit être lancé en root (sudo bash upgrade.sh)" >&2
+  echo "ERROR: ce script doit être lancé en root (bash upgrade.sh)" >&2
   exit 1
 fi
 
 if [[ ! -d "$WORK_DIR/.git" ]]; then
   echo "ERROR: $WORK_DIR n'est pas un clone git." >&2
-  echo "       Première installation requise : lance d'abord 'sudo bash install.sh'." >&2
+  echo "       Première installation requise : lance d'abord 'bash install.sh'." >&2
   exit 1
 fi
 
 if [[ ! -d "$APP_DIR/backend" || ! -d "$APP_DIR/frontend" ]]; then
   echo "ERROR: $APP_DIR ne contient pas backend/ et frontend/." >&2
-  echo "       Première installation requise : lance d'abord 'sudo bash install.sh'." >&2
+  echo "       Première installation requise : lance d'abord 'bash install.sh'." >&2
   exit 1
 fi
 
@@ -168,7 +170,7 @@ fi
 # ---------------------------------------------------------------------------
 echo ""
 echo "==> Étape 4 — Sync $WORK_DIR → $APP_DIR..."
-command -v rsync >/dev/null || { echo "ERROR: rsync absent. Lance 'sudo apt install rsync'." >&2; exit 1; }
+command -v rsync >/dev/null || { echo "ERROR: rsync absent. Lance 'apt install rsync'." >&2; exit 1; }
 
 rsync -a --delete \
   --exclude='.git' \
@@ -306,6 +308,6 @@ echo "  Status  : systemctl status storm-monitor"
 echo ""
 echo "  Pour revenir à un .env précédent :"
 echo "    ls -lt $APP_DIR/backend/.env.backups/"
-echo "    sudo cp $APP_DIR/backend/.env.backups/.env.YYYYMMDD... $APP_DIR/backend/.env"
-echo "    sudo systemctl restart storm-monitor"
+echo "    cp $APP_DIR/backend/.env.backups/.env.YYYYMMDD... $APP_DIR/backend/.env"
+echo "    systemctl restart storm-monitor"
 echo ""

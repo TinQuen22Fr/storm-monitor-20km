@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 #
 # Storm Monitor — installation script for Kimsufi (Ubuntu/Debian)
-# Usage:  sudo bash install.sh
+# Usage:  bash install.sh
+#
+# Note Kimsufi/OVH : la machine est déjà root par défaut — pas de `sudo` requis.
 #
 # Architecture deux étages (depuis 2026-06-19) :
 #   /opt/storm-monitor       (WORK_DIR)  — Clone Git, source of truth pour pull
@@ -19,23 +21,16 @@
 #   7. Écrit le vhost Nginx + le service systemd
 #   8. Restart everything
 #
-# Pour pousser sur la branche Version_With_Detector :
-#   cd /opt/storm-monitor && git pull origin Version_With_Detector
-#   sudo bash install.sh
-#
-# Pour basculer entre branches :
-#   sudo BRANCH=Testing bash install.sh                # sans détecteur
-#   sudo BRANCH=Version_With_Detector bash install.sh  # avec détecteur (défaut)
+# Branche cible (FIGÉE) : Version_With_Detector
+#   C'est la seule branche supportée en production sur le Kimsufi.
 #
 # SSL/HTTPS (Certbot) est volontairement NON installé — voir DEPLOY.md.
 
 set -euo pipefail
 
 REPO_URL="https://github.com/TinQuen22Fr/storm-monitor-20km.git"
-# Branche cible — surchargeable via la variable d'env BRANCH au lancement :
-#   sudo BRANCH=Testing bash install.sh                # version sans détecteur
-#   sudo BRANCH=Version_With_Detector bash install.sh  # version avec détecteur (défaut)
-BRANCH="${BRANCH:-Version_With_Detector}"
+# Branche cible figée — Version_With_Detector est LA branche prod du Kimsufi.
+BRANCH="Version_With_Detector"
 
 # Architecture deux étages :
 #   WORK_DIR  = clone Git, où l'utilisateur fait ses git pull (source of truth)
@@ -53,7 +48,7 @@ RUN_USER="root"
 # 0. Pre-flight
 # ---------------------------------------------------------------------------
 if [[ $EUID -ne 0 ]]; then
-  echo "ERROR: this script must be run as root (sudo bash install.sh)" >&2
+  echo "ERROR: this script must be run as root (bash install.sh)" >&2
   exit 1
 fi
 
@@ -617,7 +612,7 @@ server {
     listen 443 ssl;
     listen [::]:443 ssl;
     # HTTP/3 (QUIC) — nginx 1.25+. Make sure UDP 443 is open in your firewall:
-    #   sudo ufw allow 443/udp
+    #   ufw allow 443/udp
     listen 443 quic reuseport;
     listen [::]:443 quic reuseport;
     http2 on;
@@ -709,13 +704,13 @@ echo "                    http://storm-monitor.quentin-astro.fr (HTTP fallback)"
 echo "    Test API      : curl http://127.0.0.1:${BACKEND_PORT}/api/weather/current?lat=43.0951\&lon=-0.0434"
 echo ""
 echo "    NEXT — enable HTTPS (required, frontend is built for HTTPS):"
-echo "        sudo apt install -y certbot python3-certbot-nginx"
-echo "        sudo certbot --nginx -d storm-monitor.quentin-astro.fr"
+echo "        apt install -y certbot python3-certbot-nginx"
+echo "        certbot --nginx -d storm-monitor.quentin-astro.fr"
 echo ""
 echo "    NEXT — enable HTTP/3 (QUIC):"
-echo "        sudo ufw allow 443/udp       # if you use ufw"
+echo "        ufw allow 443/udp       # if you use ufw"
 echo "        # or for iptables:"
-echo "        # sudo iptables -I INPUT -p udp --dport 443 -j ACCEPT"
+echo "        # iptables -I INPUT -p udp --dport 443 -j ACCEPT"
 echo "        # Verify with the snap-installed curl that supports HTTP/3:"
 echo "        curl3 --http3-only -sI https://storm-monitor.quentin-astro.fr/ | head -3"
 echo "        # (open a NEW shell first if you also want plain 'curl' to use HTTP/3 via the alias)"
@@ -729,7 +724,7 @@ echo "        # test (auth token required):"
 echo "        curl -X POST https://storm-monitor.quentin-astro.fr/api/webhooks/test -H \"Authorization: Bearer \$TOKEN\""
 echo ""
 echo "    To deploy a new version (update mode — clone is preserved):"
-echo "        sudo bash install.sh           # auto-detect existing install → git pull"
+echo "        bash install.sh                # auto-detect existing install → git pull"
 echo "        # OR manually:"
 echo "        cd /var/www/storm-monitor && git pull"
 echo "        cd frontend && yarn install --frozen-lockfile && yarn build"

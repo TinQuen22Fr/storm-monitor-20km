@@ -1,0 +1,64 @@
+{
+  "summary": "Static audit + smoke check of /app/install.sh, /app/upgrade.sh and /app/DEPLOY.md per scoped cleanup request (purge of 'Testing' branch references and 'sudo ' command prefix). All 5 acceptance criteria PASS.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "static_audit_results": {
+    "install_sh": {
+      "line_33": "BRANCH=\"Version_With_Detector\"  [HARDCODED, no ${BRANCH:-...} fallback]",
+      "testing_occurrences": 0,
+      "sudo_space_occurrences": 0,
+      "bash_n_exit_code": 0,
+      "preflight_error_msg": "ERROR: this script must be run as root (bash install.sh)  [no sudo wording]"
+    },
+    "upgrade_sh": {
+      "line_33": "BRANCH=\"Version_With_Detector\"  [HARDCODED, no ${BRANCH:-...} fallback]",
+      "testing_occurrences": 0,
+      "sudo_space_occurrences": 0,
+      "bash_n_exit_code": 0,
+      "preflight_error_msg": "ERROR: ce script doit être lancé en root (bash upgrade.sh)  [no sudo wording]"
+    },
+    "DEPLOY_md": {
+      "testing_occurrences": 0,
+      "sudo_space_occurrences": 0,
+      "install_upgrade_commands_no_sudo_prefix": true
+    },
+    "git_status_short": "Only the 3 in-scope files are modified (DEPLOY.md, install.sh, upgrade.sh). Also seen: backend/.stale_cache.pkl (runtime cache, NOT part of edit) and untracked yarn.lock files (pre-existing). No other source files accidentally touched.",
+    "smoke_test_note": "Sandbox runs as uid=0(root), so EUID pre-flight check does NOT trigger (script proceeds past line 50/41). Verified error message text directly via sed: both messages are correctly worded with NO 'sudo' string. The reviewer's hypothesis 'we are not root in this sandbox' was incorrect — sandbox IS root."
+  },
+  "acceptance_criteria": {
+    "1_install_sh_branch_hardcoded": "PASS",
+    "1_install_sh_zero_testing": "PASS",
+    "1_install_sh_zero_sudo_space": "PASS",
+    "1_install_sh_bash_n_ok": "PASS",
+    "2_upgrade_sh_branch_hardcoded": "PASS",
+    "2_upgrade_sh_zero_testing": "PASS",
+    "2_upgrade_sh_zero_sudo_space": "PASS",
+    "2_upgrade_sh_bash_n_ok": "PASS",
+    "3_deploy_md_zero_testing": "PASS",
+    "3_deploy_md_zero_sudo_space": "PASS",
+    "4_git_status_scope_limited": "PASS",
+    "5_install_sh_root_error_msg_no_sudo": "PASS (verified by code inspection — sandbox is root so runtime branch not reached)",
+    "5_upgrade_sh_root_error_msg_no_sudo": "PASS (verified by code inspection — sandbox is root so runtime branch not reached)"
+  },
+  "action_items": [],
+  "critical_code_review_comments": [
+    "All checks pass — clean scoped edit. BRANCH constant is now a plain assignment on line 33 of both scripts (not parameterised), making the 'Testing' branch impossible to re-introduce via env override.",
+    "Minor observation: backend/.stale_cache.pkl appears modified in git status (runtime cache, ignored by rsync). This is pre-existing noise, not from this edit. Consider adding it to .gitignore in a future cleanup."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (no backend tests requested)", "frontend": "N/A (frontend skipped per request)"},
+  "test_credentials": "N/A",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "This iteration was a pure static audit (bash syntax + grep counts + git status) — no backend/frontend testing performed per main agent's explicit scope note. All 13 acceptance criteria passed.",
+  "rca of the issue": "N/A — no issues found."
+}
