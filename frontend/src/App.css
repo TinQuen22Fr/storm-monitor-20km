@@ -1,31 +1,29 @@
 /* Leaflet CSS is imported via JS */
 
 /* ---------------------------------------------------------------------------
- * Meteosat MSG smooth rendering
+ * Meteosat MSG smooth rendering — minimal CSS
  *
- * The IR 10.8 µm channel from EUMETSAT has a native resolution of ~3 km/pixel
- * over Europe. We use a small blur combined with a strong contrast bump:
- * the contrast re-sharpens cloud edges into organic curves while the blur
- * dissolves the source-pixel square grid. This preserves the scientific
- * "radar look": dense cores stay bright, peripheries stay darker.
- *
- *  - `blur(5px)`        → just enough to soften the pixel grid
- *  - `contrast(1.4)`    → restores density gradients and crisp cloud edges
- *  - `brightness(0.95)` → keeps the basemap readable
- *  - `scale(1.01)`      → forces bilinear sampling and hides tile seams
+ * The IR 10.8 µm channel has ~3 km/pixel native resolution. To avoid the
+ * "Minecraft" grid effect at city zoom levels we rely on two things only:
+ *   1. `image-rendering: auto` — lets the browser use hardware bilinear
+ *      smoothing instead of Leaflet's default `pixelated` rendering.
+ *   2. `blur(3px)` — a very light blur that simply ties adjacent tiles
+ *      together without diluting the data.
+ * NO contrast() filter: it visually re-hardens the source pixel edges that
+ * the blur just softened, which is exactly what we want to avoid.
+ * Opacity is set on the WMSTileLayer prop (0.7) so the basemap stays
+ * readable through the cloud mass.
  * --------------------------------------------------------------------------- */
 .meteosat-smooth-tile {
   image-rendering: auto !important;
   image-rendering: -webkit-optimize-contrast !important;
   -ms-interpolation-mode: bicubic;
-  filter: blur(5px) contrast(1.4) brightness(0.95) saturate(1.0);
+  filter: blur(3px);
+  opacity: 0.7;
   transition: filter 0.3s ease;
-  transform: scale(1.01);
-  transform-origin: center center;
 }
 
-/* During zoom animations, slightly bump the blur to hide intermediate
- * aliasing without losing too much definition. */
+/* During zoom animations keep the same light blur — no need to bump it. */
 .leaflet-zoom-anim .meteosat-smooth-tile {
-  filter: blur(7px) contrast(1.4) brightness(0.95) saturate(1.0);
+  filter: blur(3px);
 }
