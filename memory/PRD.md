@@ -30,7 +30,7 @@ React CRA, FastAPI, MongoDB, Leaflet, Leaflet WMS (EUMETSAT Meteosat MSG), Canva
 - Synergie hail = Blitzortung surges + Open-Meteo wind shear
 - Couche nuages EUMETSAT Meteosat MSG géostationnaire (15 min)
 - Scripts `install.sh` (full reset) + `upgrade.sh` (git pull + rsync rapide)
-- **[2026-02-27] Fix CSS calque nuages (itération finale)** : `filter: blur(30px)` strict, sans aucun autre filtre (pas de contrast/brightness/saturate/transform). Le flou massif proportionnel à la taille réelle des blocs source Meteosat (~60-100px à l'écran) force enfin un vrai dégradé continu. Bug Android Chrome `µ` → `M` après uppercase corrigé en isolant `µm` dans un `<span class="normal-case">`. Validé testing agent (iteration_23.json) desktop 1920x800 + mobile 412x915, 0 erreur console.
+- **[2026-02-27] Rollback calque nuages → NASA MODIS Terra** : Après plusieurs essais de filtres CSS sur Meteosat MSG (`blur` 3/5/18/30 px ± contrast), abandon du calque géostationnaire à cause de sa résolution native trop faible (~3 km/px) qui crée une grille de gros blocs inexploitables à l'échelle 20 km. Restauration du calque NASA GIBS MODIS Terra (polar orbit, ~250 m/px) : haute résolution spatiale, contours nuageux organiques, pas de pixelation. App.css entièrement nettoyé de tous les filtres `.meteosat-smooth-tile`. Cadence : ~1 pass/jour, timeline 5 jours navigables.
 
 ## 🟡 Backlog
 - **P2** — Migration React CRA → Vite (élimine warnings `react-scripts`, ~2-4h)
