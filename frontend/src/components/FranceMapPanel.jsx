@@ -311,7 +311,10 @@ export default function FranceMapPanel({ favorites = [] }) {
         setGrid(d);
       })
       .catch((e) => {
-        if (!cancel) setError("Erreur de chargement");
+        if (!cancel) {
+          const s = e?.response?.status;
+          setError(s === 404 ? "Endpoint absent (404)" : "Erreur de chargement");
+        }
       })
       .finally(() => !cancel && setLoading(false));
     return () => { cancel = true; };

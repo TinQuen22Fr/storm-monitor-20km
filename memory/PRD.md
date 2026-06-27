@@ -30,6 +30,9 @@ React CRA, FastAPI, MongoDB, Leaflet, Leaflet WMS (EUMETSAT Meteosat MSG), Canva
 - Synergie hail = Blitzortung surges + Open-Meteo wind shear
 - Couche nuages EUMETSAT Meteosat MSG géostationnaire (15 min)
 - Scripts `install.sh` (full reset) + `upgrade.sh` (git pull + rsync rapide)
+- **[2026-02-28] Fix UX message d'erreur Prévisions** : amélioration de `PrevisionsPage.jsx`, `FranceMapPanel.jsx` et `VerticalProfileChart.jsx` pour distinguer un 404 (endpoint absent côté backend) d'une autre erreur. En cas de 404 sur `/api/weather/severe`, affichage de la procédure shell de remediation directement à l'écran. Validé par testing agent (iteration_24.json, 100%) — preview nominal OK + 404 simulé affiche le bon message.
+  - **Diagnostic VPS Kimsufi** : le backend tournait sur la branche github `Testing` au lieu de `Version_With_Detector` → routes severe/grid/profile, reports/bulletin, share/snapshot etc absentes. **Fix utilisateur** : `sudo BRANCH=Version_With_Detector bash /opt/storm-monitor/upgrade.sh`.
+
 - **[2026-02-27] Rollback calque nuages → NASA MODIS Terra** : Après plusieurs essais de filtres CSS sur Meteosat MSG (`blur` 3/5/18/30 px ± contrast), abandon du calque géostationnaire à cause de sa résolution native trop faible (~3 km/px) qui crée une grille de gros blocs inexploitables à l'échelle 20 km. Restauration du calque NASA GIBS MODIS Terra (polar orbit, ~250 m/px) : haute résolution spatiale, contours nuageux organiques, pas de pixelation. App.css entièrement nettoyé de tous les filtres `.meteosat-smooth-tile`. Cadence : ~1 pass/jour, timeline 5 jours navigables.
 
 ## 🟡 Backlog

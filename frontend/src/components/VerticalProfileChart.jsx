@@ -19,7 +19,12 @@ export default function VerticalProfileChart({ lat, lon, name = "" }) {
     setError(null);
     getSevereProfile(lat, lon, 0)
       .then((d) => { if (!cancel) setData(d); })
-      .catch(() => { if (!cancel) setError("Erreur de chargement"); })
+      .catch((e) => {
+        if (!cancel) {
+          const s = e?.response?.status;
+          setError(s === 404 ? "Endpoint absent (404)" : "Erreur de chargement");
+        }
+      })
       .finally(() => { if (!cancel) setLoading(false); });
     return () => { cancel = true; };
   }, [lat, lon]);
