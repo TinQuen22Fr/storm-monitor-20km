@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -400,14 +401,81 @@ async def weather_severe(
     lat: float = LOURDES_LAT,
     lon: float = LOURDES_LON,
     hours: int = 24,
+    radius_km: float = RADIUS_KM,
 ):
-    """24h (default) severe-weather forecast incl. hail score and advanced
-    atmospheric parameters (T 850hPa, jet 300hPa, 0-6km shear, vertical velocity 700hPa)."""
+    """48 h max severe-weather forecast incl. hail score + advanced atmospheric
+    parameters. When `radius_km` is supplied, also computes the realtime hail
+    score (Blitzortung lightning surge booster) and a 1-hour history."""
     hours = max(1, min(int(hours), 48))
     try:
-        return await severe_mod.fetch_severe(lat, lon, hours)
+        # 1. Theoretical forecast from Open-Meteo (cached)
+        forecast = await severe_mod.fetch_severe(lat, lon, hours)
     except Exception as e:
         return _degraded("severe", e)
+
+    # 2. Realtime overlay using Blitzortung lightning store
+    realtime: Dict[str, Any] = {
+        "lightning_available": False,
+        "boost_pts": 0.0,
+        "boost_raw_pts": 0.0,
+        "density": None,
+        "theoretical_h0": None,
+        "realtime_h0": None,
+        "is_surge": False,
+    }
+    try:
+        hourly = forecast.get("hourly") or []
+        if hourly:
+            theoretical_h0 = float(hourly[0].get("hail_score") or 0.0)
+            realtime["theoretical_h0"] = theoretical_h0
+
+            # Adaptive radius for strike collection (cells move fast)
+            eff_radius = severe_mod.effective_radius_km(radius_km)
+            now_ts = time.time()
+            since_ts = now_ts - severe_mod.WINDOW_PREV_S
+            strikes = await lightning_mod.store.recent(lat, lon, eff_radius, since_ts=since_ts)
+
+            density = severe_mod.compute_lightning_density(strikes, now_ts)
+            boost_eff, boost_raw = severe_mod.compute_boost(density, theoretical_h0)
+            rt_score = min(100.0, round(theoretical_h0 + boost_eff, 1))
+
+            realtime.update({
+                "lightning_available": True,
+                "boost_pts": boost_eff,
+                "boost_raw_pts": boost_raw,
+                "density": density,
+                "realtime_h0": rt_score,
+                "is_surge": density.get("is_surge", False),
+                "effective_radius_km": eff_radius,
+            })
+
+            # Persist the sample in the 1-hour history (best-effort)
+            severe_mod.record_score_sample(
+                lat, lon, radius_km,
+                theoretical_h0, rt_score,
+                density.get("is_surge", False),
+                True,
+                density.get("density_now", 0.0),
+            )
+    except Exception as e:
+        logger.warning("severe realtime overlay failed: %s", e)
+        # Still record a sample with lightning_available=False so the UI can show
+        # the badge "Données électriques indisponibles".
+        try:
+            hourly = forecast.get("hourly") or []
+            if hourly:
+                theoretical_h0 = float(hourly[0].get("hail_score") or 0.0)
+                severe_mod.record_score_sample(
+                    lat, lon, radius_km,
+                    theoretical_h0, theoretical_h0,
+                    False, False, 0.0,
+                )
+        except Exception:
+            pass
+
+    forecast["realtime"] = realtime
+    forecast["history_1h"] = severe_mod.get_score_history(lat, lon, radius_km)
+    return forecast
 
 
 @api_router.get("/weather/severe/grid")

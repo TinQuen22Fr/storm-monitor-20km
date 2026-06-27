@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Circle, MapContainer, Marker, TileLayer } from "react-leaflet";
 import L from "leaflet";
-import { LineChart, Line, Tooltip, ResponsiveContainer, XAxis, YAxis, CartesianGrid, ReferenceLine } from "recharts";
-import { CloudHail, Loader2, MapPin, RefreshCw } from "lucide-react";
+import { LineChart, Line, Tooltip, ResponsiveContainer, XAxis, YAxis, CartesianGrid, ReferenceLine, AreaChart, Area } from "recharts";
+import { AlertTriangle, CloudHail, Loader2, MapPin, RefreshCw, Zap, ZapOff } from "lucide-react";
 import NavTabs from "@/components/NavTabs";
 import { useAuth } from "@/lib/auth";
 import { getSevere, listFavorites, LOURDES } from "@/lib/api";
@@ -102,21 +102,21 @@ export default function GrelePage() {
     }
   }, [zones, activeId]);
 
-  // Fetch severe for every zone (in parallel, refresh every 5 min)
+  // Fetch severe for every zone (in parallel). Refresh every 30s so the
+  // realtime overlay and the 1h history populate at a useful pace.
   const loadAll = useCallback(async () => {
     if (zones.length === 0) return;
     setLoading(true);
     setError(null);
     try {
       const results = await Promise.allSettled(
-        zones.map((z) => getSevere(z.lat, z.lon, 24).then((d) => ({ id: z.id, data: d })))
+        zones.map((z) => getSevere(z.lat, z.lon, 24, 20).then((d) => ({ id: z.id, data: d })))
       );
       const next = {};
       for (const r of results) {
         if (r.status === "fulfilled") next[r.value.id] = r.value.data;
       }
       setSevereByZone(next);
-      // sync local TZ from first zone with data
       const first = Object.values(next)[0];
       if (first?.timezone) setLocalTimezone(first.timezone);
     } catch (e) {
@@ -128,7 +128,7 @@ export default function GrelePage() {
 
   useEffect(() => {
     loadAll();
-    const t = setInterval(loadAll, 5 * 60_000);
+    const t = setInterval(loadAll, 30_000);
     return () => clearInterval(t);
   }, [loadAll]);
 
@@ -242,14 +242,19 @@ export default function GrelePage() {
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-5 border border-slate-200 bg-white p-5" data-testid="grele-zones-list">
             <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400 mb-3">
-              Zones surveillées — pic 24 h
+              Zones surveillées — temps réel · pic 24 h
             </div>
             <ul className="divide-y divide-slate-100">
               {zones.map((z) => {
                 const d = severeByZone[z.id];
-                const score = d?.max_hail_score ?? null;
-                const level = d?.max_hail_level || "—";
-                const color = score != null ? HAIL_COLORS[level] || HAIL_COLORS.nul : "#CBD5E1";
+                const theoretical_max = d?.max_hail_score ?? null;
+                const level_max = d?.max_hail_level || "—";
+                const rt = d?.realtime || {};
+                const rt_score = rt.realtime_h0;
+                const theo_h0 = rt.theoretical_h0;
+                const surge = !!rt.is_surge;
+                const lightning_off = rt.lightning_available === false;
+                const color_max = theoretical_max != null ? HAIL_COLORS[level_max] || HAIL_COLORS.nul : "#CBD5E1";
                 const isActive = z.id === activeId;
                 return (
                   <li key={z.id}>
@@ -260,30 +265,58 @@ export default function GrelePage() {
                       }`}
                       data-testid={`grele-zone-${z.id}`}
                     >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="w-3 h-3 shrink-0" style={{ background: color }} />
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <span className="w-3 h-3 shrink-0" style={{ background: color_max }} />
                         <div className="min-w-0">
-                          <div className="text-sm font-medium text-slate-900 truncate">
-                            {z.name}
+                          <div className="text-sm font-medium text-slate-900 truncate flex items-center gap-2">
+                            <span>{z.name}</span>
+                            {surge && (
+                              <span
+                                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-red-600 text-white font-mono text-[9px] uppercase tracking-[0.1em]"
+                                title="Saut brutal de l'activité électrique détecté"
+                                data-testid={`grele-surge-${z.id}`}
+                              >
+                                <Zap className="w-2.5 h-2.5" strokeWidth={3} /> surge
+                              </span>
+                            )}
+                            {lightning_off && (
+                              <span
+                                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 font-mono text-[9px] uppercase tracking-[0.1em]"
+                                title="Données électriques Blitzortung temporairement indisponibles"
+                                data-testid={`grele-lightning-off-${z.id}`}
+                              >
+                                <ZapOff className="w-2.5 h-2.5" /> n/a
+                              </span>
+                            )}
                             {isActive && (
-                              <span className="ml-2 font-mono text-[9px] uppercase tracking-[0.15em] text-slate-500">
+                              <span className="font-mono text-[9px] uppercase tracking-[0.15em] text-slate-500">
                                 · active
                               </span>
                             )}
                           </div>
                           <div className="font-mono text-[10px] text-slate-400">
                             {d?.max_hail_time
-                              ? `pic à ${fmtLocalTime(d.max_hail_time)}`
+                              ? `pic à ${fmtLocalTime(d.max_hail_time)} · ${level_max}`
                               : loading ? "…" : "pas de pic détecté"}
                           </div>
                         </div>
                       </div>
-                      <div className="text-right shrink-0 ml-3">
-                        <div className="font-mono text-lg font-medium text-slate-900 tabular-nums leading-none">
-                          {score != null ? score.toFixed(0) : "—"}
+                      <div className="text-right shrink-0 ml-3 grid grid-cols-2 gap-x-3 gap-y-0">
+                        <div className="text-right">
+                          <div className={`font-mono text-lg font-medium tabular-nums leading-none ${surge ? "text-red-600" : "text-slate-900"}`}>
+                            {rt_score != null ? rt_score.toFixed(0) : (theo_h0 != null ? theo_h0.toFixed(0) : "—")}
+                          </div>
+                          <div className="font-mono text-[8px] uppercase tracking-[0.15em] text-slate-500 mt-0.5">
+                            temps réel
+                          </div>
                         </div>
-                        <div className="font-mono text-[9px] uppercase tracking-[0.15em] text-slate-500 mt-1">
-                          {level}
+                        <div className="text-right">
+                          <div className="font-mono text-lg font-medium text-slate-400 tabular-nums leading-none">
+                            {theoretical_max != null ? theoretical_max.toFixed(0) : "—"}
+                          </div>
+                          <div className="font-mono text-[8px] uppercase tracking-[0.15em] text-slate-400 mt-0.5">
+                            pic 24h
+                          </div>
                         </div>
                       </div>
                     </button>
@@ -291,6 +324,21 @@ export default function GrelePage() {
                 );
               })}
             </ul>
+
+            {/* Legend for the two scores */}
+            <div className="mt-4 pt-4 border-t border-slate-100 text-[10px] font-mono text-slate-500 leading-relaxed">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Zap className="w-3 h-3 text-red-600" />
+                <span>
+                  <strong>Temps réel</strong> = théorique H+0 + boost activité électrique
+                  (rayon adaptatif <span className="text-slate-700">≥40 km</span>)
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <AlertTriangle className="w-3 h-3 text-slate-400" />
+                <span><strong>Pic 24h</strong> = score théorique max sur la prévision</span>
+              </div>
+            </div>
           </div>
 
           {/* Time-series for active zone */}
@@ -356,6 +404,68 @@ export default function GrelePage() {
                       <div className="text-slate-900 tabular-nums mt-0.5">{c.v}</div>
                     </div>
                   ));
+                })()}
+              </div>
+            )}
+
+            {/* 1h history of (theoretical vs realtime) score — the surge witness */}
+            {activeData?.history_1h && activeData.history_1h.length > 1 && (
+              <div className="mt-5 pt-4 border-t border-slate-100" data-testid="grele-history-1h">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400">
+                    Historique 1 h · score temps réel vs théorique
+                  </div>
+                  {activeData.realtime?.is_surge && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-600 text-white font-mono text-[10px] uppercase tracking-[0.15em]">
+                      <Zap className="w-3 h-3" strokeWidth={3} /> surge actif
+                    </span>
+                  )}
+                </div>
+                <ResponsiveContainer width="100%" height={120}>
+                  <AreaChart
+                    data={activeData.history_1h.map((s) => ({
+                      time: new Date(s.ts * 1000).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
+                      theoretical: s.theoretical,
+                      realtime: s.realtime,
+                      surge: s.is_surge ? s.realtime : null,
+                    }))}
+                    margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
+                  >
+                    <defs>
+                      <linearGradient id="rtGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#DC2626" stopOpacity={0.5} />
+                        <stop offset="100%" stopColor="#DC2626" stopOpacity={0.05} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="2 4" stroke="#E2E8F0" />
+                    <XAxis dataKey="time" tick={{ fontSize: 9, fontFamily: "monospace", fill: "#94A3B8" }} interval="preserveStartEnd" />
+                    <YAxis domain={[0, 100]} tick={{ fontSize: 9, fontFamily: "monospace", fill: "#94A3B8" }} width={28} />
+                    <Tooltip
+                      contentStyle={{ fontSize: 10, fontFamily: "monospace", background: "#0F172A", color: "#fff", border: "none" }}
+                      labelStyle={{ color: "#94A3B8" }}
+                      formatter={(v, n) => {
+                        if (n === "theoretical") return [v?.toFixed(0), "Théorique"];
+                        if (n === "realtime") return [v?.toFixed(0), "Temps réel"];
+                        return [v, n];
+                      }}
+                    />
+                    <Area type="monotone" dataKey="realtime" stroke="#DC2626" strokeWidth={2} fill="url(#rtGrad)" />
+                    <Line type="monotone" dataKey="theoretical" stroke="#94A3B8" strokeWidth={1.5} strokeDasharray="3 3" dot={false} />
+                  </AreaChart>
+                </ResponsiveContainer>
+                {(() => {
+                  const h = activeData.history_1h;
+                  if (h.length < 2) return null;
+                  const first = h[0].realtime;
+                  const last = h[h.length - 1].realtime;
+                  const delta = last - first;
+                  const sign = delta >= 0 ? "+" : "";
+                  return (
+                    <div className={`mt-1 font-mono text-[10px] ${delta >= 5 ? "text-red-600 font-medium" : "text-slate-500"}`}>
+                      Δ sur la fenêtre : {sign}{delta.toFixed(1)} pts
+                      {delta >= 5 && " — l'orage se développe"}
+                    </div>
+                  );
                 })()}
               </div>
             )}

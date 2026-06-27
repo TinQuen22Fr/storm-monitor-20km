@@ -18,8 +18,10 @@ from __future__ import annotations
 
 import logging
 import math
+import time
+from collections import deque
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Deque, Dict, List, Optional, Tuple
 
 from weather import OPEN_METEO_BASE, _cached, get_with_retry
 
@@ -36,20 +38,158 @@ def hail_score(
     lifted_index: Optional[float],
     shear_0_6km_ms: Optional[float],
     freezing_level_m: Optional[float],
+    shear_850_500_ms: Optional[float] = None,
 ) -> float:
-    """Composite hail risk 0-100 from instability + shear + freezing level."""
-    if cape is None and lifted_index is None and shear_0_6km_ms is None and freezing_level_m is None:
+    """Composite hail risk 0-100 from instability + shear + freezing level.
+
+    Extended formula (Phase 34) — weights re-balanced + mid-level shear + synergy bonus:
+        cape_term       = clip(CAPE / 2500)          * 30
+        li_term         = clip(-LI / 6)              * 15
+        shear_06_term   = clip(shear_0_6km / 30)     * 20
+        shear_850500    = clip(shear_850_500 / 20)   * 15   (NEW — mid-level)
+        fzh_term        = clip((3500 - fzh) / 2000)  * 10
+        synergy_bonus   = (cape_norm × shear_06_norm) * 10  (NEW — interaction)
+
+    Total max = 100. The synergy_bonus captures the meteorological reality that
+    CAPE alone produces pulse storms, but CAPE + strong shear produces tilted
+    multicells / supercells that grow large hail.
+    """
+    if (cape is None and lifted_index is None and shear_0_6km_ms is None
+            and freezing_level_m is None and shear_850_500_ms is None):
         return 0.0
     cape_v = float(cape or 0.0)
     li_v = float(lifted_index if lifted_index is not None else 0.0)
-    shear_v = float(shear_0_6km_ms or 0.0)
+    shear06_v = float(shear_0_6km_ms or 0.0)
+    shear8550_v = float(shear_850_500_ms or 0.0)
     fzh_v = float(freezing_level_m if freezing_level_m is not None else 5000.0)
 
-    cape_term = _clip(cape_v / 2500.0, 0, 1) * 40
-    li_term = _clip(-li_v / 6.0, 0, 1) * 20
-    shear_term = _clip(shear_v / 30.0, 0, 1) * 25
-    fzh_term = _clip((3500.0 - fzh_v) / 2000.0, 0, 1) * 15
-    return round(cape_term + li_term + shear_term + fzh_term, 1)
+    cape_norm = _clip(cape_v / 2500.0, 0, 1)
+    li_norm = _clip(-li_v / 6.0, 0, 1)
+    shear06_norm = _clip(shear06_v / 30.0, 0, 1)
+    shear8550_norm = _clip(shear8550_v / 20.0, 0, 1)
+    fzh_norm = _clip((3500.0 - fzh_v) / 2000.0, 0, 1)
+
+    cape_term = cape_norm * 30
+    li_term = li_norm * 15
+    shear_06_term = shear06_norm * 20
+    shear_8550_term = shear8550_norm * 15
+    fzh_term = fzh_norm * 10
+    synergy_bonus = cape_norm * shear06_norm * 10
+
+    total = cape_term + li_term + shear_06_term + shear_8550_term + fzh_term + synergy_bonus
+    return round(_clip(total, 0, 100), 1)
+
+
+# =============================================================================
+# Phase 34 — Real-time lightning surge booster
+# =============================================================================
+
+WINDOW_NOW_S = 5 * 60     # last 5 min  → density_now
+WINDOW_PREV_S = 15 * 60   # last 15 min total → density_prev computed from [5..15] slice
+SURGE_THRESHOLD = 2.0     # density_now must be ≥ 2× density_prev
+SURGE_MIN_DENSITY = 0.5   # impacts/min minimum to even consider it a surge
+
+
+def effective_radius_km(monitored_radius_km: float) -> float:
+    """Adaptive radius for the strike booster — `max(40 km, radius × 1.5)`.
+    Cells move fast (~50 km/h in SW France), so we look slightly outside the
+    monitored zone to catch incoming activity."""
+    return max(40.0, float(monitored_radius_km) * 1.5)
+
+
+def compute_lightning_density(strikes: List[Dict[str, Any]], now_ts: float) -> Dict[str, Any]:
+    """Compute strike densities in the [now-5min] and [now-15min..now-5min] windows."""
+    if not isinstance(strikes, list):
+        return {"available": False, "count_5min": 0, "count_5_15min": 0,
+                "density_now": 0.0, "density_prev": 0.0, "surge_ratio": 0.0, "is_surge": False}
+
+    cutoff_now = now_ts - WINDOW_NOW_S
+    cutoff_prev = now_ts - WINDOW_PREV_S
+    n_now = 0
+    n_prev = 0
+    for s in strikes:
+        ts = s.get("ts")
+        if ts is None:
+            continue
+        if ts >= cutoff_now:
+            n_now += 1
+        elif ts >= cutoff_prev:
+            n_prev += 1
+
+    density_now = n_now / (WINDOW_NOW_S / 60.0)
+    density_prev = n_prev / ((WINDOW_PREV_S - WINDOW_NOW_S) / 60.0)
+    if density_prev < 0.01:
+        surge_ratio = float(density_now) * 10
+    else:
+        surge_ratio = density_now / density_prev
+
+    is_surge = density_now >= SURGE_MIN_DENSITY and surge_ratio >= SURGE_THRESHOLD
+
+    return {
+        "available": True,
+        "count_5min": n_now,
+        "count_5_15min": n_prev,
+        "density_now": round(density_now, 2),
+        "density_prev": round(density_prev, 2),
+        "surge_ratio": round(surge_ratio, 2),
+        "is_surge": is_surge,
+    }
+
+
+def compute_boost(density: Dict[str, Any], base_score: float) -> Tuple[float, float]:
+    """Compute the realtime boost (0-30 pts) to apply to a base hail score.
+
+    Gating: `boost × (0.4 + 0.6 × base/100)` — prevents false positives on
+    modelled-calm skies and rewards alignment between physical & electrical signals.
+    """
+    if not density.get("available"):
+        return 0.0, 0.0
+    density_now = density.get("density_now", 0.0)
+    if density.get("is_surge"):
+        boost_raw = _clip(density_now / 10.0, 0, 1) * 30.0
+    else:
+        boost_raw = _clip(density_now / 5.0, 0, 1) * 15.0
+    gating = 0.4 + 0.6 * (_clip(base_score, 0, 100) / 100.0)
+    return round(boost_raw * gating, 1), round(boost_raw, 1)
+
+
+# ---------- 1h in-memory history of (theoretical, realtime) scores ----------
+HISTORY_MAX_AGE_S = 60 * 60
+HISTORY_MAX_POINTS = 360
+_history_store: Dict[Tuple[float, float, float], Deque[Dict[str, Any]]] = {}
+
+
+def _hist_key(lat: float, lon: float, radius_km: float) -> Tuple[float, float, float]:
+    return (round(float(lat), 3), round(float(lon), 3), round(float(radius_km), 1))
+
+
+def record_score_sample(
+    lat: float, lon: float, radius_km: float,
+    theoretical: float, realtime: float, is_surge: bool,
+    lightning_available: bool, density_now: float,
+) -> None:
+    key = _hist_key(lat, lon, radius_km)
+    dq = _history_store.get(key)
+    if dq is None:
+        dq = deque(maxlen=HISTORY_MAX_POINTS)
+        _history_store[key] = dq
+    dq.append({
+        "ts": time.time(),
+        "theoretical": round(float(theoretical), 1),
+        "realtime": round(float(realtime), 1),
+        "is_surge": bool(is_surge),
+        "lightning_available": bool(lightning_available),
+        "density_now": round(float(density_now), 2),
+    })
+
+
+def get_score_history(lat: float, lon: float, radius_km: float) -> List[Dict[str, Any]]:
+    key = _hist_key(lat, lon, radius_km)
+    dq = _history_store.get(key)
+    if not dq:
+        return []
+    cutoff = time.time() - HISTORY_MAX_AGE_S
+    return [s for s in list(dq) if s["ts"] >= cutoff]
 
 
 def hail_level(score: float) -> str:
@@ -183,7 +323,7 @@ async def _fetch_severe_impl(lat: float, lon: float, hours: int) -> Dict[str, An
         shear_0_6 = _shear_magnitude(w10_s, w10_d, w500_s, w500_d)
         shear_850_500 = _shear_magnitude(w850_s, w850_d, w500_s, w500_d)
 
-        score = hail_score(cape, li, shear_0_6, fzh)
+        score = hail_score(cape, li, shear_0_6, fzh, shear_850_500)
         if score > max_score:
             max_score = score
             max_score_time = times[i]

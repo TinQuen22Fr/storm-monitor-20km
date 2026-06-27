@@ -28,8 +28,8 @@ export const getZones = (lat = LOURDES.lat, lon = LOURDES.lon, radius_km = LOURD
 export const getStrikes = (lat = LOURDES.lat, lon = LOURDES.lon, radius_km = LOURDES.radius, since) =>
   api.get("/lightning/strikes", { params: { lat, lon, radius_km, since } }).then((r) => r.data);
 
-export const getSevere = (lat = LOURDES.lat, lon = LOURDES.lon, hours = 24) =>
-  api.get("/weather/severe", { params: { lat, lon, hours } }).then((r) => r.data);
+export const getSevere = (lat = LOURDES.lat, lon = LOURDES.lon, hours = 24, radius_km = LOURDES.radius) =>
+  api.get("/weather/severe", { params: { lat, lon, hours, radius_km } }).then((r) => r.data);
 
 export const getSevereGrid = (param = "t850", hour = 0) =>
   api.get("/weather/severe/grid", { params: { param, hour } }).then((r) => r.data);
