@@ -1,29 +1,30 @@
 /* Leaflet CSS is imported via JS */
 
 /* ---------------------------------------------------------------------------
- * Meteosat MSG smooth rendering — minimal CSS
+ * Meteosat MSG smooth rendering — massive blur, proportional to block size
  *
- * The IR 10.8 µm channel has ~3 km/pixel native resolution. To avoid the
- * "Minecraft" grid effect at city zoom levels we rely on two things only:
- *   1. `image-rendering: auto` — lets the browser use hardware bilinear
- *      smoothing instead of Leaflet's default `pixelated` rendering.
- *   2. `blur(3px)` — a very light blur that simply ties adjacent tiles
- *      together without diluting the data.
- * NO contrast() filter: it visually re-hardens the source pixel edges that
- * the blur just softened, which is exactly what we want to avoid.
- * Opacity is set on the WMSTileLayer prop (0.7) so the basemap stays
- * readable through the cloud mass.
+ * At Leaflet zoom 9–10 with 20 km radius, each Meteosat source pixel
+ * (~3 km native) is stretched across 60–100 screen pixels. A blur smaller
+ * than the block size only softens edges within the block and leaves the
+ * grid visible. To force adjacent blocks to merge into a true continuous
+ * gradient, the blur radius MUST exceed the block size.
+ *
+ * Strict spec:
+ *  - `image-rendering: auto` → enables hardware bilinear smoothing
+ *  - `blur(30px)`            → proportional to source pixel block size,
+ *                              forces full melt into a diffuse gradient
+ *  - opacity is set on the WMSTileLayer prop (0.7)
+ *  - NO contrast / brightness / saturate / transform (they all re-create
+ *    block edges or visual artefacts)
  * --------------------------------------------------------------------------- */
 .meteosat-smooth-tile {
   image-rendering: auto !important;
   image-rendering: -webkit-optimize-contrast !important;
   -ms-interpolation-mode: bicubic;
-  filter: blur(3px);
-  opacity: 0.7;
+  filter: blur(30px);
   transition: filter 0.3s ease;
 }
 
-/* During zoom animations keep the same light blur — no need to bump it. */
 .leaflet-zoom-anim .meteosat-smooth-tile {
-  filter: blur(3px);
+  filter: blur(30px);
 }
