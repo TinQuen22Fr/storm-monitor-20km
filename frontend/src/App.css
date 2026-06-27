@@ -1,1 +1,25 @@
 /* Leaflet CSS is imported via JS */
+
+/* ---------------------------------------------------------------------------
+ * Meteosat MSG smooth rendering
+ *
+ * The IR 10.8 µm channel from EUMETSAT has a native resolution of ~3 km/pixel
+ * over Europe. At Leaflet zoom levels ≥ 9 (city scale) each source pixel
+ * covers hundreds of screen pixels → visible "Minecraft" blocky artefacts.
+ *
+ * Leaflet defaults `image-rendering: pixelated` on tiles to keep map labels
+ * crisp. We override that on the Meteosat tile <img>s only, and add a small
+ * blur to fuse adjacent cells into smooth cloud masses.
+ * --------------------------------------------------------------------------- */
+.meteosat-smooth-tile {
+  image-rendering: auto !important;
+  -ms-interpolation-mode: bicubic;
+  filter: blur(2.5px) saturate(1.05);
+  transition: filter 0.25s ease;
+}
+
+/* When the map is heavily zoomed in (Leaflet adds `.leaflet-zoom-anim` during
+ * a zoom transition), bump the blur a touch more so movements stay smooth. */
+.leaflet-zoom-anim .meteosat-smooth-tile {
+  filter: blur(3px) saturate(1.05);
+}

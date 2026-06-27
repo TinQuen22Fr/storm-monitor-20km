@@ -164,6 +164,7 @@ export function WeatherTileLayer({ url, showClouds, showRain }) {
           version="1.3.0"
           opacity={0.7}
           pane="weatherPane"
+          className="meteosat-smooth-tile"
           attribution="&copy; EUMETSAT · Meteosat MSG"
         />
       )}
