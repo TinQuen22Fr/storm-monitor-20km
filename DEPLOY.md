@@ -26,12 +26,21 @@ Conséquence : **vos secrets, votre venv Python, votre build front, vos données
 
 ---
 
-## Branche
+## Branches Git
 
-La seule branche déployée sur le Kimsufi est **`Version_With_Detector`**. C'est figé dans les scripts (`install.sh` et `upgrade.sh` la forcent toujours).
+Le repo a deux branches d'usage distinct :
+
+| Branche | Cible | Contient |
+|---|---|---|
+| `Testing` | Web app pure (sans matériel) | Carte, alertes, vigilance, replay. Pas de firmware, pas de route `/api/upload_storm`. Non déployée sur le Kimsufi. |
+| `Version_With_Detector` | **Kimsufi (prod)** | `Testing` + route `/api/upload_storm`, page `/detector`, autotune wizard, dossier `hardware/` (sketches Arduino AS3935). |
+
+> Le firmware Arduino dans `hardware/` est temporairement cohabité dans le repo principal. À terme il sera extrait dans un repo dédié (`storm-monitor-firmware`). En attendant il est **uniquement présent sur `Version_With_Detector`** ; `Testing` reste générique.
+
+**Sur le serveur de prod (Kimsufi), `install.sh` et `upgrade.sh` forcent toujours la branche `Version_With_Detector`** — c'est hardcodé dans les scripts, plus paramétrable. Si tu veux jouer avec `Testing` ponctuellement, il faudra le faire à la main en local ou hors du flux de déploiement automatisé.
 
 ```bash
-# Vérifier la branche actuelle
+# Vérifier la branche actuellement déployée
 git -C /opt/storm-monitor rev-parse --abbrev-ref HEAD   # → Version_With_Detector
 ```
 
