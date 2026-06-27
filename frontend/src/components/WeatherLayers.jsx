@@ -1,42 +1,22 @@
 import { useEffect, useRef, useState } from "react";
-import { TileLayer, useMap } from "react-leaflet";
+import { TileLayer, WMSTileLayer, useMap } from "react-leaflet";
 import { Activity, Cloud, CloudRain, Pause, Play, Wind } from "lucide-react";
-import { fmtLocalDate, fmtLocalTime } from "@/lib/timeFormat";
+import { fmtLocalTime } from "@/lib/timeFormat";
 
 const RAINVIEWER_API = "https://api.rainviewer.com/public/weather-maps.json";
 const FRAME_DURATION_MS = 800;
 
-// NASA GIBS - MODIS Terra true-color satellite imagery (includes clouds as white masses)
-const GIBS_BASE =
-  "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default";
-const GIBS_TMS = "GoogleMapsCompatible_Level9";
-
-function ymd(date) {
-  const y = date.getUTCFullYear();
-  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const d = String(date.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
-function buildCloudsUrl(dateStr) {
-  return `${GIBS_BASE}/${dateStr}/${GIBS_TMS}/{z}/{y}/{x}.jpeg`;
-}
+// EUMETSAT View — Meteosat MSG (Second Generation) geostationary satellite,
+// IR 10.8 µm channel ("ir108"). Updated every ~15 minutes, covers Europe
+// from the 0° equatorial position. Massive upgrade over MODIS Terra
+// (polar orbit, 1 pass per day, ~24h latency).
+const EUMETSAT_WMS = "https://view.eumetsat.int/geoserver/msg_fes/wms";
+const METEOSAT_LAYER_IR = "msg_fes:ir108";
 
 function buildRadarUrl(host, path) {
   // Color 4 = The Weather Channel style (professional pro radar look)
   // Options: smooth=1, snow=1 (distinguish snow)
   return `${host}${path}/256/{z}/{x}/{y}/4/1_1.png`;
-}
-
-function cloudFrames() {
-  // Last 5 days (Yesterday backwards — today's image is usually processed next day)
-  const frames = [];
-  const now = new Date();
-  for (let i = 5; i >= 1; i--) {
-    const d = new Date(now.getTime() - i * 86400000);
-    frames.push({ time: Math.floor(d.getTime() / 1000), date: ymd(d) });
-  }
-  return frames;
 }
 
 export function useWeatherLayersState({ cursorTs = null, isLive = true } = {}) {
@@ -67,9 +47,9 @@ export function useWeatherLayersState({ cursorTs = null, isLive = true } = {}) {
     };
   }, []);
 
-  const cloudsFrames = cloudFrames();
+  const cloudsFrames = []; // Meteosat WMS is served as a single live image (no client-side animation)
   const radarFrames = rvData?.radar?.past || [];
-  const activeFrames = showRain ? radarFrames : showClouds ? cloudsFrames : [];
+  const activeFrames = showRain ? radarFrames : [];
 
   useEffect(() => {
     // When a global timeline cursor is driving and not live, disable auto-play
@@ -125,16 +105,13 @@ export function useWeatherLayersState({ cursorTs = null, isLive = true } = {}) {
   const currentFrame = activeFrames[frame];
   let url = null;
   let frameLabel = null;
-  if (showClouds && currentFrame) {
-    url = buildCloudsUrl(currentFrame.date);
-    frameLabel = fmtLocalDate(currentFrame.time, {
-      weekday: "short",
-      day: "2-digit",
-      month: "short",
-    });
-  } else if (showRain && currentFrame && rvData) {
+  if (showRain && currentFrame && rvData) {
     url = buildRadarUrl(rvData.host, currentFrame.path);
     frameLabel = fmtLocalTime(currentFrame.time);
+  } else if (showClouds) {
+    // Meteosat MSG IR — refresh cadence is ~15 min server-side. We just label
+    // the layer as "live" since we always fetch the latest available slot.
+    frameLabel = "live · MAJ ~15 min";
   }
 
   return {
@@ -160,24 +137,49 @@ export function useWeatherLayersState({ cursorTs = null, isLive = true } = {}) {
 
 export function WeatherTileLayer({ url, showClouds, showRain }) {
   const map = useMap();
+  // Periodic timestamp bump (every 5 min) used as a cache-buster so the
+  // Meteosat WMS layer auto-refreshes to the latest 15-min slot.
+  const [refreshKey, setRefreshKey] = useState(0);
   useEffect(() => {
     if (map.getPane("weatherPane")) return;
     map.createPane("weatherPane");
     map.getPane("weatherPane").style.zIndex = 350;
     map.getPane("weatherPane").style.pointerEvents = "none";
   }, [map]);
-  if (!url) return null;
+  useEffect(() => {
+    if (!showClouds) return;
+    const t = setInterval(() => setRefreshKey((k) => k + 1), 5 * 60_000);
+    return () => clearInterval(t);
+  }, [showClouds]);
+
   return (
-    <TileLayer
-      key={url}
-      url={url}
-      opacity={showClouds ? 0.85 : 0.75}
-      tileSize={256}
-      pane="weatherPane"
-      maxNativeZoom={showClouds ? 9 : 10}
-      maxZoom={20}
-      noWrap
-    />
+    <>
+      {showClouds && (
+        <WMSTileLayer
+          key={`meteosat-${refreshKey}`}
+          url={EUMETSAT_WMS}
+          layers={METEOSAT_LAYER_IR}
+          format="image/png"
+          transparent
+          version="1.3.0"
+          opacity={0.7}
+          pane="weatherPane"
+          attribution="&copy; EUMETSAT · Meteosat MSG"
+        />
+      )}
+      {showRain && url && (
+        <TileLayer
+          key={url}
+          url={url}
+          opacity={0.75}
+          tileSize={256}
+          pane="weatherPane"
+          maxNativeZoom={10}
+          maxZoom={20}
+          noWrap
+        />
+      )}
+    </>
   );
 }
 
@@ -219,7 +221,7 @@ export function WeatherLayersPanel({
               : "bg-white text-slate-700 hover:text-slate-900"
           }`}
           data-testid="toggle-clouds"
-          title="Masses nuageuses (satellite MODIS)"
+          title="Masses nuageuses (satellite Meteosat MSG, géostationnaire ~15 min)"
         >
           <Cloud className="w-4 h-4" strokeWidth={1.8} />
           Nuages
@@ -301,7 +303,7 @@ export function WeatherLayersPanel({
       {(showClouds || showRain || showWind) && (
         <div className="border-t border-slate-200 px-4 py-2 font-mono text-[9px] uppercase tracking-[0.2em] text-slate-400">
           {showClouds
-            ? "Source · NASA MODIS Terra"
+            ? "Source · EUMETSAT · Meteosat MSG IR 10.8 µm · MAJ 15 min"
             : showRain
             ? "Source · RainViewer radar"
             : "Source · Open-Meteo vent"}
