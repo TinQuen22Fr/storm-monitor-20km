@@ -5,21 +5,29 @@
  *
  * The IR 10.8 µm channel from EUMETSAT has a native resolution of ~3 km/pixel
  * over Europe. At Leaflet zoom levels ≥ 9 (city scale) each source pixel
- * covers hundreds of screen pixels → visible "Minecraft" blocky artefacts.
+ * covers hundreds of screen pixels → very visible "Minecraft" blocky pixels,
+ * especially on mobile where the device pixel ratio multiplies the effect.
  *
- * Leaflet defaults `image-rendering: pixelated` on tiles to keep map labels
- * crisp. We override that on the Meteosat tile <img>s only, and add a small
- * blur to fuse adjacent cells into smooth cloud masses.
+ * We combine 3 techniques to obtain a smooth gradient cloud mass:
+ *  1. `image-rendering: auto` (overrides Leaflet's default pixelated)
+ *  2. A strong `blur(7px)` to literally melt the source pixels together
+ *  3. `contrast(1.18) brightness(0.96)` post-blur to keep edges visible
+ *     (otherwise heavy blur tends to wash out the cloud mass into the
+ *     basemap)
+ *  4. A tiny scale(1.0001) which forces certain GPUs to switch from
+ *     nearest-neighbour to bilinear sampling on the source texture.
  * --------------------------------------------------------------------------- */
 .meteosat-smooth-tile {
   image-rendering: auto !important;
+  image-rendering: -webkit-optimize-contrast !important;
   -ms-interpolation-mode: bicubic;
-  filter: blur(2.5px) saturate(1.05);
-  transition: filter 0.25s ease;
+  filter: blur(7px) contrast(1.18) brightness(0.96) saturate(1.05);
+  transition: filter 0.3s ease;
+  transform: scale(1.0001);  /* nudge GPU to bilinear sampling */
 }
 
-/* When the map is heavily zoomed in (Leaflet adds `.leaflet-zoom-anim` during
- * a zoom transition), bump the blur a touch more so movements stay smooth. */
+/* During zoom animations the tiles get scaled — bump the blur slightly to
+ * hide the intermediate aliasing. */
 .leaflet-zoom-anim .meteosat-smooth-tile {
-  filter: blur(3px) saturate(1.05);
+  filter: blur(10px) contrast(1.18) brightness(0.96) saturate(1.05);
 }
