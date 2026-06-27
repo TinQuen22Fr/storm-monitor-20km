@@ -28,6 +28,9 @@ export const getZones = (lat = LOURDES.lat, lon = LOURDES.lon, radius_km = LOURD
 export const getStrikes = (lat = LOURDES.lat, lon = LOURDES.lon, radius_km = LOURDES.radius, since) =>
   api.get("/lightning/strikes", { params: { lat, lon, radius_km, since } }).then((r) => r.data);
 
+export const getSevere = (lat = LOURDES.lat, lon = LOURDES.lon, hours = 24) =>
+  api.get("/weather/severe", { params: { lat, lon, hours } }).then((r) => r.data);
+
 export const authRegister = (email, password, name) =>
   api.post("/auth/register", { email, password, name }).then((r) => r.data);
 

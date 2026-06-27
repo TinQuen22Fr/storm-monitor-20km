@@ -40,6 +40,7 @@ import reports as reports_mod
 import analysis as analysis_mod
 import demo_storms as demo_mod
 import video_export as video_mod
+import severe as severe_mod
 import webhooks as webhooks_mod
 import uploads as uploads_mod
 import vigilance as vigilance_mod
@@ -392,6 +393,21 @@ async def weather_wind_grid(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, 
         return await fetch_wind_grid(lat, lon, radius_km)
     except Exception as e:
         return _degraded("wind", e)
+
+
+@api_router.get("/weather/severe")
+async def weather_severe(
+    lat: float = LOURDES_LAT,
+    lon: float = LOURDES_LON,
+    hours: int = 24,
+):
+    """24h (default) severe-weather forecast incl. hail score and advanced
+    atmospheric parameters (T 850hPa, jet 300hPa, 0-6km shear, vertical velocity 700hPa)."""
+    hours = max(1, min(int(hours), 48))
+    try:
+        return await severe_mod.fetch_severe(lat, lon, hours)
+    except Exception as e:
+        return _degraded("severe", e)
 
 
 @api_router.get("/weather/vigilance")
@@ -976,11 +992,17 @@ async def bulletin_pdf(
 
     # ----- Fetch all zones in parallel -----
     async def _fetch_zone(d: Dict[str, Any]) -> Dict[str, Any]:
-        c, f, h, zres = await asyncio.gather(
+        async def _safe_severe():
+            try:
+                return await severe_mod.fetch_severe(d["lat"], d["lon"], 24)
+            except Exception:
+                return {}
+        c, f, h, zres, sv = await asyncio.gather(
             fetch_current(d["lat"], d["lon"]),
             fetch_forecast(d["lat"], d["lon"]),
             fetch_history_24h(d["lat"], d["lon"]),
             fetch_storm_zones(d["lat"], d["lon"], d["radius_km"]),
+            _safe_severe(),
         )
         strikes_data = await lightning_mod.store.recent(d["lat"], d["lon"], d["radius_km"], since_ts=None)
         strikes_data.sort(key=lambda s: s["ts"], reverse=True)
@@ -991,6 +1013,7 @@ async def bulletin_pdf(
             "history": h,
             "forecast": f,
             "strikes": strikes_data[:50],
+            "severe": sv,
         }
 
     payload = await asyncio.gather(*[_fetch_zone(d) for d in descriptors])

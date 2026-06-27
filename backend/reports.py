@@ -223,6 +223,113 @@ def _append_zone_section(story: List[Any], s: Dict[str, ParagraphStyle], zd: Dic
     else:
         story.append(Paragraph("Aucun impact de foudre enregistré dans le rayon.", s["body"]))
 
+    # ---- Severe weather (hail score + advanced params) ----
+    severe = zd.get("severe") or {}
+    severe_hourly = severe.get("hourly") or []
+    if severe_hourly:
+        story.append(Paragraph("RISQUE GRÊLE & PARAMÈTRES AVANCÉS · 24 H", s["h2"]))
+        max_score = severe.get("max_hail_score") or 0.0
+        max_level = severe.get("max_hail_level") or "—"
+        max_time = severe.get("max_hail_time") or ""
+        max_time_local = _utc_to_local_str(max_time, tz, "%d/%m %H:%M") if max_time else "—"
+
+        # Headline
+        if max_score >= 50:
+            headline = f"⚠ Risque grêle <b>{max_level.upper()}</b> · pic <b>{int(max_score)}/100</b> attendu vers {max_time_local}."
+            headline_style = s["alert"]
+        elif max_score >= 30:
+            headline = f"Risque grêle <b>modéré</b> ({int(max_score)}/100) vers {max_time_local}."
+            headline_style = s["body"]
+        else:
+            headline = f"Pas de risque significatif de grêle (max {int(max_score)}/100)."
+            headline_style = s["body"]
+        story.append(Paragraph(headline, headline_style))
+
+        # Pick the peak hour to display its ingredients
+        peak = next((h for h in severe_hourly if h.get("time") == max_time), severe_hourly[0])
+
+        # Ingredients table
+        cape_v = peak.get("cape")
+        li_v = peak.get("lifted_index")
+        fzh_v = peak.get("freezing_level_m")
+        shear_v = peak.get("shear_0_6km")
+        jet_v = peak.get("jet_speed")
+        t850_v = peak.get("t850")
+        soil_v = peak.get("soil_t")
+        vv_v = peak.get("vertical_velocity_700")
+
+        rows = [
+            ["Indicateur", "Valeur au pic", "Indicateur", "Valeur au pic"],
+            [
+                "Score grêle", f"{int(max_score)}/100 ({max_level})",
+                "CAPE", _fmt(cape_v, " J/kg"),
+            ],
+            [
+                "Lifted Index", _fmt(li_v, "", 1),
+                "Iso 0°C", _fmt(fzh_v, " m"),
+            ],
+            [
+                "Shear 0-6 km", _fmt(shear_v, " m/s", 1),
+                "Jet 300 hPa", _fmt(jet_v * 3.6 if jet_v is not None else None, " km/h"),
+            ],
+            [
+                "T° 850 hPa", _fmt(t850_v, " °C", 1),
+                "T° sol (0 cm)", _fmt(soil_v, " °C", 1),
+            ],
+            [
+                "ω 700 hPa", _fmt(vv_v, " Pa/s", 3),
+                "", "",
+            ],
+        ]
+        t = Table(rows, colWidths=[40 * mm, 40 * mm, 40 * mm, 35 * mm])
+        t.setStyle(TableStyle([
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("TEXTCOLOR", (0, 0), (-1, 0), SLATE_400),
+            ("TEXTCOLOR", (0, 1), (0, -1), SLATE_400),
+            ("TEXTCOLOR", (2, 1), (2, -1), SLATE_400),
+            ("FONTNAME", (1, 1), (1, -1), "Courier"),
+            ("FONTNAME", (3, 1), (3, -1), "Courier"),
+            ("TEXTCOLOR", (1, 1), (1, -1), SLATE_900),
+            ("TEXTCOLOR", (3, 1), (3, -1), SLATE_900),
+            ("LINEBELOW", (0, 0), (-1, 0), 0.5, SLATE_200),
+            ("LINEBELOW", (0, -1), (-1, -1), 0.5, SLATE_200),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.append(t)
+
+        # Heat-of-the-day micro-table: pick every 3h to keep the PDF compact
+        story.append(Paragraph(
+            "<i>Évolution score grêle (toutes les 3 h)</i>",
+            ParagraphStyle("hint", parent=s["body"], fontSize=8, textColor=SLATE_400, spaceBefore=8),
+        ))
+        evo_rows = [["Heure", "Score", "Niveau", "CAPE", "LI", "Shear"]]
+        for i, h in enumerate(severe_hourly):
+            if i % 3 != 0:
+                continue
+            evo_rows.append([
+                h.get("time", "").split("T")[-1][:5],
+                str(int(h.get("hail_score") or 0)),
+                h.get("hail_level") or "—",
+                _fmt(h.get("cape")),
+                _fmt(h.get("lifted_index"), "", 1),
+                _fmt(h.get("shear_0_6km"), "", 1),
+            ])
+        evo = Table(evo_rows, colWidths=[22 * mm, 18 * mm, 25 * mm, 25 * mm, 22 * mm, 25 * mm])
+        evo.setStyle(TableStyle([
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("TEXTCOLOR", (0, 0), (-1, 0), SLATE_400),
+            ("FONTNAME", (0, 1), (-1, -1), "Courier"),
+            ("TEXTCOLOR", (0, 1), (-1, -1), SLATE_900),
+            ("LINEBELOW", (0, 0), (-1, 0), 0.5, SLATE_200),
+            ("LINEBELOW", (0, -1), (-1, -1), 0.5, SLATE_200),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ]))
+        story.append(evo)
+
 
 def build_bulletin_pdf(zones_payload: List[Dict], tz_name: Optional[str] = None) -> bytes:
     """

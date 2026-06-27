@@ -1,10 +1,12 @@
 import { NavLink } from "react-router-dom";
-import { Activity, AlertTriangle, BarChart3, Cpu, PlayCircle, Shield } from "lucide-react";
+import { Activity, AlertTriangle, BarChart3, CloudHail, Cpu, LineChart, PlayCircle, Shield } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 
 const BASE_TABS = [
   { to: "/", end: true, icon: Activity, label: "Direct", testid: "nav-live" },
   { to: "/vigilance", icon: AlertTriangle, label: "Vigilance", testid: "nav-vigilance" },
+  { to: "/grele", icon: CloudHail, label: "Grêle", testid: "nav-grele" },
+  { to: "/previsions", icon: LineChart, label: "Prévisions", testid: "nav-previsions" },
   { to: "/replay", icon: PlayCircle, label: "Replay", testid: "nav-replay" },
   { to: "/detector", icon: Cpu, label: "Détecteur", testid: "nav-detector" },
   { to: "/historique", icon: BarChart3, label: "Historique", testid: "nav-history" },
