@@ -120,31 +120,60 @@ curl3 --http3-only -sI https://storm-monitor.quentin-astro.fr/ | head -3
 
 ## B) Mise à jour d'une install existante
 
-C'est le cas usuel : vous avez poussé du code sur GitHub, vous voulez le déployer.
+**Mode rapide (recommandé pour les déploiements routiniers)** :
 
 ```bash
 cd /opt/storm-monitor
 git pull
-sudo bash install.sh
+sudo bash upgrade.sh
 ```
 
 Ou en une ligne :
 
 ```bash
+cd /opt/storm-monitor && git pull && sudo bash upgrade.sh
+```
+
+`upgrade.sh` ne touche **que** au code applicatif. Il prend ~30 s à 2 min selon ce qui a changé. Concrètement il :
+
+1. `git pull` (re-pull pour confirmer le HEAD) dans `/opt/storm-monitor`.
+2. **Backup auto du `.env`** dans `/var/www/storm-monitor/backend/.env.backups/.env.YYYYMMDDTHHMMSSZ` (rotation : 10 derniers).
+3. Détecte quels fichiers ont changé via `git diff` entre l'ancien et le nouveau HEAD.
+4. `rsync` synchronise `/opt` → `/var/www` en préservant runtime (`.env`, `venv/`, `cache/`, `storm_data.json`, `build/`, `node_modules/`).
+5. **`pip install`** **seulement si** `backend/requirements.txt` a changé.
+6. **`yarn install`** **seulement si** `frontend/package.json` ou `frontend/yarn.lock` a changé.
+7. **`yarn build`** **seulement si** un fichier de `frontend/` a changé.
+8. `systemctl restart storm-monitor` (toujours, pour recharger les modules Python).
+9. `nginx reload` **seulement si** un fichier de config Nginx a changé.
+
+À utiliser **dans 95% des cas**.
+
+**Mode complet (réinstall système)** :
+
+```bash
 cd /opt/storm-monitor && git pull && sudo bash install.sh
 ```
 
-Ce qui se passe :
-1. `git pull` met à jour `/opt/storm-monitor` (WORK_DIR).
-2. `install.sh` détecte le clone existant, fetch+pull à nouveau (idempotent), affiche la liste des commits récupérés.
-3. **Backup auto du `.env`** dans `/var/www/storm-monitor/backend/.env.backups/.env.YYYYMMDDTHHMMSSZ` (rotation : 10 derniers conservés).
-4. `rsync` synchronise `/opt` → `/var/www` en préservant runtime (`.env`, `venv/`, `cache/`, `storm_data.json`, `build/`, `node_modules/`).
-5. `pip install -r requirements.txt` met à jour les dépendances Python.
-6. `ensure_env_var` ajoute les nouvelles variables d'env apparues dans la release **sans toucher aux valeurs existantes**.
-7. `yarn install --frozen-lockfile && yarn build` rebuilds le frontend.
-8. Reload Nginx + restart `storm-monitor.service`.
+`install.sh` refait tout : installe les paquets apt (Python, Node, MongoDB, Nginx, ffmpeg, snap…), régénère le vhost Nginx, l'unit systemd, le `.env` (si absent), build le frontend, etc. À utiliser :
+- Après une migration de serveur
+- Si tu as bidouillé Nginx / systemd à la main et veux les remettre d'aplomb
+- Si `install.sh` lui-même a changé dans la release
 
-> Le `.env` n'est jamais écrasé. Les nouveaux champs sont ajoutés vides à la fin. Vous gardez vos clés Resend / VAPID / JWT.
+**Comparaison rapide** :
+
+| Étape | `upgrade.sh` | `install.sh` |
+|---|---|---|
+| `apt install` paquets système | non | oui |
+| `git pull` + `rsync` | oui | oui |
+| Backup `.env` | oui | oui |
+| `pip install` | si requirements changé | toujours |
+| `yarn install` + build | si package.json/frontend changé | toujours |
+| Régénérer vhost Nginx | non | oui |
+| Régénérer unit systemd | non | oui |
+| Restart backend | oui | oui |
+| Durée typique | 30 s — 2 min | 5 — 15 min |
+
+> Le `.env` n'est jamais écrasé. Les nouveaux champs sont ajoutés vides à la fin **uniquement par `install.sh`**. `upgrade.sh` ne touche pas du tout au contenu du `.env` (il fait juste un backup avant chaque sync).
 
 ### Restaurer un `.env` depuis un backup
 
@@ -159,30 +188,32 @@ sudo systemctl restart storm-monitor
 
 ## C) Migration de branche (Testing ↔ Version_With_Detector)
 
-### Méthode 1 — Via variable d'env (recommandée)
+### Méthode 1 — Via variable d'env (recommandée, rapide)
 
 ```bash
 # Basculer vers Version_With_Detector (avec détecteur AS3935)
-sudo BRANCH=Version_With_Detector bash /opt/storm-monitor/install.sh
+sudo BRANCH=Version_With_Detector bash /opt/storm-monitor/upgrade.sh
 
 # Revenir à Testing (version publique sans matériel)
-sudo BRANCH=Testing bash /opt/storm-monitor/install.sh
+sudo BRANCH=Testing bash /opt/storm-monitor/upgrade.sh
 ```
 
-Le script :
+`upgrade.sh` :
 1. Détecte que la branche actuelle ≠ `BRANCH` demandée.
 2. Fait `git fetch && git checkout -B "$BRANCH" "origin/$BRANCH"` dans `/opt/storm-monitor`.
 3. Resync `rsync` vers `/var/www/storm-monitor`.
-4. Reinstall les deps si différentes, rebuild front, restart services.
+4. Reinstall les deps **uniquement** si nécessaire (cf. détection auto), rebuild front, restart backend.
 
-### Méthode 2 — Switch manuel puis install
+> Si la migration de branche introduit des changements de config système (vhost Nginx, unit systemd), utilise `install.sh` à la place : `sudo BRANCH=... bash /opt/storm-monitor/install.sh`.
+
+### Méthode 2 — Switch manuel puis upgrade
 
 ```bash
 cd /opt/storm-monitor
 git fetch origin
 git checkout Version_With_Detector
 git pull
-sudo bash install.sh
+sudo bash upgrade.sh
 ```
 
 ### Vérifier sur quelle branche tourne la prod
@@ -328,9 +359,10 @@ sudo grep '^warning' /var/log/storm-monitor-yarn-install.log | sort | uniq -c | 
 
 | Action | Commande |
 |---|---|
-| Déployer la dernière version | `cd /opt/storm-monitor && git pull && sudo bash install.sh` |
-| Basculer sur la branche détecteur | `sudo BRANCH=Version_With_Detector bash /opt/storm-monitor/install.sh` |
-| Basculer sur la branche publique | `sudo BRANCH=Testing bash /opt/storm-monitor/install.sh` |
+| **Déployer la dernière version (rapide)** | `cd /opt/storm-monitor && git pull && sudo bash upgrade.sh` |
+| Réinstall complète (système) | `cd /opt/storm-monitor && git pull && sudo bash install.sh` |
+| Basculer sur la branche détecteur | `sudo BRANCH=Version_With_Detector bash /opt/storm-monitor/upgrade.sh` |
+| Basculer sur la branche publique | `sudo BRANCH=Testing bash /opt/storm-monitor/upgrade.sh` |
 | Redémarrer le backend | `sudo systemctl restart storm-monitor` |
 | Recharger Nginx | `sudo systemctl reload nginx` |
 | Voir les 100 dernières lignes de logs | `sudo journalctl -u storm-monitor -n 100` |

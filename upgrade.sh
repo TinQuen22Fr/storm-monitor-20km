@@ -1,0 +1,311 @@
+#!/usr/bin/env bash
+#
+# Storm Monitor — UPGRADE script (mise à jour rapide, sans réinstall système)
+# Usage:  sudo bash upgrade.sh
+#         sudo BRANCH=Version_With_Detector bash upgrade.sh
+#
+# Différence avec install.sh :
+#   - install.sh = installation complète (nginx, mongo, node, systemd, certbot…)
+#   - upgrade.sh = juste le code et les deps applicatives (rapide, ~30 s à 2 min)
+#
+# Ce que fait upgrade.sh :
+#   1. git pull dans /opt/storm-monitor
+#   2. Détecte ce qui a changé (requirements.txt, package.json, frontend, backend)
+#   3. Backup auto du .env
+#   4. rsync /opt → /var/www (en préservant runtime : .env, venv, build, cache, json)
+#   5. pip install      ← SEULEMENT si requirements.txt a bougé
+#   6. yarn install     ← SEULEMENT si package.json ou yarn.lock a bougé
+#   7. yarn build       ← SEULEMENT si frontend/ a bougé
+#   8. systemctl restart storm-monitor (toujours)
+#   9. nginx reload     ← seulement si vhost/snippet a bougé
+#
+# Ce que upgrade.sh NE fait PAS (utiliser install.sh pour ça) :
+#   - Installer apt packages (Python, Node, MongoDB, Nginx, ffmpeg, snap…)
+#   - Régénérer vhost Nginx ou unit systemd
+#   - Toucher au .env (juste backup)
+#   - Configurer certbot ou la pile HTTPS/HTTP3
+
+set -euo pipefail
+
+REPO_URL="https://github.com/TinQuen22Fr/storm-monitor-20km.git"
+BRANCH="${BRANCH:-Version_With_Detector}"
+WORK_DIR="/opt/storm-monitor"
+APP_DIR="/var/www/storm-monitor"
+RUN_USER="root"
+
+# ---------------------------------------------------------------------------
+# 0. Pre-flight
+# ---------------------------------------------------------------------------
+if [[ $EUID -ne 0 ]]; then
+  echo "ERROR: ce script doit être lancé en root (sudo bash upgrade.sh)" >&2
+  exit 1
+fi
+
+if [[ ! -d "$WORK_DIR/.git" ]]; then
+  echo "ERROR: $WORK_DIR n'est pas un clone git." >&2
+  echo "       Première installation requise : lance d'abord 'sudo bash install.sh'." >&2
+  exit 1
+fi
+
+if [[ ! -d "$APP_DIR/backend" || ! -d "$APP_DIR/frontend" ]]; then
+  echo "ERROR: $APP_DIR ne contient pas backend/ et frontend/." >&2
+  echo "       Première installation requise : lance d'abord 'sudo bash install.sh'." >&2
+  exit 1
+fi
+
+START_TS=$(date +%s)
+echo "==> Storm Monitor — UPGRADE rapide sur $(hostname)"
+echo "    Work dir : $WORK_DIR"
+echo "    App dir  : $APP_DIR"
+echo "    Branch   : $BRANCH"
+
+# ---------------------------------------------------------------------------
+# 1. Git pull dans WORK_DIR (avec stash auto si modifs locales)
+# ---------------------------------------------------------------------------
+echo ""
+echo "==> Étape 1 — Mise à jour du clone Git ($WORK_DIR)..."
+
+CURRENT_BRANCH="$(git -C "$WORK_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'unknown')"
+OLD_COMMIT="$(git -C "$WORK_DIR" rev-parse HEAD 2>/dev/null || echo 'unknown')"
+
+# Discard les fichiers runtime jamais trackés
+rm -f "$WORK_DIR/backend/.stale_cache.pkl"
+
+STASH_CREATED=0
+if ! git -C "$WORK_DIR" diff --quiet || ! git -C "$WORK_DIR" diff --cached --quiet; then
+  echo "    Modifs locales détectées — stash automatique..."
+  if git -C "$WORK_DIR" stash push -u -m "upgrade.sh auto-stash $(date -u +%FT%TZ)" >/dev/null 2>&1; then
+    STASH_CREATED=1
+  fi
+fi
+
+git -C "$WORK_DIR" remote set-url origin "$REPO_URL"
+git -C "$WORK_DIR" fetch --prune origin
+
+if [[ "$CURRENT_BRANCH" != "$BRANCH" ]]; then
+  echo "    Switch de branche : $CURRENT_BRANCH → $BRANCH"
+  git -C "$WORK_DIR" checkout -B "$BRANCH" "origin/$BRANCH"
+else
+  if ! git -C "$WORK_DIR" pull --ff-only origin "$BRANCH"; then
+    echo "    Fast-forward impossible — reset hard sur origin/$BRANCH"
+    git -C "$WORK_DIR" reset --hard "origin/$BRANCH"
+  fi
+fi
+
+NEW_COMMIT="$(git -C "$WORK_DIR" rev-parse HEAD)"
+
+if [[ $STASH_CREATED -eq 1 ]]; then
+  git -C "$WORK_DIR" stash pop >/dev/null 2>&1 || \
+    echo "    WARN: conflits au stash pop — voir 'git stash list'"
+fi
+
+if [[ "$OLD_COMMIT" == "$NEW_COMMIT" ]]; then
+  echo "    ✓ Déjà à jour sur $(git -C "$WORK_DIR" rev-parse --short HEAD) — rien à puller"
+  ALREADY_UP_TO_DATE=1
+else
+  echo "    ✓ ${OLD_COMMIT:0:7} → ${NEW_COMMIT:0:7}"
+  git -C "$WORK_DIR" log --pretty=format:'      - %h %s' "$OLD_COMMIT..$NEW_COMMIT" 2>/dev/null | head -15 || true
+  echo ""
+  ALREADY_UP_TO_DATE=0
+fi
+
+# ---------------------------------------------------------------------------
+# 2. Détection des changements (par dossier/fichier)
+# ---------------------------------------------------------------------------
+# Si pas de nouveaux commits, on peut sauter pip/yarn/build mais on resync
+# quand même (au cas où des fichiers de /var/www auraient été touchés à la main).
+echo ""
+echo "==> Étape 2 — Détection des changements..."
+
+REQ_CHANGED=0
+PKG_CHANGED=0
+FRONTEND_CHANGED=0
+BACKEND_CHANGED=0
+NGINX_CHANGED=0
+
+if [[ $ALREADY_UP_TO_DATE -eq 0 ]]; then
+  CHANGED_FILES="$(git -C "$WORK_DIR" diff --name-only "$OLD_COMMIT" "$NEW_COMMIT" 2>/dev/null || true)"
+  if echo "$CHANGED_FILES" | grep -qE '^backend/requirements\.txt$'; then REQ_CHANGED=1; fi
+  if echo "$CHANGED_FILES" | grep -qE '^frontend/(package\.json|yarn\.lock)$'; then PKG_CHANGED=1; fi
+  if echo "$CHANGED_FILES" | grep -qE '^frontend/'; then FRONTEND_CHANGED=1; fi
+  if echo "$CHANGED_FILES" | grep -qE '^backend/'; then BACKEND_CHANGED=1; fi
+  if echo "$CHANGED_FILES" | grep -qE '^(install\.sh|.*nginx.*\.conf|.*systemd.*\.service)$'; then NGINX_CHANGED=1; fi
+fi
+
+# Si le venv n'existe pas (cas où l'on serait sur une install bancale), on force
+if [[ ! -d "$APP_DIR/backend/venv" ]]; then
+  REQ_CHANGED=1
+fi
+# Si le build n'existe pas, on force aussi
+if [[ ! -d "$APP_DIR/frontend/build" ]]; then
+  FRONTEND_CHANGED=1
+  PKG_CHANGED=1
+fi
+
+echo "    requirements.txt : $([[ $REQ_CHANGED -eq 1 ]] && echo 'CHANGÉ' || echo 'inchangé')"
+echo "    package.json/lock: $([[ $PKG_CHANGED -eq 1 ]] && echo 'CHANGÉ' || echo 'inchangé')"
+echo "    frontend/        : $([[ $FRONTEND_CHANGED -eq 1 ]] && echo 'CHANGÉ' || echo 'inchangé')"
+echo "    backend/         : $([[ $BACKEND_CHANGED -eq 1 ]] && echo 'CHANGÉ' || echo 'inchangé')"
+
+# ---------------------------------------------------------------------------
+# 3. Backup du .env
+# ---------------------------------------------------------------------------
+ENV_FILE="$APP_DIR/backend/.env"
+if [[ -f "$ENV_FILE" ]]; then
+  BACKUP_DIR="$APP_DIR/backend/.env.backups"
+  mkdir -p "$BACKUP_DIR"
+  BACKUP_FILE="$BACKUP_DIR/.env.$(date -u +%Y%m%dT%H%M%SZ)"
+  cp -a "$ENV_FILE" "$BACKUP_FILE"
+  chmod 600 "$BACKUP_FILE"
+  echo ""
+  echo "==> Étape 3 — Backup .env → $BACKUP_FILE"
+  # Rotation FIFO 10 derniers
+  ls -1t "$BACKUP_DIR"/.env.* 2>/dev/null | tail -n +11 | xargs -r rm -f
+fi
+
+# ---------------------------------------------------------------------------
+# 4. rsync WORK_DIR → APP_DIR (en préservant les runtime files)
+# ---------------------------------------------------------------------------
+echo ""
+echo "==> Étape 4 — Sync $WORK_DIR → $APP_DIR..."
+command -v rsync >/dev/null || { echo "ERROR: rsync absent. Lance 'sudo apt install rsync'." >&2; exit 1; }
+
+rsync -a --delete \
+  --exclude='.git' \
+  --exclude='backend/.env' \
+  --exclude='backend/.env.backups' \
+  --exclude='backend/venv' \
+  --exclude='backend/storm_data.json' \
+  --exclude='backend/.stale_cache.pkl' \
+  --exclude='backend/__pycache__' \
+  --exclude='backend/**/__pycache__' \
+  --exclude='frontend/build' \
+  --exclude='frontend/node_modules' \
+  --exclude='frontend/.env' \
+  --exclude='cache' \
+  "$WORK_DIR/" "$APP_DIR/"
+chown -R "$RUN_USER":"$RUN_USER" "$APP_DIR"
+
+# Reset le frontend/.env (URL backend prod)
+cat > "$APP_DIR/frontend/.env" <<EOF
+REACT_APP_BACKEND_URL=https://storm-monitor.quentin-astro.fr
+EOF
+
+# ---------------------------------------------------------------------------
+# 5. Backend deps (pip install) — seulement si requirements changé
+# ---------------------------------------------------------------------------
+if [[ $REQ_CHANGED -eq 1 ]]; then
+  echo ""
+  echo "==> Étape 5 — Mise à jour des deps Python (requirements changé)..."
+  cd "$APP_DIR/backend"
+  if [[ ! -d venv ]]; then
+    python3 -m venv venv
+  fi
+  # shellcheck disable=SC1091
+  source venv/bin/activate
+  pip install --upgrade pip wheel setuptools >/dev/null
+  pip install -r requirements.txt
+  deactivate
+  cd - >/dev/null
+else
+  echo ""
+  echo "==> Étape 5 — pip skip (requirements.txt inchangé)"
+fi
+
+# ---------------------------------------------------------------------------
+# 6. Frontend deps (yarn install) — seulement si package.json/yarn.lock changé
+# ---------------------------------------------------------------------------
+cd "$APP_DIR/frontend"
+if [[ $PKG_CHANGED -eq 1 ]]; then
+  echo ""
+  echo "==> Étape 6 — Mise à jour des deps frontend (package.json changé)..."
+  YARN_LOG="/var/log/storm-monitor-yarn-install.log"
+  : > "$YARN_LOG"
+  set +e
+  yarn install --frozen-lockfile 2>&1 | tee "$YARN_LOG" | grep -vE '^warning |^$'
+  YARN_RC=${PIPESTATUS[0]}
+  set -e
+  if [[ $YARN_RC -ne 0 ]]; then
+    echo "ERROR: yarn install failed (rc=$YARN_RC). Voir $YARN_LOG." >&2
+    exit $YARN_RC
+  fi
+  WARN_COUNT=$(grep -cE '^warning ' "$YARN_LOG" 2>/dev/null || true)
+  WARN_COUNT=${WARN_COUNT:-0}
+  echo "    [yarn] ${WARN_COUNT} warnings cosmétiques filtrés — log: $YARN_LOG"
+else
+  echo ""
+  echo "==> Étape 6 — yarn install skip (package.json/yarn.lock inchangés)"
+fi
+
+# ---------------------------------------------------------------------------
+# 7. Frontend build — seulement si frontend a bougé
+# ---------------------------------------------------------------------------
+if [[ $FRONTEND_CHANGED -eq 1 ]]; then
+  echo ""
+  echo "==> Étape 7 — Build du frontend..."
+  yarn build
+else
+  echo ""
+  echo "==> Étape 7 — yarn build skip (aucun fichier frontend modifié)"
+fi
+cd - >/dev/null
+
+# ---------------------------------------------------------------------------
+# 8. Restart backend (toujours, c'est rapide et garantit que la nouvelle conf
+#    .env / les nouveaux modules Python sont chargés)
+# ---------------------------------------------------------------------------
+echo ""
+echo "==> Étape 8 — Restart du service backend..."
+systemctl restart storm-monitor.service
+sleep 2
+if systemctl is-active --quiet storm-monitor.service; then
+  echo "    ✓ storm-monitor.service est actif"
+else
+  echo "ERROR: storm-monitor.service n'a pas redémarré correctement." >&2
+  systemctl status storm-monitor.service --no-pager -n 20 || true
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# 9. Nginx reload — seulement si vhost/snippet a bougé (rare)
+# ---------------------------------------------------------------------------
+if [[ $NGINX_CHANGED -eq 1 ]]; then
+  echo ""
+  echo "==> Étape 9 — Reload Nginx (vhost / install.sh a changé — vérifie côté config si besoin)"
+  nginx -t && systemctl reload nginx
+else
+  echo ""
+  echo "==> Étape 9 — Nginx reload skip (vhost inchangé)"
+fi
+
+# ---------------------------------------------------------------------------
+# 10. Récap final
+# ---------------------------------------------------------------------------
+END_TS=$(date +%s)
+DURATION=$((END_TS - START_TS))
+
+echo ""
+echo "============================================================"
+echo "  Upgrade terminé en ${DURATION}s"
+echo "============================================================"
+echo "  Branche  : $BRANCH"
+echo "  Commit   : $(git -C "$WORK_DIR" rev-parse --short HEAD)"
+if [[ $ALREADY_UP_TO_DATE -eq 0 ]]; then
+  echo "  Mises à jour appliquées :"
+  [[ $REQ_CHANGED -eq 1 ]]      && echo "    - deps Python (pip)"
+  [[ $PKG_CHANGED -eq 1 ]]      && echo "    - deps frontend (yarn)"
+  [[ $FRONTEND_CHANGED -eq 1 ]] && echo "    - build frontend"
+  [[ $BACKEND_CHANGED -eq 1 ]]  && echo "    - code backend"
+  [[ $NGINX_CHANGED -eq 1 ]]    && echo "    - config Nginx/systemd (relance recommandée via install.sh si besoin)"
+else
+  echo "  Code inchangé, restart backend uniquement (force-reload des modules)."
+fi
+echo ""
+echo "  Logs    : journalctl -u storm-monitor -f"
+echo "  Status  : systemctl status storm-monitor"
+echo ""
+echo "  Pour revenir à un .env précédent :"
+echo "    ls -lt $APP_DIR/backend/.env.backups/"
+echo "    sudo cp $APP_DIR/backend/.env.backups/.env.YYYYMMDD... $APP_DIR/backend/.env"
+echo "    sudo systemctl restart storm-monitor"
+echo ""
