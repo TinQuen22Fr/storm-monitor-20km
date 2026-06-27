@@ -92,7 +92,18 @@ export default function PrevisionsPage() {
       setData(d);
       if (d?.timezone) setLocalTimezone(d.timezone);
     } catch (e) {
-      setError("Erreur lors du chargement des prévisions avancées");
+      const status = e?.response?.status;
+      if (status === 404) {
+        setError(
+          "Endpoint /api/weather/severe absent du backend (HTTP 404). " +
+          "Le serveur tourne sur une branche obsolète. Sur le VPS : " +
+          "sudo BRANCH=Version_With_Detector bash /opt/storm-monitor/upgrade.sh"
+        );
+      } else if (status) {
+        setError(`Erreur backend HTTP ${status} sur /api/weather/severe`);
+      } else {
+        setError("Erreur réseau lors du chargement des prévisions avancées");
+      }
       setData(null);
     } finally {
       setLoading(false);

@@ -1,0 +1,57 @@
+{
+  "summary": "Frontend-only smoke test of /previsions page after improved 404 error message. Both scenarios validated: (1) NOMINAL load works end-to-end on Emergent preview, (2) Simulated 404 on /api/weather/severe displays the new full remediation message and does NOT crash the page.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results": {
+    "nominal_load": {
+      "status": "PASS",
+      "details": {
+        "previsions_page_rendered": true,
+        "title_paramètres_atmosphériques_visible": true,
+        "error_banner_count": 0,
+        "old_error_text_count": 0,
+        "lourdes_zone_present": true,
+        "chart_cards_rendered": ["chart-temperatures", "chart-jet", "chart-shear", "chart-vv"],
+        "param_buttons_found": ["T° 850 HPA", "T° 2 M", "T° SOL", "JET 300 HPA", "CISAILLEMENT 0-6 KM", "Ω 700 HPA", "RISQUE GRÊLE", "CAPE", "ISO 0°C"],
+        "france_map_renders_temperature_gradient": true
+      }
+    },
+    "simulated_404": {
+      "status": "PASS",
+      "details": {
+        "route_mock": "page.route('**/api/weather/severe**' -> 404 {detail:'Not Found'})",
+        "error_banner_displayed": true,
+        "error_text": "Endpoint /api/weather/severe absent du backend (HTTP 404). Le serveur tourne sur une branche obsolète. Sur le VPS : sudo BRANCH=Version_With_Detector bash /opt/storm-monitor/upgrade.sh",
+        "contains_endpoint_404_marker": true,
+        "contains_branche_obsolète": true,
+        "contains_upgrade_command": true,
+        "page_did_not_crash": true,
+        "nav_tabs_still_accessible": true,
+        "title_still_rendered": true
+      }
+    }
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "PrevisionsPage.jsx loadSevere correctly distinguishes axios status 404 vs other HTTP vs network error - clean implementation",
+    "Error banner has data-testid='previsions-error' which makes future regression testing easy (good)",
+    "Note: FranceMapPanel component fetches /api/weather/severe/grid independently and shows its own 'Erreur de chargement' badge on the map tile when that endpoint fails. The improved error message in PrevisionsPage only covers /api/weather/severe (the parent chart data), NOT the grid endpoint used by FranceMapPanel. If the VPS is on the wrong branch, all three endpoints (severe, severe/grid, severe/profile) are 404 - the user will still see a generic 'Erreur de chargement' inside the France map and inside VerticalProfileChart. Consider propagating the same detailed remediation message to FranceMapPanel + VerticalProfileChart for consistency.",
+    "Minor: useEffect at line 113 calls loadSevere() every 5 min - on a persistent 404 this re-triggers the error toast and re-renders. Acceptable but could be backed off after first 404."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100%"},
+  "test_credentials": "none required - public route",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "PrevisionsPage error handling validated end-to-end with page.route() mocking on /api/weather/severe**. The same approach can be reused for FranceMapPanel (/api/weather/severe/grid) and VerticalProfileChart (/api/weather/severe/profile) if main agent extends the improved error message to those components.",
+  "rca of the issue": "Not applicable - this iteration only validated a UI error-message improvement. Root cause of the original VPS bug (wrong github branch 'Testing' deployed on Kimsufi instead of 'Version_With_Detector') is environmental and confirmed by user; the frontend now displays an actionable remediation message instead of a generic 'Erreur lors du chargement des prévisions avancées'."
+}
