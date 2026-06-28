@@ -305,7 +305,13 @@ export default function FranceMapPanel({ favorites = [] }) {
   // param switching are pure client-side slices — ZERO network calls. This is
   // what eliminates the per-hour micro-request cascade that was 504-ing the
   // Kimsufi Atom backend.
+  //
+  // Cold start on weak hardware (Intel Atom): the very first call can take
+  // 20-60 s because the backend must fetch ~1.5 MB from Open-Meteo, parse it
+  // and compute 9 per-param matrices. We give it up to 90 s and show a clear
+  // status message instead of an opaque spinner.
   // -------------------------------------------------------------------------
+  const [retryToken, setRetryToken] = useState(0);
   useEffect(() => {
     let cancel = false;
     setLoading(true);
@@ -313,8 +319,10 @@ export default function FranceMapPanel({ favorites = [] }) {
     getSevereGridBulk()
       .then((b) => {
         if (cancel) return;
-        if (!b || !Array.isArray(b.lats) || !b.per_param) {
-          setError("Snapshot bulk invalide");
+        if (!b || !Array.isArray(b.lats) || b.lats.length === 0 || !b.per_param) {
+          setError(
+            "Le run météo n'est pas encore prêt sur le serveur. Réessaie dans 10-20 s."
+          );
           return;
         }
         setBulk(b);
@@ -322,11 +330,25 @@ export default function FranceMapPanel({ favorites = [] }) {
       .catch((e) => {
         if (cancel) return;
         const s = e?.response?.status;
-        setError(s === 404 ? "Endpoint /api/weather/severe/grid/bulk absent (404)" : "Erreur de chargement du run météo");
+        const detail = e?.response?.data?.detail;
+        // Truncate any oversized backend message so the UI banner never
+        // overflows the map (eg. when the backend logs the upstream URL).
+        const safeDetail = typeof detail === "string" && detail.length > 200
+          ? detail.slice(0, 200) + "…"
+          : detail;
+        if (s === 503) {
+          setError(`Run météo indisponible : ${safeDetail || "upstream Open-Meteo en erreur. Réessaie dans 10-20 s."}`);
+        } else if (s === 404) {
+          setError("Endpoint /api/weather/severe/grid/bulk absent (404) — le backend n'est pas à jour.");
+        } else if (e?.code === "ECONNABORTED") {
+          setError("Délai d'initialisation dépassé (>90 s). Le serveur est peut-être saturé — réessaie.");
+        } else {
+          setError("Erreur de chargement du run météo. Réessaie.");
+        }
       })
       .finally(() => !cancel && setLoading(false));
     return () => { cancel = true; };
-  }, []);
+  }, [retryToken]);
 
   // Pure client-side slice — recomputed only when param OR hour OR bulk change.
   // No network call. O(192) work, near-instant on any CPU.
@@ -491,19 +513,23 @@ export default function FranceMapPanel({ favorites = [] }) {
         </MapContainer>
 
         {loading && (
-          <div className="absolute top-3 right-3 z-[500] bg-white/95 border border-slate-200 px-2 py-1 font-mono text-[10px] text-slate-600 flex items-center gap-2">
-            <Loader2 className="w-3 h-3 animate-spin" />
-            Chargement…
+          <div className="absolute top-3 right-3 z-[500] bg-white/95 border border-slate-200 px-3 py-2 font-mono text-[10px] text-slate-700 flex items-center gap-2 max-w-[280px]"
+               data-testid="bulk-loading">
+            <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+            <span>Initialisation du run météo (peut prendre 30 s la première fois)…</span>
           </div>
         )}
         {error && (
-          <div className="absolute top-3 right-3 z-[500] bg-red-50 border border-red-200 px-2 py-1 font-mono text-[10px] text-red-700">
-            {error}
-          </div>
-        )}
-        {!loading && !error && grid && (!Array.isArray(grid.lats) || grid.lats.length === 0) && (
-          <div className="absolute top-3 right-3 z-[500] bg-amber-50 border border-amber-200 px-2 py-1 font-mono text-[10px] text-amber-800">
-            Données indisponibles pour ce paramètre/échéance
+          <div className="absolute top-3 right-3 z-[500] bg-red-50 border border-red-200 px-3 py-2 font-mono text-[10px] text-red-800 max-w-[320px]"
+               data-testid="bulk-error">
+            <div className="mb-1">{error}</div>
+            <button
+              onClick={() => setRetryToken((t) => t + 1)}
+              className="px-2 py-0.5 border border-red-300 text-red-800 hover:bg-red-100 text-[10px] uppercase tracking-[0.15em]"
+              data-testid="bulk-retry"
+            >
+              Réessayer
+            </button>
           </div>
         )}
       </div>

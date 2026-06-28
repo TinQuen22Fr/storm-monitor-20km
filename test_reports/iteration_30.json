@@ -1,0 +1,36 @@
+{
+  "summary": "Validated iteration 30 — graceful error handling for /api/weather/severe/grid/bulk when Open-Meteo upstream is unavailable. Backend correctly returns HTTP 503 with short friendly French messages (no Open-Meteo URL leakage). Disk path fallback chain (_resolve_bulk_file) works: STORM_CACHE_DIR env override respected, falls back to /tmp when primary cache dir is read-only, _save_bulk_to_disk swallows PermissionError. Frontend FranceMapPanel displays the loading spinner with explanatory text, shows the friendly error banner on failure, the Réessayer button correctly re-triggers the fetch via retryToken state, and the rest of the page (tabs, header, charts) remains fully navigable — no white screen, no ErrorBoundary crash.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_bulk_error_handling.py",
+    "/app/test_reports/pytest/pytest_results_iter30.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py L519-545: error mapping order (429 → timeout → connect) is correct; messages are short (≤80 chars) and never contain Open-Meteo URL. ✓",
+    "severe.py _resolve_bulk_file: write-probe at each candidate ensures only writable paths are returned; STORM_CACHE_DIR is inserted at index 0 (highest priority) — verified by test. ✓",
+    "severe.py _save_bulk_to_disk: catches PermissionError AND OSError separately with informative log + continues with in-memory snapshot — read-only FS won't crash requests. ✓",
+    "api.js getSevereGridBulk: timeout: 90000 — appropriate for cold-start on weak Atom CPU. ✓",
+    "FranceMapPanel.jsx L290-351: useEffect deps include [retryToken], so setRetryToken(t+1) cleanly re-runs the fetch; setError(null) before the fetch clears the banner immediately on retry click. ✓",
+    "FranceMapPanel.jsx L336-348: detail string is truncated to 200 chars before display — banner can never overflow the map. ✓",
+    "Live observation: backend currently returns 503 with detail='Rate-limit Open-Meteo atteint — réessaie dans 30-60 s.' (sandbox IP is rate-limited as expected per agent context); frontend renders 'Run météo indisponible : Rate-limit Open-Meteo atteint — réessaie dans 30-60 s.' — perfectly matches the intended UX."
+  ],
+  "updated_files": ["/app/backend/tests/test_bulk_error_handling.py"],
+  "success_rate": {"backend": "100% (7/7 pytest)", "frontend": "100% (loading + error + retry + page-integrity)"},
+  "test_credentials": "n/a",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "network_evidence": {
+    "initial_bulk_calls_at_mount": 2,
+    "bulk_calls_after_retry_click": 3,
+    "all_responses_status": "503 (sandbox IP rate-limited by Open-Meteo, expected)",
+    "error_banner_text_observed": "Run météo indisponible : Rate-limit Open-Meteo atteint — réessaie dans 30-60 s.",
+    "url_leakage": "none — no 'open-meteo.com/v1/...' substring in banner",
+    "banner_length_chars": 91,
+    "page_body_after_error": "2089 chars — full page navigable, no white screen, no ErrorBoundary"
+  },
+  "context_for_next_testing_agent": "All 4 error-handling scenarios validated: (a) backend 503 friendly mapping (429/timeout/connect) via mocked get_with_retry, (b) disk fallback chain via fixture with read-only dirs, (c) STORM_CACHE_DIR env override, (d) frontend retry-token loop. Live endpoint currently returns 503 because the sandbox IP is rate-limited by Open-Meteo (as expected per agent_to_agent_context_note). Once the rate-limit clears, the same test will additionally validate the 200 success path (test_bulk_endpoint_reachable already handles both branches). Test file uses asyncio.run() instead of pytest-asyncio (the plugin is not installed in this env), works cleanly on pytest 9.0.",
+  "rca of the issue": "Previous iteration 29 returned a degraded payload (200 OK with no per_param) on upstream failure, which caused the frontend to display the generic 'Snapshot bulk invalide' fallback message. Fix in iteration 30 routes ALL upstream failures through a proper HTTP 503 with mapped friendly messages (429 → rate-limit, Timeout → délai, ConnectError → connexion) and the frontend distinguishes statuses + truncates oversized details + offers a one-click retry via state token. Disk-path PermissionError on read-only FS (Kimsufi www-data) is also handled gracefully by _save_bulk_to_disk catching PermissionError/OSError and the resolver trying STORM_CACHE_DIR → package cache → /tmp in order."
+}

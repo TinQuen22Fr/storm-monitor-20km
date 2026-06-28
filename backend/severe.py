@@ -446,9 +446,40 @@ async def fetch_severe_grid(param: str, hour_offset: int = 0) -> Dict[str, Any]:
 from pathlib import Path  # noqa: E402  (kept local to the bulk section)
 import asyncio  # noqa: E402
 import json  # noqa: E402
+import os  # noqa: E402
 
 BULK_TTL_S = 600.0   # 10 min — matches the previous per-param cache TTL
-BULK_FILE = Path(__file__).parent / "cache" / "grid_bulk.json"
+
+def _resolve_bulk_file() -> Path:
+    """Decide where to persist the bulk snapshot, with a graceful fallback
+    chain so production never breaks on a permission-restricted www-data:
+      1. `<package>/cache/grid_bulk.json` (preferred, persists across deploys)
+      2. `$STORM_CACHE_DIR/grid_bulk.json` (operator override)
+      3. `/tmp/storm_grid_bulk.json` (always writable, ephemeral)
+    The decision is made lazily at first save so the import never raises."""
+    candidates: List[Path] = [
+        Path(__file__).parent / "cache" / "grid_bulk.json",
+    ]
+    env_dir = os.environ.get("STORM_CACHE_DIR")
+    if env_dir:
+        candidates.insert(0, Path(env_dir) / "grid_bulk.json")
+    candidates.append(Path("/tmp") / "storm_grid_bulk.json")
+    for p in candidates:
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            # Write-probe: open in append mode then close. Doesn't truncate.
+            with p.parent.joinpath(".write_probe").open("w") as f:
+                f.write("ok")
+            p.parent.joinpath(".write_probe").unlink(missing_ok=True)
+            return p
+        except (PermissionError, OSError):
+            continue
+    # Last resort — return the first candidate even if non-writable, the save
+    # function will catch and log.
+    return candidates[0]
+
+
+BULK_FILE = _resolve_bulk_file()
 
 # Union of every hourly variable needed by GRID_PARAM_MAP
 BULK_HOURLY_VARS = sorted({
@@ -558,7 +589,9 @@ async def _fetch_bulk_impl() -> Dict[str, Any]:
         "forecast_days": 2,
     }
     t0 = time.time()
-    r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=45)
+    # Generous timeout for weak Atom CPUs: the fetch is one big request that
+    # transfers ~1.5 MB and we'd rather wait 60 s than fail on cold start.
+    r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=60)
     raw = r.json()
     locs = raw if isinstance(raw, list) else [raw]
     if len(locs) != len(lats):

@@ -35,7 +35,10 @@ export const getSevereGrid = (param = "t850", hour = 0) =>
   api.get("/weather/severe/grid", { params: { param, hour } }).then((r) => r.data);
 
 export const getSevereGridBulk = () =>
-  api.get("/weather/severe/grid/bulk").then((r) => r.data);
+  // Cold-start on a weak Kimsufi Atom may need 30-60 s to (a) reach Open-Meteo
+  // over the upstream link, (b) parse the ~1.5 MB JSON, (c) compute the 9
+  // per-param matrices. Use a generous timeout for THIS endpoint only.
+  api.get("/weather/severe/grid/bulk", { timeout: 90000 }).then((r) => r.data);
 
 export const getSevereProfile = (lat = LOURDES.lat, lon = LOURDES.lon, hour = 0) =>
   api.get("/weather/severe/profile", { params: { lat, lon, hour } }).then((r) => r.data);

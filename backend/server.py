@@ -509,11 +509,40 @@ async def weather_severe_grid_bulk():
     """Return the FULL bulk snapshot in ONE response (all params × all hours).
     The frontend fetches this once on mount and slices client-side. Eliminates
     the per-hour micro-request cascade that was 504-ing the Kimsufi Atom under
-    rapid slider input."""
+    rapid slider input.
+
+    On cold start (no disk cache yet), this MUST do a synchronous fetch to
+    Open-Meteo (up to ~60 s on a weak Atom). The client uses an extended
+    timeout (90 s) for this single endpoint. If even that fails, we surface a
+    proper 503 with a clear message so the user knows it's an upstream issue,
+    not a code bug."""
     try:
-        return await severe_mod.get_bulk_snapshot_for_frontend()
+        snap = await severe_mod.get_bulk_snapshot_for_frontend()
+        # Validate the snapshot — never let a half-built payload through, the
+        # frontend would just display "Snapshot bulk invalide".
+        if not isinstance(snap, dict) or not snap.get("lats") or not snap.get("per_param"):
+            raise HTTPException(
+                status_code=503,
+                detail="Bulk snapshot incomplete — upstream Open-Meteo "
+                       "fetch failed and no stale cache available. Retry "
+                       "in a moment.",
+            )
+        return snap
+    except HTTPException:
+        raise
     except Exception as e:
-        return _degraded("severe-grid", e)
+        logger.exception("Bulk endpoint failed: %s", e)
+        # Friendly, short message — never dump huge upstream URLs into the
+        # response body (would overflow the frontend banner).
+        err_name = type(e).__name__
+        msg = "Service météo amont temporairement indisponible."
+        if "429" in str(e) or "Too Many Requests" in str(e):
+            msg = "Rate-limit Open-Meteo atteint — réessaie dans 30-60 s."
+        elif "Timeout" in err_name or "Timeout" in str(e):
+            msg = "Délai dépassé vers Open-Meteo — réessaie."
+        elif "ConnectError" in err_name or "Network" in err_name:
+            msg = "Connexion à Open-Meteo impossible — vérifie le réseau du serveur."
+        raise HTTPException(status_code=503, detail=msg)
 
 
 @api_router.get("/weather/severe/profile")
