@@ -373,7 +373,8 @@ FRANCE_BBOX = {
     "lon_min": -5.5,
     "lon_max": 10.0,
 }
-# 16 cols × 12 rows = 192 points ≈ 1 call gratuit Open-Meteo multi-location
+# 10 cols × 8 rows = 80 points — lightweight grid (~60% smaller than the old
+# 16×12) to stay well under Open-Meteo's daily quota on a single VPS IP.
 GRID_COLS = 10
 GRID_ROWS = 8
 
@@ -431,11 +432,11 @@ async def fetch_severe_grid(param: str, hour_offset: int = 0) -> Dict[str, Any]:
 # Bulk fetch architecture (Phase 35 — "Bulk Fetch & Local Storage")
 #
 # Single Open-Meteo multi-location call covers:
-#   - ALL 192 grid points across France
+#   - ALL 80 grid points across France
 #   - ALL hourly variables needed by ANY of the 9 UI params
 #   - ALL 48 hours of forecast
 #
-# Total payload ≈ 192 × 12 vars × 48 h ≈ 110k float values ≈ 1.5 MB JSON.
+# Total payload ≈ 80 × 12 vars × 48 h ≈ 46k float values ≈ 1.5 MB JSON.
 # Done once every BULK_TTL_S (= 600 s). After that, every (param, hour_offset)
 # request is served from the in-memory snapshot + disk JSON in <10 ms.
 #
@@ -578,7 +579,7 @@ async def _get_or_refresh_bulk() -> Dict[str, Any]:
 
 
 async def _fetch_bulk_impl() -> Dict[str, Any]:
-    """ONE Open-Meteo call covering 192 points × all needed hourly vars × 48 h.
+    """ONE Open-Meteo call covering 80 points × all needed hourly vars × 48 h.
     This is the single network access point for the entire France map."""
     lats, lons = _france_grid()
     params = {
@@ -720,7 +721,7 @@ def _slice_bulk(bulk: Dict[str, Any], param: str, hour_offset: int) -> Dict[str,
 
 async def get_bulk_snapshot_for_frontend() -> Dict[str, Any]:
     """Return the FULL bulk snapshot in one payload (all 9 params × all hours
-    × 192 locs). The frontend fetches this ONCE then slices client-side. This
+    × 80 locs). The frontend fetches this ONCE then slices client-side. This
     is what eliminates the per-hour micro-request cascade that was saturating
     the Kimsufi Atom backend."""
     bulk = await _get_or_refresh_bulk()

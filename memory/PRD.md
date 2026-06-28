@@ -30,6 +30,14 @@ React CRA, FastAPI, MongoDB, Leaflet, Leaflet WMS (EUMETSAT Meteosat MSG), Canva
 - Synergie hail = Blitzortung surges + Open-Meteo wind shear
 - Couche nuages EUMETSAT Meteosat MSG géostationnaire (15 min)
 - Scripts `install.sh` (full reset) + `upgrade.sh` (git pull + rsync rapide)
+- **[2026-02-28] Phase 36 — 4 patches chirurgicaux GEMINI verrouillés dans le repo (branche Version_With_Detector)** :
+  1. `server.py:_degraded('severe-grid')` retourne maintenant la forme exacte du bulk endpoint (`lats/lons/times/per_param/units/grid_cols/grid_rows`) → plus de "Snapshot bulk invalide" même si Open-Meteo plante.
+  2. `severe.py:GRID_COLS=10`, `GRID_ROWS=8` → grille 80 points (vs 192 avant), payload Open-Meteo 60% plus léger.
+  3. `severe.py:BULK_TTL_S = 7200.0` (2h vs 10min) → ≤12 hits Open-Meteo/jour par IP VPS, hors quota.
+  4. `install.sh` : `systemctl daemon-reload && systemctl enable && systemctl restart storm-monitor.service` (l'ancien `enable --now` ne redémarrait PAS si déjà actif → uvicorn restait sur l'ancien code en RAM, c'est pour ça que les fixes précédents ne prenaient pas effet sur le Kimsufi).
+  4bis. `install.sh` + `upgrade.sh` créent `backend/cache/` chown RUN_USER + chmod 755 → www-data peut écrire `grid_bulk.json`.
+  - **Validé testing agent (iteration_31.json) — 100% backend (16/16 pytest)** + live evidence des 7 clés présentes dans `_degraded`, `france_grid_len=80`, `BULK_TTL_S=7200.0`, `bash -n` OK sur les deux scripts.
+
 - **[2026-02-28] Phase 35bis — Frontend bulk fetch + écriture disque non-bloquante (fix 504 Kimsufi)** :
   - **Bug** : iteration_28 avait mis en place le bulk côté backend, mais `FranceMapPanel.jsx` continuait à appeler `getSevereGrid(param, hour)` dans un `useEffect([param, hour])`. À chaque mouvement du slider sur l'Intel Atom Kimsufi → cascade de micro-requêtes (?hour=5, hour=6...) → backend saturé pendant le premier bulk fetch → 504 Gateway Timeout nginx.
   - **Fix frontend** (`FranceMapPanel.jsx`) : remplacement du `useEffect([param, hour])` par (a) `useEffect([])` qui fetche `/api/weather/severe/grid/bulk` UNE SEULE FOIS au mount, (b) `useMemo([bulk, param, hour, ...])` qui slice le snapshot in-memory côté JS. Plus aucun appel API au mouvement du slider ou changement de param.
