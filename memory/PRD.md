@@ -30,6 +30,13 @@ React CRA, FastAPI, MongoDB, Leaflet, Leaflet WMS (EUMETSAT Meteosat MSG), Canva
 - Synergie hail = Blitzortung surges + Open-Meteo wind shear
 - Couche nuages EUMETSAT Meteosat MSG géostationnaire (15 min)
 - Scripts `install.sh` (full reset) + `upgrade.sh` (git pull + rsync rapide)
+- **[2026-02-28] Fix racine rate-limit Open-Meteo (carte Prévisions vide passée H+4)** :
+  - **Cause racine** : cache indexé par `(param, hour_offset)` → 9 × 48 = 432 clés distinctes. Chaque mouvement du slider = nouvel appel multi-location → Open-Meteo 429 → `_degraded` → carte vide. L'iteration_26 ne faisait que masquer le crash, pas régler la cause.
+  - **Fix backend** (`severe.py`) : `fetch_severe_grid` refactoré — 1 seul appel par `param` qui ramène les 48 heures d'un coup, cache TTL 600s par `param` uniquement. Le `hour_offset` devient une simple indexation post-cache → après le premier appel, le user peut scrubber le slider H+0→H+47 sans aucun appel API supplémentaire. Idem `fetch_temp_profile` cache par `(lat,lon)`.
+  - **Fix backend** (`weather.py`) : `get_with_retry` durci — retries 2→4, backoff exponentiel 1/2/4/8 s (worst case ~15s). Absorbe les 429 transients.
+  - **Frontend NON modifié** (consigne stricte de l'user).
+  - **Validé testing agent** (iteration_27.json) — 27/27 pytest backend + 100% frontend stress test. Vraies données 192 points pour les 9 params, valeurs physiques cohérentes, profil vertical -37°C à 300hPa. Plus de badge ambre.
+
 - **[2026-02-28] Fix crash FranceMapPanel `lats is undefined` (preview overlay rouge + Kimsufi page blanche)** :
   - Backend `server.py:_degraded` étendu pour les cas `severe`, `severe-grid`, `severe-profile` → renvoie maintenant des arrays vides au lieu d'un payload sans clés.
   - Frontend `FranceMapPanel.jsx` : `valueAt` + rendu `IdwOverlay` + `.map(favorites)` guardés avec `Array.isArray(grid.lats) && grid.lats.length > 0`. Badge ambre `Données indisponibles pour ce paramètre/échéance` non-bloquant en cas de payload dégradé.
