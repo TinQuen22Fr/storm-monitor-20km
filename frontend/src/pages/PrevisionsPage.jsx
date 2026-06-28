@@ -4,6 +4,7 @@ import { Loader2, RefreshCw, TrendingUp, Wind } from "lucide-react";
 import NavTabs from "@/components/NavTabs";
 import FranceMapPanel from "@/components/FranceMapPanel";
 import VerticalProfileChart from "@/components/VerticalProfileChart";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import { useAuth } from "@/lib/auth";
 import { getSevere, listFavorites, LOURDES } from "@/lib/api";
 import { setLocalTimezone, fmtLocalTime } from "@/lib/timeFormat";
@@ -205,7 +206,9 @@ export default function PrevisionsPage() {
 
         {/* France-wide interactive map (Windy-style) */}
         <div className="mb-6">
-          <FranceMapPanel favorites={zones} />
+          <ErrorBoundary label="Erreur lors du rendu de la carte France. Recharge la page ou réessaie.">
+            <FranceMapPanel favorites={zones} />
+          </ErrorBoundary>
         </div>
 
         {!data && loading && (
@@ -360,11 +363,13 @@ export default function PrevisionsPage() {
         {/* Vertical temperature profile for the active zone */}
         {activeZone && (
           <div className="mt-6">
-            <VerticalProfileChart
-              lat={activeZone.lat}
-              lon={activeZone.lon}
-              name={activeZone.name}
-            />
+            <ErrorBoundary label="Erreur lors du rendu du profil vertical.">
+              <VerticalProfileChart
+                lat={activeZone.lat}
+                lon={activeZone.lon}
+                name={activeZone.name}
+              />
+            </ErrorBoundary>
           </div>
         )}
 

@@ -345,6 +345,12 @@ def _degraded(kind: str, error: Exception) -> Dict[str, Any]:
         base.update({"days": []})
     elif kind == "wind":
         base.update({"arrows": [], "max_speed": 0})
+    elif kind == "severe":
+        base.update({"hourly": [], "max_hail_score": 0, "max_hail_level": 0})
+    elif kind == "severe-grid":
+        base.update({"lats": [], "lons": [], "values": [], "grid_cols": 0, "grid_rows": 0})
+    elif kind == "severe-profile":
+        base.update({"levels": [], "temperatures": []})
     return base
 
 

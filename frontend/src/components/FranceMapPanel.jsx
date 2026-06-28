@@ -274,6 +274,8 @@ function Legend({ paletteKey, range, unit, decimals }) {
 
 // Helper: get the value at (lat, lon) by IDW from the grid points
 function valueAt(lat, lon, lats, lons, values) {
+  if (!Array.isArray(lats) || !Array.isArray(lons) || !Array.isArray(values)) return null;
+  if (lats.length === 0) return null;
   let num = 0;
   let den = 0;
   const POWER = 2.5;
@@ -413,7 +415,7 @@ export default function FranceMapPanel({ favorites = [] }) {
             attribution="&copy; CARTO &copy; OpenStreetMap"
             url="https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png"
           />
-          {grid && (
+          {grid && Array.isArray(grid.lats) && grid.lats.length > 0 && (
             <IdwOverlay
               lats={grid.lats}
               lons={grid.lons}
@@ -429,7 +431,7 @@ export default function FranceMapPanel({ favorites = [] }) {
             opacity={0.85}
           />
           {/* Favorite markers with exact interpolated value */}
-          {grid &&
+          {grid && Array.isArray(grid.lats) && grid.lats.length > 0 &&
             favorites.map((f) => {
               const v = valueAt(f.lat, f.lon, grid.lats, grid.lons, grid.values);
               return (
@@ -461,6 +463,11 @@ export default function FranceMapPanel({ favorites = [] }) {
         {error && (
           <div className="absolute top-3 right-3 z-[500] bg-red-50 border border-red-200 px-2 py-1 font-mono text-[10px] text-red-700">
             {error}
+          </div>
+        )}
+        {!loading && !error && grid && (!Array.isArray(grid.lats) || grid.lats.length === 0) && (
+          <div className="absolute top-3 right-3 z-[500] bg-amber-50 border border-amber-200 px-2 py-1 font-mono text-[10px] text-amber-800">
+            Données indisponibles pour ce paramètre/échéance
           </div>
         )}
       </div>
