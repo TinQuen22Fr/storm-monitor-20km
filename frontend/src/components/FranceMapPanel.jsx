@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MapContainer, Marker, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import { Loader2 } from "lucide-react";
-import { getSevereGrid, listFavorites, LOURDES } from "@/lib/api";
+import { getSevereGridBulk, listFavorites, LOURDES } from "@/lib/api";
 
 // =========================================================================
 // Color palettes per param (Windy.com-inspired smooth gradients).
@@ -293,34 +293,70 @@ function valueAt(lat, lon, lats, lons, values) {
 export default function FranceMapPanel({ favorites = [] }) {
   const [param, setParam] = useState("t850");
   const [hour, setHour] = useState(0);
-  const [grid, setGrid] = useState(null);
+  const [bulk, setBulk] = useState(null);  // Full snapshot (all params × all hours)
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const cfg = PARAMS[param];
 
+  // -------------------------------------------------------------------------
+  // ONE bulk fetch on mount. The backend returns all 9 params × all 48 hours
+  // × 192 locs in a single ~450 KB response. After this, slider scrubbing and
+  // param switching are pure client-side slices — ZERO network calls. This is
+  // what eliminates the per-hour micro-request cascade that was 504-ing the
+  // Kimsufi Atom backend.
+  // -------------------------------------------------------------------------
   useEffect(() => {
     let cancel = false;
     setLoading(true);
     setError(null);
-    getSevereGrid(param, hour)
-      .then((d) => {
+    getSevereGridBulk()
+      .then((b) => {
         if (cancel) return;
-        // Apply value scaling if needed (e.g. m/s → km/h for jet)
-        if (cfg.valueScale && d.values) {
-          d.values = d.values.map((v) => (v == null ? null : v * cfg.valueScale));
+        if (!b || !Array.isArray(b.lats) || !b.per_param) {
+          setError("Snapshot bulk invalide");
+          return;
         }
-        setGrid(d);
+        setBulk(b);
       })
       .catch((e) => {
-        if (!cancel) {
-          const s = e?.response?.status;
-          setError(s === 404 ? "Endpoint absent (404)" : "Erreur de chargement");
-        }
+        if (cancel) return;
+        const s = e?.response?.status;
+        setError(s === 404 ? "Endpoint /api/weather/severe/grid/bulk absent (404)" : "Erreur de chargement du run météo");
       })
       .finally(() => !cancel && setLoading(false));
     return () => { cancel = true; };
-  }, [param, hour]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Pure client-side slice — recomputed only when param OR hour OR bulk change.
+  // No network call. O(192) work, near-instant on any CPU.
+  const grid = useMemo(() => {
+    if (!bulk) return null;
+    const times = bulk.times || [];
+    const matrix = (bulk.per_param || {})[param] || [];
+    if (!times.length || !matrix.length) return null;
+    const idx = Math.max(0, Math.min(hour, times.length - 1));
+    let values = matrix[idx] || [];
+    // Apply per-param unit scaling (e.g. m/s → km/h for jet)
+    if (cfg.valueScale) {
+      values = values.map((v) => (v == null ? null : v * cfg.valueScale));
+    }
+    const valid = values.filter((v) => v != null);
+    return {
+      param,
+      unit: (bulk.units || {})[param] || cfg.unit,
+      hour_offset: idx,
+      time: times[idx],
+      bbox: bulk.bbox,
+      grid_cols: bulk.grid_cols,
+      grid_rows: bulk.grid_rows,
+      lats: bulk.lats,
+      lons: bulk.lons,
+      values,
+      min: valid.length ? Math.min(...valid) : null,
+      max: valid.length ? Math.max(...valid) : null,
+    };
+  }, [bulk, param, hour, cfg.valueScale, cfg.unit]);
 
   const displayedTime = useMemo(() => {
     if (!grid?.time) return "—";

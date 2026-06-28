@@ -1,0 +1,33 @@
+{
+  "summary": "Phase 35 'Bulk Fetch & Local Storage' validated end-to-end. Backend bulk endpoint returns full snapshot (192 locs × 48 h × 9 params) in single payload; frontend fetches it ONCE at mount, then slices client-side. Slider scrubbing (8 positions) and param switching (5 params) produce ZERO additional /api/weather/severe/* requests, eliminating the micro-request cascade that was 504-ing the Kimsufi Atom.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_bulk_grid.py",
+    "/app/test_reports/pytest/pytest_results_iter29.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "severe.py: BULK_FILE uses Path(__file__).parent — resolves relatively as required (works in /app/backend/cache and /var/www/storm-monitor/backend/cache).",
+    "severe.py: _save_bulk_to_disk_async wraps the sync write in asyncio.to_thread; _get_or_refresh_bulk uses asyncio.create_task(...) (fire-and-forget) so disk persistence never blocks the request thread.",
+    "severe.py: _save_bulk_to_disk explicitly catches PermissionError and OSError with logger.warning (no raise) — read-only filesystem will keep in-memory mode without breaking requests.",
+    "FranceMapPanel.jsx: useEffect with empty deps [] triggers ONE bulk fetch on mount; useMemo dependencies [bulk, param, hour, cfg.valueScale, cfg.unit] guarantee pure client-side slicing for all subsequent UI changes.",
+    "api.js: getSevereGridBulk exposed at line 37; legacy getSevereGrid retained for backwards compat but not invoked by FranceMapPanel.",
+    "Minor: in dev (StrictMode) the bulk endpoint is hit twice at mount — this is expected React 18 behavior; production build will issue 1 call. Backend handles the second call from the in-memory cache (<5ms)."
+  ],
+  "updated_files": ["/app/backend/tests/test_bulk_grid.py"],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100%"},
+  "test_credentials": "n/a (no auth flow tested)",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "network_evidence": {
+    "mount_severe_calls": ["/api/weather/severe/grid/bulk (×2 StrictMode)", "/api/weather/severe/profile?lat=43.0951&lon=-0.0434&hour=0 (×2 — separate vertical profile component, not FranceMapPanel)"],
+    "legacy_grid_micro_calls_at_mount": 0,
+    "slider_scrub_8_positions_new_calls": 0,
+    "param_switch_5_clicks_new_calls": 0,
+    "ui_state": "CAPE gradient visible, Lourdes marker = '54 J/kg', H+47 echéance affichée, aucun badge d'erreur ni spinner persistant"
+  },
+  "context_for_next_testing_agent": "Phase 35 bulk architecture is fully working. The 2 bulk calls at mount are expected (React 18 StrictMode in dev), production build will collapse to 1. Two profile calls visible at mount come from a separate vertical-profile component (not FranceMapPanel) and are also cached server-side. If a future regression introduces /api/weather/severe/grid?param=X&hour=Y calls during slider/param interaction, this means the useMemo dependencies were broken or someone re-added a useEffect with [param, hour] deps that re-calls the API.",
+  "rca of the issue": "Previous iteration (28) backend was already bulk-capable but FranceMapPanel still had a useEffect calling getSevereGrid(param, hour) on every slider/param change, causing 48+ micro-requests per session. Fixed by replacing that useEffect with: (a) single useEffect([]) that calls getSevereGridBulk() once at mount, and (b) useMemo([bulk, param, hour, ...]) that slices the in-memory snapshot client-side. Backend disk write also moved off the request thread via asyncio.to_thread + create_task to protect the weak Atom CPU."
+}

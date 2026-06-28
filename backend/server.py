@@ -504,6 +504,18 @@ async def weather_severe_grid_status():
     return await severe_mod.get_bulk_status()
 
 
+@api_router.get("/weather/severe/grid/bulk")
+async def weather_severe_grid_bulk():
+    """Return the FULL bulk snapshot in ONE response (all params × all hours).
+    The frontend fetches this once on mount and slices client-side. Eliminates
+    the per-hour micro-request cascade that was 504-ing the Kimsufi Atom under
+    rapid slider input."""
+    try:
+        return await severe_mod.get_bulk_snapshot_for_frontend()
+    except Exception as e:
+        return _degraded("severe-grid", e)
+
+
 @api_router.get("/weather/severe/profile")
 async def weather_severe_profile(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, hour: int = 0):
     """Vertical temperature profile (surface + 1000/925/850/700/500/300 hPa)."""

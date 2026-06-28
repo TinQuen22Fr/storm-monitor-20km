@@ -471,15 +471,37 @@ def _load_bulk_from_disk() -> Optional[Dict[str, Any]]:
 
 
 def _save_bulk_to_disk(snap: Dict[str, Any]) -> None:
+    """Atomic write. Handles permission errors gracefully (warn + continue in
+    in-memory mode) so a read-only filesystem or restricted www-data perms
+    never block the request thread."""
     try:
         BULK_FILE.parent.mkdir(parents=True, exist_ok=True)
-        # Atomic write via tempfile + rename
         tmp = BULK_FILE.with_suffix(".json.tmp")
         with tmp.open("w", encoding="utf-8") as f:
             json.dump(snap, f, separators=(",", ":"))
         tmp.replace(BULK_FILE)
+    except PermissionError as e:
+        logger.warning(
+            "Bulk cache disk write blocked by permissions on %s: %s. "
+            "Continuing with in-memory-only snapshot.", BULK_FILE, e,
+        )
+    except OSError as e:
+        logger.warning(
+            "Bulk cache disk write OSError on %s: %s. Continuing in-memory only.",
+            BULK_FILE, e,
+        )
     except Exception as e:
-        logger.warning("Could not save bulk file %s: %s", BULK_FILE, e)
+        logger.warning("Bulk cache disk write failed (%s): %s", type(e).__name__, e)
+
+
+async def _save_bulk_to_disk_async(snap: Dict[str, Any]) -> None:
+    """Run the synchronous disk write in a thread pool so the event loop
+    stays responsive on weak CPUs (Intel Atom Kimsufi). A 448 KB JSON dump
+    can take 100-300 ms on slow IO — offloading prevents request stalls."""
+    try:
+        await asyncio.to_thread(_save_bulk_to_disk, snap)
+    except Exception as e:
+        logger.warning("Bulk save thread failed: %s", e)
 
 
 async def _get_or_refresh_bulk() -> Dict[str, Any]:
@@ -507,7 +529,8 @@ async def _get_or_refresh_bulk() -> Dict[str, Any]:
         try:
             fresh = await _fetch_bulk_impl()
             _bulk_snapshot = fresh
-            _save_bulk_to_disk(fresh)
+            # Non-blocking disk persistence — never stalls the request thread
+            asyncio.create_task(_save_bulk_to_disk_async(fresh))
             return _bulk_snapshot
         except Exception as e:
             # Fall back to stale disk/in-memory rather than failing
@@ -658,6 +681,28 @@ def _slice_bulk(bulk: Dict[str, Any], param: str, hour_offset: int) -> Dict[str,
         "source": "bulk",
         "fetched_at": bulk.get("fetched_at"),
         "run_iso": bulk.get("run_iso"),
+    }
+
+
+async def get_bulk_snapshot_for_frontend() -> Dict[str, Any]:
+    """Return the FULL bulk snapshot in one payload (all 9 params × all hours
+    × 192 locs). The frontend fetches this ONCE then slices client-side. This
+    is what eliminates the per-hour micro-request cascade that was saturating
+    the Kimsufi Atom backend."""
+    bulk = await _get_or_refresh_bulk()
+    return {
+        "fetched_at": bulk.get("fetched_at"),
+        "run_iso": bulk.get("run_iso"),
+        "bbox": bulk.get("bbox"),
+        "grid_cols": bulk.get("grid_cols"),
+        "grid_rows": bulk.get("grid_rows"),
+        "n_locs": bulk.get("n_locs"),
+        "n_hours": bulk.get("n_hours"),
+        "times": bulk.get("times", []),
+        "lats": bulk.get("lats", []),
+        "lons": bulk.get("lons", []),
+        "per_param": bulk.get("per_param", {}),
+        "units": bulk.get("units", {}),
     }
 
 
