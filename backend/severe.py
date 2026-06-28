@@ -418,18 +418,26 @@ GRID_PARAM_MAP: Dict[str, Dict[str, Any]] = {
 
 
 async def fetch_severe_grid(param: str, hour_offset: int = 0) -> Dict[str, Any]:
-    """Fetch a single-parameter forecast on the France grid (192 points)
-    in ONE Open-Meteo multi-location call. Cached 10 min."""
+    """Fetch a single-parameter forecast on the France grid (192 points).
+    The expensive Open-Meteo multi-location call returns ALL 48 hours at once
+    and is cached for 10 min by `param` only (NOT by hour_offset). This means
+    the user can scrub the H+0 → H+47 slider freely without ever triggering
+    another HTTP call until the cache expires. Avoids hitting the 429 rate-limit
+    that previously made the map go blank after a few slider moves."""
     if param not in GRID_PARAM_MAP:
         raise ValueError(f"unknown param: {param}")
-    return await _cached(
-        f"severe-grid:{param}:{hour_offset}",
+    all_hours = await _cached(
+        f"severe-grid-all:{param}",
         600.0,
-        lambda: _fetch_severe_grid_impl(param, hour_offset),
+        lambda: _fetch_severe_grid_all_hours_impl(param),
     )
+    # Extract the requested hour from the cached all-hours snapshot
+    return _extract_hour_from_grid(all_hours, hour_offset)
 
 
-async def _fetch_severe_grid_impl(param: str, hour_offset: int) -> Dict[str, Any]:
+async def _fetch_severe_grid_all_hours_impl(param: str) -> Dict[str, Any]:
+    """Single Open-Meteo multi-location call for ALL 48 hours.
+    Returns a snapshot with `values_per_hour` = list[48] of list[192]."""
     lats, lons = _france_grid()
     spec = GRID_PARAM_MAP[param]
     needed_vars = spec["vars"]
@@ -444,58 +452,98 @@ async def _fetch_severe_grid_impl(param: str, hour_offset: int) -> Dict[str, Any
     }
     r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=25)
     raw = r.json()
-
-    # Open-Meteo returns either a list (multi-location) or a single dict.
     locs = raw if isinstance(raw, list) else [raw]
     if len(locs) != len(lats):
         logger.warning("severe-grid: expected %d locations, got %d", len(lats), len(locs))
 
     times_ref: List[str] = []
-    values: List[Optional[float]] = []
-    for i, loc in enumerate(locs):
+    # Build values_per_hour[hour][loc_idx]
+    values_per_hour: List[List[Optional[float]]] = []
+    # First pass: detect time series length and pre-extract per-loc hourly series
+    loc_series: List[Dict[str, List[Optional[float]]]] = []
+    for loc in locs:
         h = loc.get("hourly") or {}
-        ts = h.get("time") or []
-        if not times_ref and ts:
-            times_ref = ts
-        idx = max(0, min(int(hour_offset), len(ts) - 1)) if ts else 0
+        if not times_ref:
+            times_ref = h.get("time") or []
+        loc_series.append(h)
+    n_hours = len(times_ref)
 
-        if param == "hail_score":
-            cape = (h.get("cape") or [None] * len(ts))[idx]
-            li = (h.get("lifted_index") or [None] * len(ts))[idx]
-            fzh = (h.get("freezing_level_height") or [None] * len(ts))[idx]
-            w10s = (h.get("wind_speed_10m") or [None] * len(ts))[idx]
-            w10d = (h.get("wind_direction_10m") or [None] * len(ts))[idx]
-            w5s = (h.get("wind_speed_500hPa") or [None] * len(ts))[idx]
-            w5d = (h.get("wind_direction_500hPa") or [None] * len(ts))[idx]
-            shear = _shear_magnitude(w10s, w10d, w5s, w5d)
-            v = hail_score(cape, li, shear, fzh)
-        elif param == "shear_0_6km":
-            w10s = (h.get("wind_speed_10m") or [None] * len(ts))[idx]
-            w10d = (h.get("wind_direction_10m") or [None] * len(ts))[idx]
-            w5s = (h.get("wind_speed_500hPa") or [None] * len(ts))[idx]
-            w5d = (h.get("wind_direction_500hPa") or [None] * len(ts))[idx]
-            v = _shear_magnitude(w10s, w10d, w5s, w5d)
-        else:
-            var = needed_vars[0]
-            series = h.get(var) or []
-            v = series[idx] if idx < len(series) else None
+    for hour_idx in range(n_hours):
+        row: List[Optional[float]] = []
+        for h in loc_series:
+            ts = h.get("time") or []
+            idx = hour_idx if hour_idx < len(ts) else -1
+            v: Optional[float] = None
+            if idx >= 0:
+                if param == "hail_score":
+                    cape = (h.get("cape") or [None] * len(ts))[idx]
+                    li = (h.get("lifted_index") or [None] * len(ts))[idx]
+                    fzh = (h.get("freezing_level_height") or [None] * len(ts))[idx]
+                    w10s = (h.get("wind_speed_10m") or [None] * len(ts))[idx]
+                    w10d = (h.get("wind_direction_10m") or [None] * len(ts))[idx]
+                    w5s = (h.get("wind_speed_500hPa") or [None] * len(ts))[idx]
+                    w5d = (h.get("wind_direction_500hPa") or [None] * len(ts))[idx]
+                    shear = _shear_magnitude(w10s, w10d, w5s, w5d)
+                    v = hail_score(cape, li, shear, fzh)
+                elif param == "shear_0_6km":
+                    w10s = (h.get("wind_speed_10m") or [None] * len(ts))[idx]
+                    w10d = (h.get("wind_direction_10m") or [None] * len(ts))[idx]
+                    w5s = (h.get("wind_speed_500hPa") or [None] * len(ts))[idx]
+                    w5d = (h.get("wind_direction_500hPa") or [None] * len(ts))[idx]
+                    v = _shear_magnitude(w10s, w10d, w5s, w5d)
+                else:
+                    var = needed_vars[0]
+                    series = h.get(var) or []
+                    v = series[idx] if idx < len(series) else None
+            row.append(round(v, 2) if isinstance(v, (int, float)) else None)
+        values_per_hour.append(row)
 
-        values.append(round(v, 2) if isinstance(v, (int, float)) else None)
-
-    # Compute the displayed time string from the reference series
-    selected_time = times_ref[max(0, min(int(hour_offset), len(times_ref) - 1))] if times_ref else None
-
-    valid = [v for v in values if v is not None]
     return {
         "param": param,
         "unit": spec["unit"],
-        "hour_offset": int(hour_offset),
-        "time": selected_time,  # UTC ISO
+        "times": times_ref,
         "bbox": FRANCE_BBOX,
         "grid_cols": GRID_COLS,
         "grid_rows": GRID_ROWS,
         "lats": lats,
         "lons": lons,
+        "values_per_hour": values_per_hour,
+    }
+
+
+def _extract_hour_from_grid(snapshot: Dict[str, Any], hour_offset: int) -> Dict[str, Any]:
+    """Pull a single-hour slice from the full 48h cached grid snapshot."""
+    times = snapshot.get("times") or []
+    vph = snapshot.get("values_per_hour") or []
+    if not times or not vph:
+        # Should never happen if the upstream call succeeded — be defensive.
+        return {
+            "param": snapshot.get("param"),
+            "unit": snapshot.get("unit"),
+            "hour_offset": int(hour_offset),
+            "time": None,
+            "bbox": snapshot.get("bbox"),
+            "grid_cols": snapshot.get("grid_cols", 0),
+            "grid_rows": snapshot.get("grid_rows", 0),
+            "lats": snapshot.get("lats", []),
+            "lons": snapshot.get("lons", []),
+            "values": [],
+            "min": None,
+            "max": None,
+        }
+    idx = max(0, min(int(hour_offset), len(times) - 1))
+    values = vph[idx] if idx < len(vph) else []
+    valid = [v for v in values if v is not None]
+    return {
+        "param": snapshot.get("param"),
+        "unit": snapshot.get("unit"),
+        "hour_offset": int(hour_offset),
+        "time": times[idx],
+        "bbox": snapshot.get("bbox"),
+        "grid_cols": snapshot.get("grid_cols"),
+        "grid_rows": snapshot.get("grid_rows"),
+        "lats": snapshot.get("lats", []),
+        "lons": snapshot.get("lons", []),
         "values": values,
         "min": min(valid) if valid else None,
         "max": max(valid) if valid else None,
@@ -519,15 +567,20 @@ PRESSURE_TO_HEIGHT_M = {
 
 
 async def fetch_temp_profile(lat: float, lon: float, hour_offset: int = 0) -> Dict[str, Any]:
-    """Vertical temperature profile (surface + 6 pressure levels). Cached 5 min."""
-    return await _cached(
-        f"profile:{lat}:{lon}:{hour_offset}",
-        300.0,
-        lambda: _fetch_temp_profile_impl(lat, lon, hour_offset),
+    """Vertical temperature profile (surface + 6 pressure levels).
+    Same caching strategy as the grid: the expensive Open-Meteo call returns
+    ALL 48 hours; cache is keyed by `(lat, lon)` only (10 min). Slider scrubbing
+    re-uses the cached snapshot — no extra HTTP call, no 429 rate-limit."""
+    all_hours = await _cached(
+        f"profile-all:{round(float(lat), 3)}:{round(float(lon), 3)}",
+        600.0,
+        lambda: _fetch_temp_profile_all_hours_impl(lat, lon),
     )
+    return _extract_hour_from_profile(all_hours, hour_offset)
 
 
-async def _fetch_temp_profile_impl(lat: float, lon: float, hour_offset: int) -> Dict[str, Any]:
+async def _fetch_temp_profile_all_hours_impl(lat: float, lon: float) -> Dict[str, Any]:
+    """Single Open-Meteo call for the full 48h temp profile."""
     params = {
         "latitude": lat,
         "longitude": lon,
@@ -539,30 +592,53 @@ async def _fetch_temp_profile_impl(lat: float, lon: float, hour_offset: int) -> 
     data = r.json()
     h = data.get("hourly") or {}
     times = h.get("time") or []
-    idx = max(0, min(int(hour_offset), len(times) - 1)) if times else 0
+    return {
+        "timezone": data.get("timezone", "Europe/Paris"),
+        "lat": lat,
+        "lon": lon,
+        "times": times,
+        "t2m_series": h.get("temperature_2m") or [None] * len(times),
+        "levels_series": {
+            p: h.get(f"temperature_{p}hPa") or [None] * len(times)
+            for p in PROFILE_PRESSURE_LEVELS
+        },
+    }
 
-    points: List[Dict[str, Any]] = []
-    t_surface = (h.get("temperature_2m") or [None] * len(times))[idx] if times else None
-    points.append({
+
+def _extract_hour_from_profile(snapshot: Dict[str, Any], hour_offset: int) -> Dict[str, Any]:
+    """Build the points[] list for a single hour from the cached snapshot."""
+    times = snapshot.get("times") or []
+    if not times:
+        return {
+            "timezone": snapshot.get("timezone", "Europe/Paris"),
+            "hour_offset": int(hour_offset),
+            "time": None,
+            "lat": snapshot.get("lat"),
+            "lon": snapshot.get("lon"),
+            "points": [],
+        }
+    idx = max(0, min(int(hour_offset), len(times) - 1))
+    t_surface = snapshot["t2m_series"][idx] if idx < len(snapshot["t2m_series"]) else None
+    points: List[Dict[str, Any]] = [{
         "level": "2m",
         "pressure_hpa": 1013,
         "height_m": PRESSURE_TO_HEIGHT_M["surface"],
         "temperature_c": t_surface,
-    })
+    }]
     for p in PROFILE_PRESSURE_LEVELS:
-        v = (h.get(f"temperature_{p}hPa") or [None] * len(times))[idx] if times else None
+        series = snapshot["levels_series"].get(p, [])
+        v = series[idx] if idx < len(series) else None
         points.append({
             "level": f"{p}hPa",
             "pressure_hpa": p,
             "height_m": PRESSURE_TO_HEIGHT_M[p],
             "temperature_c": v,
         })
-
     return {
-        "timezone": data.get("timezone", "Europe/Paris"),
+        "timezone": snapshot.get("timezone", "Europe/Paris"),
         "hour_offset": int(hour_offset),
-        "time": times[idx] if times else None,
-        "lat": lat,
-        "lon": lon,
+        "time": times[idx],
+        "lat": snapshot.get("lat"),
+        "lon": snapshot.get("lon"),
         "points": points,
     }

@@ -1,0 +1,36 @@
+{
+  "summary": "Validated the rate-limit root-cause fix on /api/weather/severe (severe.py + weather.py). Backend: 27/27 pytest tests pass. All 9 params (t2m, t850, soil_t, cape, freezing_level, jet_speed, vv700, shear_0_6km, hail_score) return real 192-point grids at both H+0 and H+24 with physically coherent min/max (e.g. CAPE up to ~thousands J/kg, T850 in -40..40°C, jet_speed within 0..120 m/s) and degraded=false. Cache by `param` only is confirmed: scrubbing H+0→H+47 on already-fetched t850 and cape stays <800ms per request (most under 100ms). Vertical profile at Lourdes for H ∈ {0,12,24,36,47} returns 7 pressure-level points with monotonic-ish cooling (surface ~23°C → 300hPa ~-36°C). Frontend (untouched): on the live preview, scrubbed slider through 9 hours and clicked 5 params (T°850, T°2M, JET 300, CISAILLEMENT, RISQUE GRÊLE, CAPE) — 0 runtime errors, 0 console errors, no error-boundary, no previsions-error, no 'Données indisponibles' badge. The amber-badge crash regression from iteration_26 is fully resolved.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_severe_grid_cache.py",
+    "/app/test_reports/pytest/severe_grid_cache.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "severe.py is now 645 lines — approaching the 700-line soft cap. Consider extracting the per-param grid logic (GRID_PARAM_MAP, _fetch_severe_grid_all_hours_impl, hail/shear helpers) into a dedicated severe_grid.py module before the next feature lands.",
+    "Cache key by `param` only is correct, but there is no observability around cache hit/miss ratio. A simple counter logged every N requests (or exposed at /api/_debug/cache_stats) would help confirm rate-limit safety in production. Currently it is only verifiable by manual timing.",
+    "weather.py get_with_retry: backoff 1/2/4/8s × 4 retries = worst-case ~15s on a single param. With a 25s request timeout in severe.py this is safe, but the profile route uses a different timeout — consider centralizing the per-call timeout next to max_retries to avoid future drift.",
+    "Profile endpoint uses field name `temperature_c` whereas the grid uses `values` (no per-point label). Minor consistency nit — frontend already handles both, but a shared schema would prevent the kind of test typo I just had to fix (temp_c vs temperature_c)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_severe_grid_cache.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (27/27)",
+    "frontend": "100% (no errors on the stress flow described in the request)"
+  },
+  "test_credentials": "N/A — /previsions and /api/weather/severe/* are public",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend regression suite for the rate-limit fix lives at /app/backend/tests/test_severe_grid_cache.py (27 tests, ~60s). It validates: (1) real 192-point grids for all 9 params at H+0 and H+24 with physical bounds, (2) cache hit <800ms on subsequent hours for an already-fetched param (test paces calls ~0.8s apart to mimic human use — bursting parametrize without sleep WILL trigger 429 from Open-Meteo and that is expected per upstream limits), (3) vertical profile at Lourdes for 5 hours. Frontend Playwright stress flow (slider 9 hours + 6 param switches) confirmed clean on the preview URL. The /api/weather/severe/profile route returns `points[].temperature_c` (NOT `temp_c`).",
+  "rca of the issue": "Root cause from the request was confirmed by the curl burst from inside the test suite: previously the cache was keyed by (param, hour_offset), so every slider tick = new Open-Meteo multi-location call → eventual 429 → _degraded path → empty arrays → frontend amber badge. The refactor caches the full 48h snapshot per `param` (TTL 600s) and slices the requested hour in pure Python — observed first-call ~0.7-2s, subsequent hours <150ms typical. weather.py retries (4× exponential 1/2/4/8s) further absorb transient 429s. After the fix, all 27 backend assertions hold and the live frontend stress flow shows 0 errors / 0 degraded badges, fully closing the loop on iteration_26's amber-badge symptom."
+}

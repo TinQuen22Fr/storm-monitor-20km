@@ -41,8 +41,15 @@ _STALE_FILE = Path(
 # ---------- Resilient HTTP with 429 retry ----------
 async def get_with_retry(url: str, params: Dict[str, Any] | None = None,
                         headers: Dict[str, Any] | None = None,
-                        timeout: float = 10.0, max_retries: int = 2) -> httpx.Response:
-    """GET with short exponential backoff on 429/503. Fails fast."""
+                        timeout: float = 10.0, max_retries: int = 4) -> httpx.Response:
+    """GET with exponential backoff on 429/503.
+
+    Open-Meteo's free tier shares a per-IP minute-bucket limit. When a user
+    rapidly toggles params on the Forecast map, several big multi-location
+    calls can stack up in <2s. We retry up to 4 times with backoff
+    `2 ** attempt` (1, 2, 4, 8 s) — total worst-case wait ≈15s before
+    surrendering. This stays under the FastAPI request timeout while giving
+    the rate-limit window enough room to drain."""
     last_response: httpx.Response | None = None
     async with httpx.AsyncClient(timeout=timeout) as client:
         for attempt in range(max_retries):
@@ -52,7 +59,7 @@ async def get_with_retry(url: str, params: Dict[str, Any] | None = None,
                 if r.status_code in (429, 503):
                     if attempt >= max_retries - 1:
                         break
-                    wait = 1.0 + attempt  # 1s, 2s
+                    wait = float(2 ** attempt)  # 1s, 2s, 4s, 8s
                     logger.info("Rate-limited (%s), waiting %.1fs (attempt %d/%d)",
                                r.status_code, wait, attempt + 1, max_retries)
                     await asyncio.sleep(wait)
