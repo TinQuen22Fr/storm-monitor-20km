@@ -1,0 +1,36 @@
+{
+  "summary": "Phase 35 'Bulk Fetch & Local Storage' architecture validated end-to-end. All 5 spec points + status endpoint + restart-persistence pass. Frontend /previsions regression also clean.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_bulk_grid_architecture.py",
+    "/app/test_reports/pytest/pytest_results_iter28.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "severe.py imports `asyncio`, `json`, `Path` mid-file (after function defs) with noqa E402. Cosmetic only — could be hoisted to the top for cleanliness, but not blocking.",
+    "_get_or_refresh_bulk() correctly serialises concurrent first-callers behind an asyncio.Lock and double-checks freshness. Good pattern.",
+    "_save_bulk_to_disk uses tempfile + rename → atomic. Good.",
+    "Fallback to stale snapshot if upstream fetch raises is correct. No silent crash.",
+    "BULK_TTL_S = 600s (10 min) — matches spec: 'au pire 1 appel toutes les 10 min'.",
+    "Suggest: add a periodic background refresh task at startup so the first user after TTL expiry doesn't pay the ~1.2s fetch latency (currently the next request triggers a synchronous-ish refresh under the lock). Not critical given response is still acceptable (<2s)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_bulk_grid_architecture.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "None — cache file is rebuilt by the bulk fetch on first call after `rm`.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Bulk architecture is solid: cold start = 1 upstream call with 12 hourly vars (cape, freezing_level_height, lifted_index, soil_temperature_0cm, temperature_2m, temperature_850hPa, vertical_velocity_700hPa, wind_direction_10m, wind_direction_500hPa, wind_speed_10m, wind_speed_300hPa, wind_speed_500hPa). Burst-50 over varied (param,hour) combos → 0 upstream calls, avg 107.6ms / max 187.5ms. Restart-with-cache → 0 upstream calls, response 112ms. Test file /app/backend/tests/test_bulk_grid_architecture.py is the regression harness — re-runnable any time; it resets the cache + restarts the backend itself.",
+  "evidence": {
+    "point1_cold_start": "1 upstream call, 12 hourly vars, 1.21s total",
+    "point2_disk_file": "448 KB JSON, all 9 params, 192 locs, 48+ hours",
+    "point3_burst50_upstream_calls": 0,
+    "point4_latency_ms": {"avg": 107.6, "max": 187.5, "target": "<250"},
+    "point5_no_sleep_in_bulk_section": true,
+    "status_endpoint": "available=true, params=9, n_locs=192, n_hours>=48, fresh=true, in_memory=true, on_disk=true",
+    "restart_with_cache": "0 upstream calls, response 112.5 ms",
+    "frontend_previsions": "slider 0→47 + 4 params switched, 0 Open-Meteo calls from browser, 2 successful /api/weather/severe/grid (200), no ErrorBoundary, no 'Données indisponibles', no console errors"
+  }
+}

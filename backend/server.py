@@ -487,7 +487,8 @@ async def weather_severe(
 @api_router.get("/weather/severe/grid")
 async def weather_severe_grid(param: str = "t850", hour: int = 0):
     """Single-parameter forecast on a 16×12 grid covering France métropolitaine.
-    Used by the front-end France map (Leaflet + canvas IDW overlay)."""
+    Served from the local bulk store — NEVER calls Open-Meteo directly when the
+    slider moves. See severe.py `_get_or_refresh_bulk()` for the architecture."""
     if param not in severe_mod.GRID_PARAM_MAP:
         raise HTTPException(status_code=400, detail=f"unknown param '{param}'")
     hour = max(0, min(int(hour), 47))
@@ -495,6 +496,12 @@ async def weather_severe_grid(param: str = "t850", hour: int = 0):
         return await severe_mod.fetch_severe_grid(param, hour)
     except Exception as e:
         return _degraded("severe-grid", e)
+
+
+@api_router.get("/weather/severe/grid/status")
+async def weather_severe_grid_status():
+    """Diagnostic: state of the local bulk store (age, run timestamp, freshness)."""
+    return await severe_mod.get_bulk_status()
 
 
 @api_router.get("/weather/severe/profile")

@@ -418,48 +418,131 @@ GRID_PARAM_MAP: Dict[str, Dict[str, Any]] = {
 
 
 async def fetch_severe_grid(param: str, hour_offset: int = 0) -> Dict[str, Any]:
-    """Fetch a single-parameter forecast on the France grid (192 points).
-    The expensive Open-Meteo multi-location call returns ALL 48 hours at once
-    and is cached for 10 min by `param` only (NOT by hour_offset). This means
-    the user can scrub the H+0 → H+47 slider freely without ever triggering
-    another HTTP call until the cache expires. Avoids hitting the 429 rate-limit
-    that previously made the map go blank after a few slider moves."""
+    """Slice one (param, hour) from the local bulk store. NEVER calls Open-Meteo
+    when the slider moves — the bulk store is refreshed at most every BULK_TTL_S
+    seconds via `fetch_severe_grid_bulk()` and persisted on disk."""
     if param not in GRID_PARAM_MAP:
         raise ValueError(f"unknown param: {param}")
-    all_hours = await _cached(
-        f"severe-grid-all:{param}",
-        600.0,
-        lambda: _fetch_severe_grid_all_hours_impl(param),
-    )
-    # Extract the requested hour from the cached all-hours snapshot
-    return _extract_hour_from_grid(all_hours, hour_offset)
+    bulk = await _get_or_refresh_bulk()
+    return _slice_bulk(bulk, param, hour_offset)
 
 
-async def _fetch_severe_grid_all_hours_impl(param: str) -> Dict[str, Any]:
-    """Single Open-Meteo multi-location call for ALL 48 hours.
-    Returns a snapshot with `values_per_hour` = list[48] of list[192]."""
+# =============================================================================
+# Bulk fetch architecture (Phase 35 — "Bulk Fetch & Local Storage")
+#
+# Single Open-Meteo multi-location call covers:
+#   - ALL 192 grid points across France
+#   - ALL hourly variables needed by ANY of the 9 UI params
+#   - ALL 48 hours of forecast
+#
+# Total payload ≈ 192 × 12 vars × 48 h ≈ 110k float values ≈ 1.5 MB JSON.
+# Done once every BULK_TTL_S (= 600 s). After that, every (param, hour_offset)
+# request is served from the in-memory snapshot + disk JSON in <10 ms.
+#
+# The disk JSON is also a fallback when the upstream API is unreachable:
+# the snapshot survives backend restarts.
+# =============================================================================
+
+from pathlib import Path  # noqa: E402  (kept local to the bulk section)
+import asyncio  # noqa: E402
+import json  # noqa: E402
+
+BULK_TTL_S = 600.0   # 10 min — matches the previous per-param cache TTL
+BULK_FILE = Path(__file__).parent / "cache" / "grid_bulk.json"
+
+# Union of every hourly variable needed by GRID_PARAM_MAP
+BULK_HOURLY_VARS = sorted({
+    v for spec in GRID_PARAM_MAP.values() for v in spec["vars"]
+})
+
+_bulk_lock = asyncio.Lock()
+_bulk_snapshot: Optional[Dict[str, Any]] = None  # in-memory cache
+
+
+def _load_bulk_from_disk() -> Optional[Dict[str, Any]]:
+    if not BULK_FILE.exists():
+        return None
+    try:
+        with BULK_FILE.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.warning("Could not load bulk file %s: %s", BULK_FILE, e)
+        return None
+
+
+def _save_bulk_to_disk(snap: Dict[str, Any]) -> None:
+    try:
+        BULK_FILE.parent.mkdir(parents=True, exist_ok=True)
+        # Atomic write via tempfile + rename
+        tmp = BULK_FILE.with_suffix(".json.tmp")
+        with tmp.open("w", encoding="utf-8") as f:
+            json.dump(snap, f, separators=(",", ":"))
+        tmp.replace(BULK_FILE)
+    except Exception as e:
+        logger.warning("Could not save bulk file %s: %s", BULK_FILE, e)
+
+
+async def _get_or_refresh_bulk() -> Dict[str, Any]:
+    """Return a fresh bulk snapshot. Refreshes from upstream only if the
+    current one (in-memory or disk) is older than BULK_TTL_S."""
+    global _bulk_snapshot
+    now = time.time()
+
+    # Try in-memory first
+    if _bulk_snapshot and (now - _bulk_snapshot.get("fetched_at", 0)) < BULK_TTL_S:
+        return _bulk_snapshot
+
+    async with _bulk_lock:
+        # Re-check under lock
+        if _bulk_snapshot and (now - _bulk_snapshot.get("fetched_at", 0)) < BULK_TTL_S:
+            return _bulk_snapshot
+
+        # Try disk
+        disk = _load_bulk_from_disk()
+        if disk and (now - disk.get("fetched_at", 0)) < BULK_TTL_S:
+            _bulk_snapshot = disk
+            return _bulk_snapshot
+
+        # Fetch fresh from Open-Meteo
+        try:
+            fresh = await _fetch_bulk_impl()
+            _bulk_snapshot = fresh
+            _save_bulk_to_disk(fresh)
+            return _bulk_snapshot
+        except Exception as e:
+            # Fall back to stale disk/in-memory rather than failing
+            stale = _bulk_snapshot or disk
+            if stale is not None:
+                logger.warning(
+                    "Bulk fetch failed (%s) — serving stale snapshot from %s",
+                    type(e).__name__,
+                    "memory" if _bulk_snapshot else "disk",
+                )
+                return stale
+            raise
+
+
+async def _fetch_bulk_impl() -> Dict[str, Any]:
+    """ONE Open-Meteo call covering 192 points × all needed hourly vars × 48 h.
+    This is the single network access point for the entire France map."""
     lats, lons = _france_grid()
-    spec = GRID_PARAM_MAP[param]
-    needed_vars = spec["vars"]
-
     params = {
         "latitude": ",".join(str(x) for x in lats),
         "longitude": ",".join(str(x) for x in lons),
-        "hourly": ",".join(needed_vars),
+        "hourly": ",".join(BULK_HOURLY_VARS),
         "wind_speed_unit": "ms",
         "timezone": "UTC",
         "forecast_days": 2,
     }
-    r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=25)
+    t0 = time.time()
+    r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=45)
     raw = r.json()
     locs = raw if isinstance(raw, list) else [raw]
     if len(locs) != len(lats):
-        logger.warning("severe-grid: expected %d locations, got %d", len(lats), len(locs))
+        logger.warning("bulk-grid: expected %d locations, got %d", len(lats), len(locs))
 
+    # Build a unified snapshot: per_param[param] = list[n_hours] of list[n_locs] floats
     times_ref: List[str] = []
-    # Build values_per_hour[hour][loc_idx]
-    values_per_hour: List[List[Optional[float]]] = []
-    # First pass: detect time series length and pre-extract per-loc hourly series
     loc_series: List[Dict[str, List[Optional[float]]]] = []
     for loc in locs:
         h = loc.get("hourly") or {}
@@ -467,7 +550,43 @@ async def _fetch_severe_grid_all_hours_impl(param: str) -> Dict[str, Any]:
             times_ref = h.get("time") or []
         loc_series.append(h)
     n_hours = len(times_ref)
+    n_locs = len(loc_series)
 
+    per_param: Dict[str, List[List[Optional[float]]]] = {}
+    for param, spec in GRID_PARAM_MAP.items():
+        per_param[param] = _compute_param_values(param, loc_series, n_hours, spec["vars"])
+
+    snap = {
+        "fetched_at": time.time(),
+        "fetch_duration_s": round(time.time() - t0, 2),
+        "run_iso": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "bbox": FRANCE_BBOX,
+        "grid_cols": GRID_COLS,
+        "grid_rows": GRID_ROWS,
+        "n_locs": n_locs,
+        "n_hours": n_hours,
+        "times": times_ref,
+        "lats": lats,
+        "lons": lons,
+        "per_param": per_param,
+        "units": {p: GRID_PARAM_MAP[p]["unit"] for p in GRID_PARAM_MAP},
+    }
+    logger.info(
+        "Bulk grid fetched: %d locs × %d hours × %d params in %.2fs",
+        n_locs, n_hours, len(GRID_PARAM_MAP), snap["fetch_duration_s"],
+    )
+    return snap
+
+
+def _compute_param_values(
+    param: str,
+    loc_series: List[Dict[str, List[Optional[float]]]],
+    n_hours: int,
+    needed_vars: List[str],
+) -> List[List[Optional[float]]]:
+    """Compute the [n_hours][n_locs] matrix for one logical param.
+    Pure CPU work — operates on the bulk hourly arrays already fetched."""
+    matrix: List[List[Optional[float]]] = []
     for hour_idx in range(n_hours):
         row: List[Optional[float]] = []
         for h in loc_series:
@@ -496,57 +615,74 @@ async def _fetch_severe_grid_all_hours_impl(param: str) -> Dict[str, Any]:
                     series = h.get(var) or []
                     v = series[idx] if idx < len(series) else None
             row.append(round(v, 2) if isinstance(v, (int, float)) else None)
-        values_per_hour.append(row)
-
-    return {
-        "param": param,
-        "unit": spec["unit"],
-        "times": times_ref,
-        "bbox": FRANCE_BBOX,
-        "grid_cols": GRID_COLS,
-        "grid_rows": GRID_ROWS,
-        "lats": lats,
-        "lons": lons,
-        "values_per_hour": values_per_hour,
-    }
+        matrix.append(row)
+    return matrix
 
 
-def _extract_hour_from_grid(snapshot: Dict[str, Any], hour_offset: int) -> Dict[str, Any]:
-    """Pull a single-hour slice from the full 48h cached grid snapshot."""
-    times = snapshot.get("times") or []
-    vph = snapshot.get("values_per_hour") or []
-    if not times or not vph:
-        # Should never happen if the upstream call succeeded — be defensive.
+def _slice_bulk(bulk: Dict[str, Any], param: str, hour_offset: int) -> Dict[str, Any]:
+    """Pure in-memory slice — never hits the network."""
+    times = bulk.get("times") or []
+    matrix = bulk.get("per_param", {}).get(param) or []
+    if not times or not matrix:
         return {
-            "param": snapshot.get("param"),
-            "unit": snapshot.get("unit"),
+            "param": param,
+            "unit": GRID_PARAM_MAP[param]["unit"],
             "hour_offset": int(hour_offset),
             "time": None,
-            "bbox": snapshot.get("bbox"),
-            "grid_cols": snapshot.get("grid_cols", 0),
-            "grid_rows": snapshot.get("grid_rows", 0),
-            "lats": snapshot.get("lats", []),
-            "lons": snapshot.get("lons", []),
+            "bbox": bulk.get("bbox", FRANCE_BBOX),
+            "grid_cols": bulk.get("grid_cols", GRID_COLS),
+            "grid_rows": bulk.get("grid_rows", GRID_ROWS),
+            "lats": bulk.get("lats", []),
+            "lons": bulk.get("lons", []),
             "values": [],
             "min": None,
             "max": None,
+            "source": "bulk-empty",
         }
     idx = max(0, min(int(hour_offset), len(times) - 1))
-    values = vph[idx] if idx < len(vph) else []
+    values = matrix[idx] if idx < len(matrix) else []
     valid = [v for v in values if v is not None]
     return {
-        "param": snapshot.get("param"),
-        "unit": snapshot.get("unit"),
+        "param": param,
+        "unit": GRID_PARAM_MAP[param]["unit"],
         "hour_offset": int(hour_offset),
         "time": times[idx],
-        "bbox": snapshot.get("bbox"),
-        "grid_cols": snapshot.get("grid_cols"),
-        "grid_rows": snapshot.get("grid_rows"),
-        "lats": snapshot.get("lats", []),
-        "lons": snapshot.get("lons", []),
+        "bbox": bulk.get("bbox"),
+        "grid_cols": bulk.get("grid_cols"),
+        "grid_rows": bulk.get("grid_rows"),
+        "lats": bulk.get("lats", []),
+        "lons": bulk.get("lons", []),
         "values": values,
         "min": min(valid) if valid else None,
         "max": max(valid) if valid else None,
+        "source": "bulk",
+        "fetched_at": bulk.get("fetched_at"),
+        "run_iso": bulk.get("run_iso"),
+    }
+
+
+async def get_bulk_status() -> Dict[str, Any]:
+    """Diagnostic — exposed via /api/weather/severe/grid/status."""
+    snap = _bulk_snapshot or _load_bulk_from_disk()
+    if not snap:
+        return {"available": False, "params": list(GRID_PARAM_MAP.keys())}
+    age_s = round(time.time() - snap.get("fetched_at", 0), 1)
+    return {
+        "available": True,
+        "params": list(snap.get("per_param", {}).keys()),
+        "n_hours": snap.get("n_hours", 0),
+        "n_locs": snap.get("n_locs", 0),
+        "times_first": (snap.get("times") or [None])[0],
+        "times_last": (snap.get("times") or [None])[-1],
+        "run_iso": snap.get("run_iso"),
+        "fetched_at": snap.get("fetched_at"),
+        "age_seconds": age_s,
+        "fresh": age_s < BULK_TTL_S,
+        "fetch_duration_s": snap.get("fetch_duration_s"),
+        "ttl_seconds": BULK_TTL_S,
+        "in_memory": _bulk_snapshot is not None,
+        "on_disk": BULK_FILE.exists(),
+        "disk_path": str(BULK_FILE),
     }
 
 
