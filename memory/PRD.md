@@ -30,6 +30,13 @@ React CRA, FastAPI, MongoDB, Leaflet, Leaflet WMS (EUMETSAT Meteosat MSG), Canva
 - Synergie hail = Blitzortung surges + Open-Meteo wind shear
 - Couche nuages EUMETSAT Meteosat MSG géostationnaire (15 min)
 - Scripts `install.sh` (full reset) + `upgrade.sh` (git pull + rsync rapide)
+- **[2026-02-28] Phase 35bis — Frontend bulk fetch + écriture disque non-bloquante (fix 504 Kimsufi)** :
+  - **Bug** : iteration_28 avait mis en place le bulk côté backend, mais `FranceMapPanel.jsx` continuait à appeler `getSevereGrid(param, hour)` dans un `useEffect([param, hour])`. À chaque mouvement du slider sur l'Intel Atom Kimsufi → cascade de micro-requêtes (?hour=5, hour=6...) → backend saturé pendant le premier bulk fetch → 504 Gateway Timeout nginx.
+  - **Fix frontend** (`FranceMapPanel.jsx`) : remplacement du `useEffect([param, hour])` par (a) `useEffect([])` qui fetche `/api/weather/severe/grid/bulk` UNE SEULE FOIS au mount, (b) `useMemo([bulk, param, hour, ...])` qui slice le snapshot in-memory côté JS. Plus aucun appel API au mouvement du slider ou changement de param.
+  - **Fix backend** (`severe.py`) : `_save_bulk_to_disk_async` wrappe l'écriture sync dans `asyncio.to_thread`, `_get_or_refresh_bulk` lance la persistance en `asyncio.create_task` (fire-and-forget) — la requête HTTP ne bloque jamais sur l'I/O disque (critique sur Atom). `_save_bulk_to_disk` catch explicitement `PermissionError` et `OSError` avec log warning, jamais raise — fallback gracieux en in-memory only si www-data n'a pas les droits sur `cache/`.
+  - **Nouveau endpoint** : `GET /api/weather/severe/grid/bulk` retourne le snapshot complet (192 locs × 48h × 9 params, ~450 KB).
+  - **Validé testing agent (iteration_29.json) — 100%** : mount = 1 seul appel bulk (legacy `grid?param=X&hour=Y` à 0), slider 8 positions = 0 nouveau appel, switch 5 params = 0 nouveau appel.
+
 - **[2026-02-28] Phase 35 — Bulk Fetch & Local Storage (architecture stricte demandée par user)** :
   - **Cause racine définitivement réglée** : avant chaque mouvement de slider/param pouvait déclencher un appel Open-Meteo → rate-limit 429 récurrent. Maintenant : **1 seul appel** ramène TOUS les params × TOUTES les heures × TOUS les 192 points d'un coup (~448 KB JSON), persisté sur disque dans `/app/backend/cache/grid_bulk.json`. Les requêtes (param, hour) sont des pures slices in-memory.
   - **Nouveau dans `severe.py`** : `_fetch_bulk_impl`, `_get_or_refresh_bulk` (lock + double-check + fallback disque + stale fallback), `_compute_param_values`, `_slice_bulk`, `get_bulk_status`. Écriture atomique tempfile+rename. TTL 600s.
