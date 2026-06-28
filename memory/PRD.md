@@ -30,6 +30,12 @@ React CRA, FastAPI, MongoDB, Leaflet, Leaflet WMS (EUMETSAT Meteosat MSG), Canva
 - Synergie hail = Blitzortung surges + Open-Meteo wind shear
 - Couche nuages EUMETSAT Meteosat MSG géostationnaire (15 min)
 - Scripts `install.sh` (full reset) + `upgrade.sh` (git pull + rsync rapide)
+- **[2026-02-28] Fix crash FranceMapPanel `lats is undefined` (preview overlay rouge + Kimsufi page blanche)** :
+  - Backend `server.py:_degraded` étendu pour les cas `severe`, `severe-grid`, `severe-profile` → renvoie maintenant des arrays vides au lieu d'un payload sans clés.
+  - Frontend `FranceMapPanel.jsx` : `valueAt` + rendu `IdwOverlay` + `.map(favorites)` guardés avec `Array.isArray(grid.lats) && grid.lats.length > 0`. Badge ambre `Données indisponibles pour ce paramètre/échéance` non-bloquant en cas de payload dégradé.
+  - Nouveau `components/ErrorBoundary.jsx` wrappant `FranceMapPanel` et `VerticalProfileChart` dans `PrevisionsPage.jsx` → plus jamais de white screen en prod, fallback card avec bouton "Réessayer".
+  - Validé par testing agent (iteration_26.json) — 100% backend + frontend, 2 régressions guard (arrays vides + clés manquantes) PASS.
+
 - **[2026-02-28] Purge branche `Testing` + retrait `sudo`** : `install.sh` et `upgrade.sh` ont maintenant `BRANCH="Version_With_Detector"` **hardcodé** (plus de fallback `${BRANCH:-...}`, plus possible de redéployer sur `Testing` par accident). Tous les `sudo ` ont été retirés des scripts et de `DEPLOY.md` (Kimsufi/OVH est déjà root par défaut). Validé par testing agent (iteration_25.json) — 13/13 critères PASS, `bash -n` OK, git status scope-limited aux 3 fichiers.
 
 - **[2026-02-28] Fix UX message d'erreur Prévisions** : amélioration de `PrevisionsPage.jsx`, `FranceMapPanel.jsx` et `VerticalProfileChart.jsx` pour distinguer un 404 (endpoint absent côté backend) d'une autre erreur. En cas de 404 sur `/api/weather/severe`, affichage de la procédure shell de remediation directement à l'écran. Validé par testing agent (iteration_24.json, 100%) — preview nominal OK + 404 simulé affiche le bon message.
