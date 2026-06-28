@@ -30,6 +30,17 @@ React CRA, FastAPI, MongoDB, Leaflet, Leaflet WMS (EUMETSAT Meteosat MSG), Canva
 - Synergie hail = Blitzortung surges + Open-Meteo wind shear
 - Couche nuages EUMETSAT Meteosat MSG géostationnaire (15 min)
 - Scripts `install.sh` (full reset) + `upgrade.sh` (git pull + rsync rapide)
+- **[2026-02-28] Phase 35 — Bulk Fetch & Local Storage (architecture stricte demandée par user)** :
+  - **Cause racine définitivement réglée** : avant chaque mouvement de slider/param pouvait déclencher un appel Open-Meteo → rate-limit 429 récurrent. Maintenant : **1 seul appel** ramène TOUS les params × TOUTES les heures × TOUS les 192 points d'un coup (~448 KB JSON), persisté sur disque dans `/app/backend/cache/grid_bulk.json`. Les requêtes (param, hour) sont des pures slices in-memory.
+  - **Nouveau dans `severe.py`** : `_fetch_bulk_impl`, `_get_or_refresh_bulk` (lock + double-check + fallback disque + stale fallback), `_compute_param_values`, `_slice_bulk`, `get_bulk_status`. Écriture atomique tempfile+rename. TTL 600s.
+  - **Nouveau endpoint diagnostic** : `GET /api/weather/severe/grid/status` (âge, fraîcheur, in_memory/on_disk, n_hours, run_iso).
+  - **Frontend NON modifié.**
+  - **Validé testing agent (iteration_28.json)** : 100% backend + frontend.
+    - Cold start : 1 appel upstream, 12 vars hourly
+    - Burst 50 requêtes variées : **0 appel upstream**, avg 107.6ms / max 187.5ms
+    - Restart backend avec cache disque : 0 upstream, 112ms
+    - Frontend stress : 0 badge ambre, 0 ErrorBoundary, 0 console error
+
 - **[2026-02-28] Fix racine rate-limit Open-Meteo (carte Prévisions vide passée H+4)** :
   - **Cause racine** : cache indexé par `(param, hour_offset)` → 9 × 48 = 432 clés distinctes. Chaque mouvement du slider = nouvel appel multi-location → Open-Meteo 429 → `_degraded` → carte vide. L'iteration_26 ne faisait que masquer le crash, pas régler la cause.
   - **Fix backend** (`severe.py`) : `fetch_severe_grid` refactoré — 1 seul appel par `param` qui ramène les 48 heures d'un coup, cache TTL 600s par `param` uniquement. Le `hour_offset` devient une simple indexation post-cache → après le premier appel, le user peut scrubber le slider H+0→H+47 sans aucun appel API supplémentaire. Idem `fetch_temp_profile` cache par `(lat,lon)`.
