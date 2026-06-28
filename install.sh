@@ -323,6 +323,7 @@ rsync -a --delete \
   --exclude='backend/venv' \
   --exclude='backend/storm_data.json' \
   --exclude='backend/.stale_cache.pkl' \
+  --exclude='backend/cache' \
   --exclude='backend/__pycache__' \
   --exclude='backend/**/__pycache__' \
   --exclude='frontend/build' \
@@ -332,6 +333,13 @@ rsync -a --delete \
   "$WORK_DIR/" "$APP_DIR/"
 
 chown -R "$RUN_USER":"$RUN_USER" "$APP_DIR"
+
+# Bulk forecast cache directory (severe.py grid_bulk.json — 80 points × 48h)
+# Must be writable by the service user without root. Mode 755 is enough.
+BULK_CACHE_DIR="$APP_DIR/backend/cache"
+mkdir -p "$BULK_CACHE_DIR"
+chown -R "$RUN_USER":"$RUN_USER" "$BULK_CACHE_DIR"
+chmod 755 "$BULK_CACHE_DIR"
 
 # Video export cache directory (Pillow frames + MP4 output, TTL 24h)
 VIDEO_CACHE_DIR="$APP_DIR/cache/videos"
@@ -686,7 +694,12 @@ touch /var/log/storm-monitor.log /var/log/storm-monitor.err.log
 chown "$RUN_USER":"$RUN_USER" /var/log/storm-monitor.log /var/log/storm-monitor.err.log
 
 systemctl daemon-reload
-systemctl enable --now storm-monitor.service
+# `enable --now` only START the service if it's NOT running; it does NOT
+# pick up freshly rsync'd Python files when it's already up. We must force
+# a hard restart so uvicorn re-imports the new server.py / severe.py.
+systemctl enable storm-monitor.service
+systemctl restart storm-monitor.service
+echo "    Restarted storm-monitor service to pick up new code."
 
 # ---------------------------------------------------------------------------
 # 7. Final report

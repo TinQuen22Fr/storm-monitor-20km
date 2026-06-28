@@ -348,7 +348,12 @@ def _degraded(kind: str, error: Exception) -> Dict[str, Any]:
     elif kind == "severe":
         base.update({"hourly": [], "max_hail_score": 0, "max_hail_level": 0})
     elif kind == "severe-grid":
-        base.update({"lats": [], "lons": [], "values": [], "grid_cols": 0, "grid_rows": 0})
+        # Match the bulk endpoint shape exactly so the frontend never trips
+        # on a missing `per_param` / `times` key.
+        base.update({
+            "lats": [], "lons": [], "times": [], "per_param": {},
+            "units": {}, "grid_cols": 0, "grid_rows": 0,
+        })
     elif kind == "severe-profile":
         base.update({"levels": [], "temperatures": []})
     return base

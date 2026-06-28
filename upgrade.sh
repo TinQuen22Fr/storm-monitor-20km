@@ -179,6 +179,7 @@ rsync -a --delete \
   --exclude='backend/venv' \
   --exclude='backend/storm_data.json' \
   --exclude='backend/.stale_cache.pkl' \
+  --exclude='backend/cache' \
   --exclude='backend/__pycache__' \
   --exclude='backend/**/__pycache__' \
   --exclude='frontend/build' \
@@ -187,6 +188,13 @@ rsync -a --delete \
   --exclude='cache' \
   "$WORK_DIR/" "$APP_DIR/"
 chown -R "$RUN_USER":"$RUN_USER" "$APP_DIR"
+
+# Ensure the bulk forecast cache dir exists and is writable by the service
+# user. The upstream rsync excludes `cache/` (we never want to overwrite a
+# user's runtime data), so we create it explicitly here if missing.
+mkdir -p "$APP_DIR/backend/cache"
+chown -R "$RUN_USER":"$RUN_USER" "$APP_DIR/backend/cache"
+chmod 755 "$APP_DIR/backend/cache"
 
 # Reset le frontend/.env (URL backend prod)
 cat > "$APP_DIR/frontend/.env" <<EOF

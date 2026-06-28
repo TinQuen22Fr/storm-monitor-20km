@@ -374,8 +374,8 @@ FRANCE_BBOX = {
     "lon_max": 10.0,
 }
 # 16 cols × 12 rows = 192 points ≈ 1 call gratuit Open-Meteo multi-location
-GRID_COLS = 16
-GRID_ROWS = 12
+GRID_COLS = 10
+GRID_ROWS = 8
 
 
 def _france_grid() -> tuple[List[float], List[float]]:
@@ -448,7 +448,8 @@ import asyncio  # noqa: E402
 import json  # noqa: E402
 import os  # noqa: E402
 
-BULK_TTL_S = 600.0   # 10 min — matches the previous per-param cache TTL
+BULK_TTL_S = 7200.0   # 2 h — Open-Meteo quota resets at 00:00 UTC, this keeps
+                      # us well under the daily limit on a single VPS IP.
 
 def _resolve_bulk_file() -> Path:
     """Decide where to persist the bulk snapshot, with a graceful fallback

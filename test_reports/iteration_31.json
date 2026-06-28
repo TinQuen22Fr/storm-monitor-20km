@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 31 — verified Gemini's 4 surgical patches are correctly locked into the repo. All 16 pytest tests pass (PATCH 1 _degraded shape, PATCH 2 grid 10×8=80, PATCH 3 BULK_TTL_S=7200.0, PATCH 4 install.sh restart pattern, PATCH 4bis cache chmod). Live regression: legacy /api/weather/severe/grid?param=t850 returns 200 with the new _degraded payload exposing all required keys (lats/lons/times/per_param/units/grid_cols/grid_rows) — proving PATCH 1 works end-to-end. Bulk endpoint returns 503 with friendly French message (sandbox IP rate-limited by Open-Meteo, as expected per agent context).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/weather/severe/grid (legacy)", "issue": "_degraded payload exposes source_error containing the full Open-Meteo URL (e.g. 'https://api.open-meteo.com/v1/forecast?...'). Iter30 hardened only the bulk endpoint to suppress URL leakage; legacy /grid still leaks. Non-blocking — frontend doesn't surface source_error in the banner — but worth fixing for parity."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_patches_iter31.py",
+    "/app/test_reports/pytest/pytest_results_iter31.xml"
+  ],
+  "action_items": [
+    "Optional follow-up: drop source_error (or scrub the URL) from _degraded payload in server.py to match the iter30 URL-leak hardening done on the bulk 503 path. Not requested by user, just noted."
+  ],
+  "critical_code_review_comments": [
+    "PATCH 1 — server.py:328-359 — _degraded('severe-grid', ...) now appends lats=[], lons=[], times=[], per_param={}, units={}, grid_cols=0, grid_rows=0 exactly matching the bulk snapshot shape returned by get_bulk_snapshot_for_frontend(). Frontend can safely destructure either response without checking 'degraded' flag first. ✓",
+    "PATCH 2 — severe.py:377-378 — GRID_COLS=10, GRID_ROWS=8; _france_grid() correctly emits 80 (lat,lon) tuples. The comment line 376 still says '16 cols × 12 rows = 192 points' which is now stale — cosmetic only, doesn't affect runtime. Suggestion to E1: update the comment to '10 × 8 = 80 points' for clarity.",
+    "PATCH 3 — severe.py:451 — BULK_TTL_S = 7200.0 (2 h). At forecast_days=2 the model output is valid for 48h, so refreshing every 2h still gives sliders against fresh data while reducing upstream hits to ≤12/day per VPS IP. ✓",
+    "PATCH 4 — install.sh:696-702 — daemon-reload, then `systemctl enable storm-monitor.service` (idempotent — sets WantedBy symlink without altering runtime), then `systemctl restart storm-monitor.service` (forces uvicorn to re-import server.py / severe.py). The old `enable --now` is completely removed. bash -n passes. ✓",
+    "PATCH 4bis — install.sh:339-342 + upgrade.sh:195-197 — both scripts create backend/cache, chown to RUN_USER, chmod 755. www-data (or the configured RUN_USER) can now write grid_bulk.json without falling back to /tmp. ✓",
+    "Live observation: legacy /grid currently serves the _degraded payload because the sandbox IP is rate-limited (HTTP 429 from Open-Meteo). The response correctly includes the 7 new keys — irrefutable proof PATCH 1 is loaded in the running backend, not just the source tree.",
+    "Stale comment severe.py:434 — '/192 grid points across France' should now read '/80 grid points'. Cosmetic — same as L376."
+  ],
+  "updated_files": ["/app/backend/tests/test_patches_iter31.py"],
+  "success_rate": {"backend": "100% (16/16 pytest)", "frontend": "n/a (testing_type: backend only)"},
+  "test_credentials": "n/a",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "live_evidence": {
+    "bulk_endpoint": "HTTP 503 — body: {'detail':'Rate-limit Open-Meteo atteint — réessaie dans 30-60 s.'} — 67 bytes, no URL leak",
+    "legacy_grid_endpoint": "HTTP 200 — _degraded payload with all 7 new keys: lats=[], lons=[], times=[], per_param={}, units={}, grid_cols=0, grid_rows=0",
+    "bash_n_install_sh": "exit 0",
+    "bash_n_upgrade_sh": "exit 0",
+    "france_grid_len": 80,
+    "BULK_TTL_S_imported": 7200.0
+  },
+  "context_for_next_testing_agent": "All 4 Gemini patches are locked in. The legacy /grid endpoint still leaks the Open-Meteo URL in _degraded.source_error — was deemed out-of-scope for this iteration (user explicitly said 'no other changes'), but flag it if a future iteration touches the error-formatting path. The stale comments in severe.py (lines 376, 434) referencing '192 points' should be updated to '80 points' for code clarity — same low priority.",
+  "rca of the issue": "User's previous deploys silently kept stale code in uvicorn memory because `systemctl enable --now` is a no-op when the unit is already running. The 4 patches together (smaller grid + longer TTL + correct shape + forced restart + cache perms) close every loop that was crashing the frontend with 'Snapshot bulk invalide' or rate-limiting their VPS into oblivion."
+}
