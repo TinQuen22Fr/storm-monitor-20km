@@ -23,11 +23,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: yarn
-          cache-dependency-path: frontend/yarn.lock
 
       - name: Installation des dépendances frontend
-        run: yarn install --frozen-lockfile
+        run: yarn install
 
       - name: Build du frontend React (pointé vers le serveur Kimsufi)
         env:
@@ -52,6 +50,10 @@ jobs:
         working-directory: frontend/android
         run: |
           chmod +x gradlew
+          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
+            echo "gradle-wrapper.jar absent, régénération..."
+            gradle wrapper --gradle-version 8.11.1
+          fi
           ./gradlew assembleDebug --no-daemon
 
       - name: Renommage APK Debug
