@@ -80,6 +80,8 @@ React CRA, FastAPI, MongoDB, Leaflet, Leaflet WMS (EUMETSAT Meteosat MSG), Canva
 
 - **[2026-06] Bouton Quitter natif + Release GitHub** : Fix workflow (yarn.lock + gradle-wrapper.jar jamais commités → cache CI plantait, corrigé + cache retiré). APK publié automatiquement en Release GitHub tag `android-latest` (téléchargeable depuis mobile, contrairement aux artifacts). Nouveau composant `NativeAppExit.jsx` : bouton flottant « Quitter » (Power → confirmation rouge 3.5s → exitApp) visible UNIQUEMENT dans l'APK (`Capacitor.isNativePlatform()`), + gestion du bouton/geste retour Android (`@capacitor/app` : historique back sinon exit). Vérifié : invisible sur web, plugin enregistré dans le projet Android.
 
+- **[2026-06] Fix son mode soirée (jamais fonctionné depuis ~1,5 mois)** : Cause racine = `AudioContext` créé au moment de l'impact (hors geste utilisateur) → bloqué en état « suspended » par la politique autoplay des navigateurs/webview Android → silence total. Fix : nouveau `lib/thunderSound.js` avec AudioContext partagé + `unlockAudio()` appelé à l'ouverture du mode soirée et au clic sur l'icône son. Nouveau son de tonnerre réaliste synthétisé (craquement highpass + grondement lowpass ~1,6s) remplaçant le bip 880Hz. Son de confirmation immédiat quand on active l'icône son. Réparé aussi : encodage UTF-8 corrompu de NightStormMode.jsx (octet 0xb7). Vérifié : compile OK, mode soirée s'ouvre, toggle son OK, invisible régression web.
+
 ## 🟡 Backlog
 - **P1** — Valider le 1er run GitHub Actions Android + installer l'APK sur téléphone
 - **P2** — Remplacer l'icône générée par l'image personnelle de l'utilisateur (quand fournie)

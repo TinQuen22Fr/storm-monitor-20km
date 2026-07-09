@@ -3,12 +3,13 @@ import { Circle, MapContainer, Marker, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import { X, Volume2, VolumeX } from "lucide-react";
 import { api, LOURDES } from "@/lib/api";
+import { playThunder, unlockAudio } from "@/lib/thunderSound";
 
 /**
  * Fullscreen dark "Night Storm" mode.
  * - Dark CartoDB tiles
  * - Auto-zoom to encompass recent strikes within 70km
- * - Plays a discrete tone on each new strike < 30km from center
+ * - Plays a thunder sound on each new strike < 30km from center
  */
 function strikeIcon(ageSec) {
   const fresh = ageSec < 30;
@@ -44,28 +45,7 @@ function AutoFit({ strikes, center }) {
   return null;
 }
 
-/**
- * Beep using Web Audio API (no external asset).
- * A soft 880Hz sine burst + 440Hz echo, 180ms total, volume 0.2.
- */
-function playThunderBeep() {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const now = ctx.currentTime;
-    const osc1 = ctx.createOscillator();
-    const gain1 = ctx.createGain();
-    osc1.type = "sine";
-    osc1.frequency.setValueAtTime(880, now);
-    osc1.frequency.exponentialRampToValueAtTime(220, now + 0.18);
-    gain1.gain.setValueAtTime(0.0001, now);
-    gain1.gain.exponentialRampToValueAtTime(0.22, now + 0.02);
-    gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
-    osc1.connect(gain1).connect(ctx.destination);
-    osc1.start(now);
-    osc1.stop(now + 0.2);
-    setTimeout(() => ctx.close(), 400);
-  } catch { /* ignore */ }
-}
+/* Son géré par @/lib/thunderSound (AudioContext partagé, débloqué au geste utilisateur) */
 
 export default function NightStormMode({ open, onClose, center = LOURDES }) {
   const [strikes, setStrikes] = useState([]);
@@ -89,7 +69,7 @@ export default function NightStormMode({ open, onClose, center = LOURDES }) {
           (s) => !seenTs.current.has(s.ts) && s.distance_km < 30 && (Date.now() / 1000 - s.ts) < 60
         );
         if (soundOn && fresh.length > 0 && seenTs.current.size > 0) {
-          playThunderBeep();
+          playThunder();
         }
         for (const s of all) seenTs.current.add(s.ts);
         setStrikes(all);
@@ -106,6 +86,7 @@ export default function NightStormMode({ open, onClose, center = LOURDES }) {
   useEffect(() => {
     if (open) {
       document.body.style.overflow = "hidden";
+      unlockAudio();
     } else {
       document.body.style.overflow = "";
       seenTs.current = new Set();
@@ -196,7 +177,14 @@ export default function NightStormMode({ open, onClose, center = LOURDES }) {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setSoundOn((v) => !v)}
+            onClick={async () => {
+              const next = !soundOn;
+              setSoundOn(next);
+              if (next) {
+                await unlockAudio();
+                playThunder();
+              }
+            }}
             className={`w-11 h-11 border flex items-center justify-center transition-colors ${
               soundOn
                 ? "bg-red-600 border-red-600 text-white"
