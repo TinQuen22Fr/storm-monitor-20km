@@ -13,6 +13,7 @@ import VigilancePage from "@/pages/VigilancePage";
 import ReplayPage from "@/pages/ReplayPage";
 import { AuthProvider } from "@/lib/auth";
 import { Toaster } from "@/components/ui/sonner";
+import { NativeAppExit } from "@/components/NativeAppExit";
 
 function App() {
   return (
@@ -31,6 +32,7 @@ function App() {
           <Route path="/admin" element={<AdminPage />} />
         </Routes>
       </BrowserRouter>
+      <NativeAppExit />
       <Toaster position="top-right" />
     </AuthProvider>
   );
