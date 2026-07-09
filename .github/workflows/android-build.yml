@@ -11,6 +11,8 @@ on:
 jobs:
   build-android:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     defaults:
       run:
         working-directory: frontend
@@ -103,5 +105,22 @@ jobs:
         working-directory: frontend/android
         run: rm -f release.keystore
 
+      - name: Publication de l'APK en Release GitHub (téléchargeable sur mobile)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-latest
+          name: "📱 Storm Monitor APK — dernière version"
+          body: |
+            APK Android compilé automatiquement (commit `${{ github.sha }}`).
+
+            **Installation :** télécharger `storm-monitor-debug.apk` ci-dessous,
+            l'ouvrir sur le téléphone et autoriser l'installation.
+          prerelease: false
+          files: |
+            frontend/android/storm-monitor-debug.apk
+            frontend/android/storm-monitor-release.apk
+          fail_on_unmatched_files: false
+
     env:
       HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
+

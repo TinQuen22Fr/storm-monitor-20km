@@ -15,12 +15,22 @@ Le workflow `.github/workflows/android-build.yml` compile automatiquement l'APK 
 
 ### Récupérer l'APK
 
+**📲 Méthode simple (fonctionne sur mobile)** — via les Releases :
+
+1. GitHub → onglet **Releases** (ou `https://github.com/<ton-repo>/releases`)
+2. Release **« 📱 Storm Monitor APK — dernière version »** (tag `android-latest`, mise à jour à chaque build)
+3. Télécharger directement `storm-monitor-debug.apk` → l'ouvrir → installer
+
+**💻 Méthode alternative (navigateur desktop uniquement)** — via les Artifacts :
+
 1. Aller sur GitHub → onglet **Actions**
 2. Cliquer sur le dernier run *Build Android APK* (vert ✅)
 3. En bas de page, section **Artifacts** :
    - `storm-monitor-debug` → APK debug, installable directement
    - `storm-monitor-release` → APK signé (seulement si le keystore est configuré, voir plus bas)
 4. Télécharger le zip, extraire le `.apk`, le transférer sur le téléphone
+
+> ⚠️ L'app GitHub mobile ne permet PAS de télécharger les artifacts — utiliser les Releases.
 
 ### Installer sur le téléphone
 
