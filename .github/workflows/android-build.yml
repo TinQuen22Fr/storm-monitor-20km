@@ -48,6 +48,13 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Versionnage automatique de l'APK
+        working-directory: frontend/android
+        run: |
+          sed -i "s/versionCode 1$/versionCode ${{ github.run_number }}/" app/build.gradle
+          sed -i "s/versionName \"1.0\"/versionName \"1.0.${{ github.run_number }}\"/" app/build.gradle
+          grep -E "versionCode|versionName" app/build.gradle
+
       - name: Compilation APK Debug
         working-directory: frontend/android
         run: |
@@ -108,13 +115,15 @@ jobs:
       - name: Publication de l'APK en Release GitHub (téléchargeable sur mobile)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: android-latest
-          name: "📱 Storm Monitor APK — dernière version"
+          tag_name: android-v${{ github.run_number }}
+          name: "📱 Storm Monitor v1.0.${{ github.run_number }}"
           body: |
-            APK Android compilé automatiquement (commit `${{ github.sha }}`).
+            APK Android compilé automatiquement le ${{ github.event.head_commit.timestamp }}
+            (commit `${{ github.sha }}`).
 
             **Installation :** télécharger `storm-monitor-debug.apk` ci-dessous,
-            l'ouvrir sur le téléphone et autoriser l'installation.
+            l'ouvrir sur le téléphone et installer par-dessus l'ancienne version.
+          make_latest: "true"
           prerelease: false
           files: |
             frontend/android/storm-monitor-debug.apk
