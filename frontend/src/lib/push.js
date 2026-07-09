@@ -1,9 +1,12 @@
+import { Capacitor } from "@capacitor/core";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 
 const LS_ENABLED = "storm_push_enabled";
+const LS_FCM_TOKEN = "storm_fcm_token";
 
 export function pushSupported() {
+  if (Capacitor.isNativePlatform()) return true;
   return (
     typeof window !== "undefined" &&
     "serviceWorker" in navigator &&
@@ -37,7 +40,71 @@ export function isPushEnabled() {
   return pushSupported() && localStorage.getItem(LS_ENABLED) === "1";
 }
 
+async function subscribeNative() {
+  try {
+    const { PushNotifications } = await import("@capacitor/push-notifications");
+    let perm = await PushNotifications.checkPermissions();
+    if (perm.receive !== "granted") perm = await PushNotifications.requestPermissions();
+    if (perm.receive !== "granted") {
+      toast.error("Autorisation refusée");
+      return false;
+    }
+    await PushNotifications.createChannel({
+      id: "storm_alerts",
+      name: "Alertes orage",
+      description: "Orages détectés ou en approche, impacts de foudre",
+      importance: 5,
+      sound: "default",
+      vibration: true,
+    });
+    return await new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        toast.error("Délai d'enregistrement FCM dépassé");
+        resolve(false);
+      }, 15000);
+      PushNotifications.addListener("registration", async ({ value }) => {
+        clearTimeout(timer);
+        try {
+          await api.post("/push/fcm/subscribe", { token: value });
+          localStorage.setItem(LS_ENABLED, "1");
+          localStorage.setItem(LS_FCM_TOKEN, value);
+          toast.success("Notifications push activées");
+          resolve(true);
+        } catch {
+          toast.error("Erreur d'enregistrement du push");
+          resolve(false);
+        }
+      });
+      PushNotifications.addListener("registrationError", () => {
+        clearTimeout(timer);
+        toast.error("Échec de l'enregistrement FCM");
+        resolve(false);
+      });
+      PushNotifications.register();
+    });
+  } catch {
+    toast.error("Push natif indisponible");
+    return false;
+  }
+}
+
+async function unsubscribeNative() {
+  const token = localStorage.getItem(LS_FCM_TOKEN);
+  if (token) {
+    try { await api.post("/push/fcm/unsubscribe", { token }); } catch { /* ignore */ }
+  }
+  try {
+    const { PushNotifications } = await import("@capacitor/push-notifications");
+    await PushNotifications.removeAllListeners();
+  } catch { /* ignore */ }
+  localStorage.setItem(LS_ENABLED, "0");
+  localStorage.removeItem(LS_FCM_TOKEN);
+  toast.info("Notifications push désactivées");
+  return true;
+}
+
 export async function subscribePush() {
+  if (Capacitor.isNativePlatform()) return subscribeNative();
   if (!pushSupported()) {
     toast.error("Push non supporté sur ce navigateur");
     return false;
@@ -70,6 +137,7 @@ export async function subscribePush() {
 }
 
 export async function unsubscribePush() {
+  if (Capacitor.isNativePlatform()) return unsubscribeNative();
   if (!pushSupported()) return false;
   const reg = await navigator.serviceWorker.getRegistration("/sw.js");
   if (!reg) {

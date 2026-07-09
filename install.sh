@@ -322,6 +322,7 @@ rsync -a --delete \
   --exclude='backend/.env.backups' \
   --exclude='backend/venv' \
   --exclude='backend/storm_data.json' \
+  --exclude='backend/firebase-admin.json' \
   --exclude='backend/.stale_cache.pkl' \
   --exclude='backend/cache' \
   --exclude='backend/__pycache__' \

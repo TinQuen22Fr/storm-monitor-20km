@@ -10,6 +10,8 @@ from typing import Dict, List, Optional
 
 from pywebpush import WebPushException, webpush
 
+import fcm as fcm_mod
+
 logger = logging.getLogger(__name__)
 
 
@@ -86,4 +88,13 @@ async def send_to_all(db, title: str, body: str, url: str = "/", tag: str = "sto
         except Exception as e:
             errors += 1
             logger.warning("WebPush generic error: %s", e)
-    return {"sent": sent, "removed": removed, "errors": errors, "total": len(subs)}
+    result = {"sent": sent, "removed": removed, "errors": errors, "total": len(subs)}
+    # Relais vers les appareils Android natifs (FCM), no-op si non configuré
+    try:
+        fcm_res = await fcm_mod.send_to_all(db, title=title, body=body, url=url, tag=tag)
+        result["fcm"] = fcm_res
+        result["sent"] += fcm_res.get("sent", 0)
+        result["total"] += fcm_res.get("total", 0)
+    except Exception as e:
+        logger.warning("FCM relay error: %s", e)
+    return result

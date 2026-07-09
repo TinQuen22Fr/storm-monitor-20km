@@ -37,6 +37,7 @@ from weather import (
 )
 import lightning as lightning_mod
 import push as push_mod
+import fcm as fcm_mod
 import reports as reports_mod
 import analysis as analysis_mod
 import demo_storms as demo_mod
@@ -1068,6 +1069,27 @@ async def push_unsubscribe(payload: dict = Body(...)):
     if not endpoint:
         raise HTTPException(status_code=400, detail="endpoint required")
     n = await push_mod.remove_subscription(db, endpoint)
+    return {"removed": n}
+
+
+@api_router.post("/push/fcm/subscribe")
+async def push_fcm_subscribe(
+    payload: dict = Body(...),
+    user=Depends(get_current_user_optional),
+):
+    token = payload.get("token")
+    if not token:
+        raise HTTPException(status_code=400, detail="token required")
+    await fcm_mod.save_token(db, token, user_id=user["id"] if user else None)
+    return {"ok": True, "fcm_available": fcm_mod.available()}
+
+
+@api_router.post("/push/fcm/unsubscribe")
+async def push_fcm_unsubscribe(payload: dict = Body(...)):
+    token = payload.get("token")
+    if not token:
+        raise HTTPException(status_code=400, detail="token required")
+    n = await fcm_mod.remove_token(db, token)
     return {"removed": n}
 
 

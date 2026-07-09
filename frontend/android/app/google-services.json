@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "753248012025",
+    "project_id": "storm-monitor",
+    "storage_bucket": "storm-monitor.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:753248012025:android:5f78ef8974d64726560428",
+        "android_client_info": {
+          "package_name": "fr.quentinastro.stormmonitor"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBaZ6O7UnNcK6UzCA27mmr8OGgncN3VVdI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

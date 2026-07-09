@@ -108,6 +108,35 @@ et `ic_launcher_foreground.png` (108/162/216/324/432 px, icône centrée à ~62%
 
 ---
 
+## 🔔 Notifications push natives (Firebase FCM)
+
+L'app Android reçoit les alertes orage **même fermée** via Firebase Cloud Messaging.
+
+**Architecture :**
+- `frontend/android/app/google-services.json` — config client Firebase (committée, nécessaire au build CI)
+- `backend/firebase-admin.json` — clé serveur **SECRÈTE** (jamais committée, `.gitignore`)
+- `backend/fcm.py` — envoi FCM (s'active seulement si la clé est présente, sinon no-op)
+- Toutes les alertes existantes (transitions orage, impacts foudre, test) partent
+  automatiquement en web push (VAPID) **ET** en push natif (FCM)
+- Endpoints : `POST /api/push/fcm/subscribe` et `POST /api/push/fcm/unsubscribe`
+- Dans l'app : activer le toggle **« Push serveur (même fermé) »** → demande la
+  permission Android → enregistre le token FCM auprès du backend
+
+**Installation de la clé sur le Kimsufi (une seule fois) :**
+
+```bash
+# Copier la clé de compte de service Firebase sur le serveur :
+nano /var/www/storm-monitor/backend/firebase-admin.json   # coller le contenu du JSON
+chown www-data:www-data /var/www/storm-monitor/backend/firebase-admin.json
+chmod 600 /var/www/storm-monitor/backend/firebase-admin.json
+systemctl restart storm-monitor
+# Vérifier : journalctl -u storm-monitor | grep FCM   → « FCM initialisé (projet storm-monitor) »
+```
+
+> `upgrade.sh` et `install.sh` **préservent** ce fichier lors des mises à jour (exclusion rsync).
+
+---
+
 ## 🛠️ Structure technique
 
 ```

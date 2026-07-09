@@ -28,6 +28,9 @@ next-env.d.ts
 # Production builds
 /build
 dist/
+
+# Secrets Firebase (clé admin — ne JAMAIS committer)
+firebase-admin.json
 dist
 
 # Environment files (comprehensive coverage)
