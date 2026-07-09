@@ -1,0 +1,11 @@
+{
+  "appId": "fr.quentinastro.stormmonitor",
+  "appName": "Storm Monitor",
+  "webDir": "build",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

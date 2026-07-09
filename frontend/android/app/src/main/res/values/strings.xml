@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Storm Monitor</string>
+    <string name="title_activity_main">Storm Monitor</string>
+    <string name="package_name">fr.quentinastro.stormmonitor</string>
+    <string name="custom_url_scheme">fr.quentinastro.stormmonitor</string>
+</resources>

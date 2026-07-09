@@ -1,0 +1,105 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [Version_With_Detector, main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/android-build.yml"
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      - name: Installation de Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Installation des dépendances frontend
+        run: yarn install --frozen-lockfile
+
+      - name: Build du frontend React (pointé vers le serveur Kimsufi)
+        env:
+          REACT_APP_BACKEND_URL: https://storm-monitor.quentin-astro.fr
+          CI: "false"
+          GENERATE_SOURCEMAP: "false"
+        run: yarn build
+
+      - name: Synchronisation Capacitor -> Android
+        run: npx cap sync android
+
+      - name: Installation de Java 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Compilation APK Debug
+        working-directory: frontend/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Renommage APK Debug
+        working-directory: frontend/android
+        run: cp app/build/outputs/apk/debug/app-debug.apk storm-monitor-debug.apk
+
+      - name: Upload APK Debug (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: storm-monitor-debug
+          path: frontend/android/storm-monitor-debug.apk
+          retention-days: 30
+
+      # ----- APK Release signé (uniquement si le secret KEYSTORE_BASE64 existe) -----
+      - name: Décodage du keystore
+        if: ${{ env.HAS_KEYSTORE == 'true' }}
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        working-directory: frontend/android
+        run: echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
+
+      - name: Compilation APK Release signé
+        if: ${{ env.HAS_KEYSTORE == 'true' }}
+        env:
+          KEYSTORE_FILE: ${{ github.workspace }}/frontend/android/release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        working-directory: frontend/android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Renommage APK Release
+        if: ${{ env.HAS_KEYSTORE == 'true' }}
+        working-directory: frontend/android
+        run: cp app/build/outputs/apk/release/app-release.apk storm-monitor-release.apk
+
+      - name: Upload APK Release (artifact)
+        if: ${{ env.HAS_KEYSTORE == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: storm-monitor-release
+          path: frontend/android/storm-monitor-release.apk
+          retention-days: 90
+
+      - name: Nettoyage du keystore
+        if: ${{ always() && env.HAS_KEYSTORE == 'true' }}
+        working-directory: frontend/android
+        run: rm -f release.keystore
+
+    env:
+      HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}

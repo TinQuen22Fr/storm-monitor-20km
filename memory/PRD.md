@@ -76,7 +76,11 @@ React CRA, FastAPI, MongoDB, Leaflet, Leaflet WMS (EUMETSAT Meteosat MSG), Canva
 
 - **[2026-02-27] Rollback calque nuages → NASA MODIS Terra** : Après plusieurs essais de filtres CSS sur Meteosat MSG (`blur` 3/5/18/30 px ± contrast), abandon du calque géostationnaire à cause de sa résolution native trop faible (~3 km/px) qui crée une grille de gros blocs inexploitables à l'échelle 20 km. Restauration du calque NASA GIBS MODIS Terra (polar orbit, ~250 m/px) : haute résolution spatiale, contours nuageux organiques, pas de pixelation. App.css entièrement nettoyé de tous les filtres `.meteosat-smooth-tile`. Cadence : ~1 pass/jour, timeline 5 jours navigables.
 
+- **[2026-06] Application Android (Capacitor + GitHub Actions)** : Frontend React embarqué dans un APK natif via Capacitor 7 (`fr.quentinastro.stormmonitor`, nom "Storm Monitor"). Projet `frontend/android/` committé, icône éclair/orage générée à toutes les densités (launcher + round + adaptive foreground + splash screens fond navy #1A1A2E). Workflow `.github/workflows/android-build.yml` : build React avec `REACT_APP_BACKEND_URL=https://storm-monitor.quentin-astro.fr` → `cap sync` → Gradle (Java 21, ubuntu-latest) → artifacts `storm-monitor-debug` (toujours) + `storm-monitor-release` signé (si secrets `KEYSTORE_BASE64/KEYSTORE_PASSWORD/KEY_ALIAS/KEY_PASSWORD` configurés). Doc complète dans `/app/ANDROID.md`. Vérifié en sandbox : build CRA prod + cap sync OK, URL Kimsufi bien embarquée dans le bundle, YAML valide. Compilation APK finale à valider sur GitHub Actions (pas de SDK Android en sandbox). L'utilisateur pourra fournir sa propre image d'icône plus tard.
+
 ## 🟡 Backlog
+- **P1** — Valider le 1er run GitHub Actions Android + installer l'APK sur téléphone
+- **P2** — Remplacer l'icône générée par l'image personnelle de l'utilisateur (quand fournie)
 - **P2** — Migration React CRA → Vite (élimine warnings `react-scripts`, ~2-4h)
 - **P2** — Réseau collaboratif : permettre aux users de contribuer des données au réseau d'orage
 - **P3** — Refactor optionnel : casser `server.py` en `/app/backend/routes/` modulaires
