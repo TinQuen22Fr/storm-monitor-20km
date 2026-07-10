@@ -1234,6 +1234,15 @@ async def _start_lightning_listener():
     except Exception as e:
         logger.warning("Could not start lightning listener: %s", e)
 
+    # Force FCM SDK init at boot so `journalctl | grep FCM` reports availability.
+    try:
+        if fcm_mod.available():
+            logger.info("FCM prêt · notifications Android natives activées")
+        else:
+            logger.info("FCM indisponible · credentials manquants ou invalides")
+    except Exception as e:
+        logger.warning("FCM init au démarrage a échoué : %s", e)
+
     # Alert watcher: push notifications on storm transitions + new strikes in radius
     asyncio.create_task(_alert_watcher())
     logger.info("Alert watcher started")

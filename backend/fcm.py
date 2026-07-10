@@ -61,6 +61,7 @@ async def save_token(db, token: str, user_id: Optional[str] = None) -> Dict:
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.fcm_tokens.update_one({"token": token}, {"$set": doc}, upsert=True)
+    logger.info("FCM token enregistré (user_id=%s, token=%s…)", user_id, token[:16])
     return doc
 
 
@@ -75,11 +76,14 @@ async def send_to_all(db, title: str, body: str, url: str = "/", tag: str = "sto
     """
     app = _get_app()
     if app is None:
+        logger.info("FCM send_to_all ignoré : SDK non initialisé")
         return {"sent": 0, "total": 0, "disabled": True}
     docs = await db.fcm_tokens.find({}, {"_id": 0, "token": 1}).to_list(2000)
     tokens = [d["token"] for d in docs]
     if not tokens:
+        logger.info("FCM send_to_all : aucun token Android enregistré")
         return {"sent": 0, "total": 0}
+    logger.info("FCM envoi vers %d appareils · titre=%r", len(tokens), title)
 
     from firebase_admin import messaging
 
@@ -113,4 +117,8 @@ async def send_to_all(db, title: str, body: str, url: str = "/", tag: str = "sto
         else:
             errors += 1
             logger.warning("FCM erreur d'envoi : %s", r.exception)
+    logger.info(
+        "FCM résultat · envoyés=%d purgés=%d erreurs=%d total=%d",
+        resp.success_count, removed, errors, len(tokens),
+    )
     return {"sent": resp.success_count, "removed": removed, "errors": errors, "total": len(tokens)}

@@ -756,6 +756,18 @@ export default function Dashboard() {
             </span>
           </button>
 
+          {/* Send push test (only when push is enabled) */}
+          {pushEnabled && (
+            <button
+              onClick={() => push.sendTestPush()}
+              className="mt-2 w-full flex items-center justify-center gap-2 px-4 h-10 border border-red-600 bg-white text-red-700 hover:bg-red-600 hover:text-white transition-colors font-mono text-[10px] uppercase tracking-[0.2em]"
+              data-testid="send-push-test"
+            >
+              <Zap className="w-4 h-4" strokeWidth={1.8} />
+              Envoyer un test
+            </button>
+          )}
+
           {/* PDF bulletin */}
           <button
             onClick={downloadPdf}
