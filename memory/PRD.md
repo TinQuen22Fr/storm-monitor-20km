@@ -92,6 +92,13 @@ React CRA, FastAPI, MongoDB, Leaflet, Leaflet WMS (EUMETSAT Meteosat MSG), Canva
 
 - **[2026-06] Fix crash build prod "Can't resolve @capacitor/core"** : la dépendance était bien dans package.json/yarn.lock depuis le début, mais `upgrade.sh` ne lançait `yarn install` que si package.json changeait dans le diff courant → node_modules de prod périmé (deps Capacitor jamais installées). Ajout d'un garde-fou : vérification que chaque dépendance de package.json existe dans node_modules, sinon yarn install forcé (testé : dep manquante → forcé ; env sain → pas de faux positif). Déblocage immédiat côté user : `yarn install --frozen-lockfile && yarn build` manuel.
 
+## 🔴 CONSIGNE UTILISATEUR STRICTE (2026-06) — GEL DE LA PRODUCTION
+L'utilisateur a finalisé lui-même la mise en production (install manuelle de firebase-admin dans le venv, build, nettoyage). Le système est 100% opérationnel.
+- INTERDICTION de modifier le backend sans demande explicite de l'utilisateur.
+- INTERDICTION d'appeler l'API de production (https://storm-monitor.quentin-astro.fr) pour des tests/diagnostics — aucun POST subscribe/test.
+- Ne proposer AUCUNE "réparation" non sollicitée. Attendre ses demandes.
+- Audit sécurité réalisé : 4 findings P2 documentés (injection Mongo unsubscribe, /push/test non admin, pas de rate-limit subscribe, email admin exposé dans /api/health) — corrections NON appliquées, en attente de décision utilisateur.
+
 ## 🟡 Backlog
 - **P1** — Valider le 1er run GitHub Actions Android + installer l'APK sur téléphone
 - **P2** — Remplacer l'icône générée par l'image personnelle de l'utilisateur (quand fournie)
