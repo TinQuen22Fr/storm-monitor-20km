@@ -150,6 +150,19 @@ if [[ ! -d "$APP_DIR/frontend/build" ]]; then
   FRONTEND_CHANGED=1
   PKG_CHANGED=1
 fi
+# Si node_modules est absent ou périmé (deps déclarées mais pas installées,
+# ex: @capacitor/core), on force yarn install
+if [[ ! -d "$APP_DIR/frontend/node_modules" ]]; then
+  PKG_CHANGED=1
+else
+  while IFS= read -r dep; do
+    if [[ ! -d "$APP_DIR/frontend/node_modules/$dep" ]]; then
+      echo "    dépendance '$dep' absente de node_modules — yarn install forcé"
+      PKG_CHANGED=1
+      break
+    fi
+  done < <(python3 -c "import json;print('\n'.join(json.load(open('$WORK_DIR/frontend/package.json'))['dependencies'].keys()))" 2>/dev/null)
+fi
 
 echo "    requirements.txt : $([[ $REQ_CHANGED -eq 1 ]] && echo 'CHANGÉ' || echo 'inchangé')"
 echo "    package.json/lock: $([[ $PKG_CHANGED -eq 1 ]] && echo 'CHANGÉ' || echo 'inchangé')"

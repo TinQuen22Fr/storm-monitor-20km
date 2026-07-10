@@ -90,6 +90,8 @@ React CRA, FastAPI, MongoDB, Leaflet, Leaflet WMS (EUMETSAT Meteosat MSG), Canva
 
 - **[2026-06] Fix root cause FCM + observabilité Kimsufi** : (1) Découvert que l'unit systemd prod redirige stdout/stderr vers `/var/log/storm-monitor.err.log` → journalctl était inutilisable, toutes les procédures corrigées. (2) Bug réel corrigé dans `fcm.py` : `_init_tried` cachait l'échec définitivement si la clé apparaissait après le boot — init désormais retentée à chaque appel, testé (dépôt du fichier détecté sans restart). (3) `fcm.diagnose()` + `GET /api/push/status` enrichi (path, file_exists, valid_json, project_id, sdk_installed, last_error nommant le problème exact) — testé sur 4 cas d'échec. (4) `upgrade.sh` force pip si `firebase_admin` absent du venv. (5) Toast subscribe natif avertit si FCM désactivé côté serveur. `PROCEDURE_FCM_KIMSUFI.md` réécrite (logs fichiers + diagnostic curl).
 
+- **[2026-06] Fix crash build prod "Can't resolve @capacitor/core"** : la dépendance était bien dans package.json/yarn.lock depuis le début, mais `upgrade.sh` ne lançait `yarn install` que si package.json changeait dans le diff courant → node_modules de prod périmé (deps Capacitor jamais installées). Ajout d'un garde-fou : vérification que chaque dépendance de package.json existe dans node_modules, sinon yarn install forcé (testé : dep manquante → forcé ; env sain → pas de faux positif). Déblocage immédiat côté user : `yarn install --frozen-lockfile && yarn build` manuel.
+
 ## 🟡 Backlog
 - **P1** — Valider le 1er run GitHub Actions Android + installer l'APK sur téléphone
 - **P2** — Remplacer l'icône générée par l'image personnelle de l'utilisateur (quand fournie)
