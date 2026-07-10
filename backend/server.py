@@ -1045,6 +1045,16 @@ class PushSubscription(BaseModel):
     keys: dict
 
 
+@api_router.get("/push/status")
+async def push_status():
+    """Diagnostic public : état FCM serveur + nombre d'appareils enregistrés."""
+    return {
+        "fcm_available": fcm_mod.available(),
+        "fcm_tokens": await db.fcm_tokens.count_documents({}),
+        "webpush_subscriptions": await db.push_subscriptions.count_documents({}),
+    }
+
+
 @api_router.get("/push/vapid-public-key")
 async def push_vapid_public_key():
     return {"key": push_mod.vapid_public_key()}

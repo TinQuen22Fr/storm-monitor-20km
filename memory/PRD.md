@@ -86,6 +86,8 @@ React CRA, FastAPI, MongoDB, Leaflet, Leaflet WMS (EUMETSAT Meteosat MSG), Canva
 
 - **[2026-06] Root cause FCM "ne marche pas chez moi" identifiée** : `backend/firebase-admin.json` est gitignoré ET exclu du rsync d'`upgrade.sh` → il n'arrive JAMAIS sur le Kimsufi automatiquement. Le fichier n'existait qu'en sandbox. Procédure de déploiement manuel unique écrite dans `/app/PROCEDURE_FCM_KIMSUFI.md` (diagnostic `ls`, génération clé console Firebase, scp, chmod 600, upgrade.sh, vérif journalctl, nouvelle APK, test e2e bouton "Envoyer un test"). En attente d'exécution par l'utilisateur sur son serveur.
 
+- **[2026-06] Diagnostic production "Test envoyé (0 appareils)"** : Vérifié en direct sur le Kimsufi via l'API publique → `fcm_available:false` = `firebase-admin.json` toujours absent du serveur (la chaîne téléphone→serveur fonctionne, tokens bien stockés/supprimés en base). Ajouts : endpoint public `GET /api/push/status` (fcm_available + compteurs tokens/subs) et toasts explicites dans `sendTestPush` (FCM désactivé serveur / aucun appareil / x/y délivrés). Action utilisateur restante : déposer la clé Firebase sur le Kimsufi (console Firebase → Comptes de service → scp → chmod 600 → restart).
+
 ## 🟡 Backlog
 - **P1** — Valider le 1er run GitHub Actions Android + installer l'APK sur téléphone
 - **P2** — Remplacer l'icône générée par l'image personnelle de l'utilisateur (quand fournie)

@@ -157,10 +157,27 @@ export async function unsubscribePush() {
 }
 
 export async function sendTestPush() {
+  let data;
   try {
-    const { data } = await api.post("/push/test");
-    toast.success(`Test envoyé (${data.sent} appareils)`);
+    ({ data } = await api.post("/push/test"));
   } catch (e) {
     toast.error("Connectez-vous pour envoyer un test");
+    return;
   }
+  if (data.sent > 0) {
+    toast.success(`Test envoyé (${data.sent}/${data.total} appareils)`);
+    return;
+  }
+  if (data.fcm?.disabled) {
+    toast.error(
+      "Serveur : FCM désactivé — firebase-admin.json manquant sur le Kimsufi",
+      { duration: 8000 }
+    );
+    return;
+  }
+  if (data.total === 0) {
+    toast.warning("Aucun appareil enregistré côté serveur — réactive le push");
+    return;
+  }
+  toast.error(`Échec d'envoi (${data.total} appareils enregistrés, 0 délivrés)`);
 }
