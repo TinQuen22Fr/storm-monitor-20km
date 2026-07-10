@@ -99,6 +99,8 @@ L'utilisateur a finalisé lui-même la mise en production (install manuelle de f
 - Ne proposer AUCUNE "réparation" non sollicitée. Attendre ses demandes.
 - Audit sécurité réalisé : 4 findings P2 documentés (injection Mongo unsubscribe, /push/test non admin, pas de rate-limit subscribe, email admin exposé dans /api/health) — corrections NON appliquées, en attente de décision utilisateur.
 
+- **[2026-07] Ordre de mission utilisateur — unicast + protection venv (SOUMIS EN RELECTURE, non déployé)** : (1) Fix purge FCM : `Requested entity was not found` (UnregisteredError) désormais reconnu → tokens d'anciennes APK purgés au 1er envoi, fin de la pollution des logs. (2) `/push/test` en unicast (`send_to_user`, filtre user_id) — les alertes orage restent broadcast volontairement. (3) `rebindToken()` au login (frontend) pour lier le token de l'appareil au compte. (4) `upgrade.sh` : venv PROTÉGÉ (pip uniquement via flag explicite `--with-deps`, sinon message informatif), anti-OOM `NODE_OPTIONS=--max-old-space-size=1024` sur yarn build. Testé sandbox : unicast prouvé (total=1 sur 2 tokens), purge prouvée, syntax bash OK, frontend compile. RÈGLE : l'utilisateur relit, valide et déploie lui-même (aucun push auto).
+
 ## 🟡 Backlog
 - **P1** — Valider le 1er run GitHub Actions Android + installer l'APK sur téléphone
 - **P2** — Remplacer l'icône générée par l'image personnelle de l'utilisateur (quand fournie)

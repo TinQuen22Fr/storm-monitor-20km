@@ -1106,8 +1106,10 @@ async def push_fcm_unsubscribe(payload: dict = Body(...)):
 
 @api_router.post("/push/test")
 async def push_test(user=Depends(get_current_user)):
-    result = await push_mod.send_to_all(
+    """Unicast : cible uniquement les appareils de l'utilisateur connecté."""
+    result = await push_mod.send_to_user(
         db,
+        user["id"],
         title="Test · Alerte orage",
         body="Ceci est un test de notification push — tout fonctionne.",
         url="/",

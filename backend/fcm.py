@@ -125,19 +125,49 @@ async def remove_token(db, token: str) -> int:
 
 
 async def send_to_all(db, title: str, body: str, url: str = "/", tag: str = "storm") -> Dict:
-    """Envoie une notification FCM à tous les tokens Android enregistrés.
-    Purge les tokens invalides/expirés. Envoi non bloquant (to_thread).
+    """Alerte broadcast : tous les tokens Android enregistrés (usage : alertes orage)."""
+    return await _dispatch(db, {}, title, body, url, tag)
+
+
+async def send_to_user(db, user_id: str, title: str, body: str, url: str = "/", tag: str = "storm") -> Dict:
+    """Unicast : uniquement les tokens liés à cet utilisateur (usage : bouton test)."""
+    return await _dispatch(db, {"user_id": user_id}, title, body, url, tag)
+
+
+def _is_stale_token_error(exc) -> bool:
+    """Token mort : ancienne APK désinstallée/réinstallée → à purger."""
+    try:
+        from firebase_admin import messaging
+
+        if isinstance(exc, messaging.UnregisteredError):
+            return True
+    except ImportError:
+        pass
+    err = str(exc).lower()
+    return any(
+        s in err
+        for s in (
+            "not-registered", "not registered", "unregistered",
+            "entity was not found", "not a valid", "invalid",
+        )
+    )
+
+
+async def _dispatch(db, query: Dict, title: str, body: str, url: str, tag: str) -> Dict:
+    """Envoi FCM vers les tokens matchant `query`. Purge les tokens morts (404).
+    Envoi non bloquant (to_thread).
     """
     app = _get_app()
     if app is None:
-        logger.info("FCM send_to_all ignoré : SDK non initialisé (%s)", _last_error)
+        logger.info("FCM envoi ignoré : SDK non initialisé (%s)", _last_error)
         return {"sent": 0, "total": 0, "disabled": True, "reason": _last_error}
-    docs = await db.fcm_tokens.find({}, {"_id": 0, "token": 1}).to_list(2000)
+    docs = await db.fcm_tokens.find(query, {"_id": 0, "token": 1}).to_list(2000)
     tokens = [d["token"] for d in docs]
     if not tokens:
-        logger.info("FCM send_to_all : aucun token Android enregistré")
+        logger.info("FCM : aucun token pour la cible %s", query or "broadcast")
         return {"sent": 0, "total": 0}
-    logger.info("FCM envoi vers %d appareils · titre=%r", len(tokens), title)
+    logger.info("FCM envoi vers %d appareils (%s) · titre=%r",
+                len(tokens), "unicast" if query else "broadcast", title)
 
     from firebase_admin import messaging
 
@@ -164,10 +194,10 @@ async def send_to_all(db, title: str, body: str, url: str = "/", tag: str = "sto
     for tok, r in zip(tokens, resp.responses):
         if r.success:
             continue
-        err = str(r.exception).lower()
-        if "not-registered" in err or "not registered" in err or "not a valid" in err or "invalid" in err:
+        if _is_stale_token_error(r.exception):
             await db.fcm_tokens.delete_one({"token": tok})
             removed += 1
+            logger.info("FCM token mort purgé (%s…)", tok[:16])
         else:
             errors += 1
             logger.warning("FCM erreur d'envoi : %s", r.exception)

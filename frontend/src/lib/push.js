@@ -144,8 +144,7 @@ export async function subscribePush() {
 }
 
 export async function unsubscribePush() {
-  if (Capacitor.isNativePlatform()) return unsubscribeNative();
-  if (!pushSupported()) return false;
+  if (Capacitor.isNativePlatform()) return unsubscribeNative();  if (!pushSupported()) return false;
   const reg = await navigator.serviceWorker.getRegistration("/sw.js");
   if (!reg) {
     localStorage.setItem(LS_ENABLED, "0");
@@ -161,6 +160,28 @@ export async function unsubscribePush() {
   localStorage.setItem(LS_ENABLED, "0");
   toast.info("Notifications push désactivées");
   return true;
+}
+
+/** Re-lie l'appareil au compte après login (le token FCM/subscription est
+ * ré-envoyé avec le header Authorization → user_id renseigné côté serveur,
+ * requis pour l'envoi de test unicast). */
+export async function rebindToken() {
+  if (localStorage.getItem(LS_ENABLED) !== "1") return;
+  const fcmToken = localStorage.getItem(LS_FCM_TOKEN);
+  if (fcmToken) {
+    try { await api.post("/push/fcm/subscribe", { token: fcmToken }); } catch { /* ignore */ }
+    return;
+  }
+  if (!Capacitor.isNativePlatform() && "serviceWorker" in navigator) {
+    try {
+      const reg = await navigator.serviceWorker.getRegistration("/sw.js");
+      const sub = reg && (await reg.pushManager.getSubscription());
+      if (sub) {
+        const payload = sub.toJSON();
+        await api.post("/push/subscribe", { endpoint: payload.endpoint, keys: payload.keys });
+      }
+    } catch { /* ignore */ }
+  }
 }
 
 export async function sendTestPush() {

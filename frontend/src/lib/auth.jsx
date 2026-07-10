@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { authLogin, authMe, authRegister } from "./api";
+import { rebindToken } from "./push";
 
 const AuthCtx = createContext(null);
 
@@ -33,6 +34,7 @@ export function AuthProvider({ children }) {
     const data = await authLogin(email, password);
     localStorage.setItem("storm_token", data.token);
     setUser(data.user);
+    rebindToken();
     return data.user;
   };
 

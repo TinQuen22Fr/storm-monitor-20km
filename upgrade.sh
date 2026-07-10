@@ -28,6 +28,14 @@
 
 set -euo pipefail
 
+# Flag optionnel : bash upgrade.sh --with-deps
+#   Sans ce flag, le venv Python n'est JAMAIS touché (pas de pip install),
+#   même si requirements.txt a changé. Le script se contente de le signaler.
+WITH_DEPS=0
+for arg in "$@"; do
+  [[ "$arg" == "--with-deps" ]] && WITH_DEPS=1
+done
+
 REPO_URL="https://github.com/TinQuen22Fr/storm-monitor-20km.git"
 # Branche cible FIGÉE — Version_With_Detector est la seule branche prod du Kimsufi.
 BRANCH="Version_With_Detector"
@@ -134,15 +142,14 @@ if [[ $ALREADY_UP_TO_DATE -eq 0 ]]; then
   if echo "$CHANGED_FILES" | grep -qE '^(install\.sh|.*nginx.*\.conf|.*systemd.*\.service)$'; then NGINX_CHANGED=1; fi
 fi
 
-# Si le venv n'existe pas (cas où l'on serait sur une install bancale), on force
+# Le venv est PROTÉGÉ : jamais recréé, jamais modifié sans --with-deps explicite.
 if [[ ! -d "$APP_DIR/backend/venv" ]]; then
-  REQ_CHANGED=1
+  echo "    WARN: venv absent ($APP_DIR/backend/venv) — lance 'bash upgrade.sh --with-deps' pour le créer"
 fi
-# Si un module requis manque dans le venv (ex: firebase_admin), on force pip
+# Contrôle informatif seulement (aucune action automatique sur le venv)
 if [[ -x "$APP_DIR/backend/venv/bin/python" ]]; then
   if ! "$APP_DIR/backend/venv/bin/python" -c "import firebase_admin" 2>/dev/null; then
-    echo "    firebase_admin absent du venv — pip install forcé"
-    REQ_CHANGED=1
+    echo "    WARN: module firebase_admin absent du venv — installe-le manuellement ou lance '--with-deps'"
   fi
 fi
 # Si le build n'existe pas, on force aussi
@@ -225,9 +232,9 @@ EOF
 # ---------------------------------------------------------------------------
 # 5. Backend deps (pip install) — seulement si requirements changé
 # ---------------------------------------------------------------------------
-if [[ $REQ_CHANGED -eq 1 ]]; then
+if [[ $REQ_CHANGED -eq 1 && $WITH_DEPS -eq 1 ]]; then
   echo ""
-  echo "==> Étape 5 — Mise à jour des deps Python (requirements changé)..."
+  echo "==> Étape 5 — Mise à jour des deps Python (--with-deps demandé)..."
   cd "$APP_DIR/backend"
   if [[ ! -d venv ]]; then
     python3 -m venv venv
@@ -238,6 +245,11 @@ if [[ $REQ_CHANGED -eq 1 ]]; then
   pip install -r requirements.txt
   deactivate
   cd - >/dev/null
+elif [[ $REQ_CHANGED -eq 1 ]]; then
+  echo ""
+  echo "==> Étape 5 — requirements.txt a CHANGÉ mais venv protégé (pip NON exécuté)."
+  echo "    Pour installer les nouvelles deps : bash upgrade.sh --with-deps"
+  echo "    ou manuellement : $APP_DIR/backend/venv/bin/pip install -r $APP_DIR/backend/requirements.txt"
 else
   echo ""
   echo "==> Étape 5 — pip skip (requirements.txt inchangé)"
@@ -273,8 +285,9 @@ fi
 # ---------------------------------------------------------------------------
 if [[ $FRONTEND_CHANGED -eq 1 ]]; then
   echo ""
-  echo "==> Étape 7 — Build du frontend..."
-  yarn build
+  echo "==> Étape 7 — Build du frontend (RAM plafonnée pour éviter l'OOM Killer)..."
+  # Kimsufi Atom : limite la heap Node à 1 Go pour ne pas déclencher l'OOM Killer
+  NODE_OPTIONS="--max-old-space-size=1024" GENERATE_SOURCEMAP=false yarn build
 else
   echo ""
   echo "==> Étape 7 — yarn build skip (aucun fichier frontend modifié)"

@@ -59,10 +59,20 @@ async def all_subscriptions(db) -> List[Dict]:
 
 
 async def send_to_all(db, title: str, body: str, url: str = "/", tag: str = "storm") -> Dict:
-    """Send a push notification to every saved subscription.
+    """Broadcast (alertes orage) : toutes les subscriptions web + tous les FCM.
     Removes expired subscriptions (410/404).
     """
     subs = await all_subscriptions(db)
+    return await _dispatch(db, subs, None, title, body, url, tag)
+
+
+async def send_to_user(db, user_id: str, title: str, body: str, url: str = "/", tag: str = "storm") -> Dict:
+    """Unicast (bouton test) : uniquement les appareils liés à cet utilisateur."""
+    subs = await db.push_subscriptions.find({"user_id": user_id}, {"_id": 0}).to_list(2000)
+    return await _dispatch(db, subs, user_id, title, body, url, tag)
+
+
+async def _dispatch(db, subs: List[Dict], fcm_user_id: Optional[str], title: str, body: str, url: str, tag: str) -> Dict:
     sent = 0
     removed = 0
     errors = 0
@@ -91,7 +101,10 @@ async def send_to_all(db, title: str, body: str, url: str = "/", tag: str = "sto
     result = {"sent": sent, "removed": removed, "errors": errors, "total": len(subs)}
     # Relais vers les appareils Android natifs (FCM), no-op si non configuré
     try:
-        fcm_res = await fcm_mod.send_to_all(db, title=title, body=body, url=url, tag=tag)
+        if fcm_user_id is None:
+            fcm_res = await fcm_mod.send_to_all(db, title=title, body=body, url=url, tag=tag)
+        else:
+            fcm_res = await fcm_mod.send_to_user(db, fcm_user_id, title=title, body=body, url=url, tag=tag)
         result["fcm"] = fcm_res
         result["sent"] += fcm_res.get("sent", 0)
         result["total"] += fcm_res.get("total", 0)
