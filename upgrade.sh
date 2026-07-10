@@ -138,6 +138,13 @@ fi
 if [[ ! -d "$APP_DIR/backend/venv" ]]; then
   REQ_CHANGED=1
 fi
+# Si un module requis manque dans le venv (ex: firebase_admin), on force pip
+if [[ -x "$APP_DIR/backend/venv/bin/python" ]]; then
+  if ! "$APP_DIR/backend/venv/bin/python" -c "import firebase_admin" 2>/dev/null; then
+    echo "    firebase_admin absent du venv — pip install forcé"
+    REQ_CHANGED=1
+  fi
+fi
 # Si le build n'existe pas, on force aussi
 if [[ ! -d "$APP_DIR/frontend/build" ]]; then
   FRONTEND_CHANGED=1

@@ -1,11 +1,14 @@
 """Push natif Android via Firebase Cloud Messaging (FCM).
 
-Désactivé silencieusement si backend/firebase-admin.json est absent
-(ou si FIREBASE_CREDENTIALS ne pointe pas vers un fichier valide).
+Désactivé si backend/firebase-admin.json est absent (ou si FIREBASE_CREDENTIALS
+ne pointe pas vers un fichier valide). L'init est retentée à chaque appel tant
+qu'elle n'a pas réussi : déposer la clé PUIS restart n'est plus obligatoire,
+le fichier est pris en compte dès qu'il apparaît.
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import uuid
@@ -16,7 +19,8 @@ from typing import Dict, Optional
 logger = logging.getLogger(__name__)
 
 _app = None
-_init_tried = False
+_last_error: Optional[str] = None
+_last_missing_logged = False
 
 
 def _credentials_path() -> Path:
@@ -27,30 +31,80 @@ def _credentials_path() -> Path:
 
 
 def _get_app():
-    global _app, _init_tried
+    """Init Firebase Admin. Retente à chaque appel tant que non initialisé."""
+    global _app, _last_error, _last_missing_logged
     if _app is not None:
         return _app
-    if _init_tried:
-        return None
-    _init_tried = True
     path = _credentials_path()
     if not path.exists():
-        logger.info("FCM désactivé : credentials absents (%s)", path)
+        _last_error = f"credentials absents ({path})"
+        if not _last_missing_logged:
+            logger.info("FCM désactivé : credentials absents (%s)", path)
+            _last_missing_logged = True
         return None
+    _last_missing_logged = False
     try:
         import firebase_admin
         from firebase_admin import credentials
 
         _app = firebase_admin.initialize_app(credentials.Certificate(str(path)))
+        _last_error = None
         logger.info("FCM initialisé (projet %s)", _app.project_id)
     except Exception as e:
-        logger.warning("FCM init échoué : %s", e)
+        _last_error = f"{type(e).__name__}: {e}"
+        logger.warning("FCM init échoué : %s", _last_error)
         _app = None
     return _app
 
 
 def available() -> bool:
     return _get_app() is not None
+
+
+def diagnose() -> Dict:
+    """État complet de la chaîne FCM côté serveur (aucun secret exposé)."""
+    path = _credentials_path()
+    d: Dict = {
+        "credentials_path": str(path),
+        "file_exists": path.exists(),
+        "file_readable": False,
+        "valid_json": False,
+        "project_id": None,
+        "sdk_installed": False,
+        "sdk_version": None,
+        "initialized": False,
+        "last_error": None,
+    }
+    if d["file_exists"]:
+        try:
+            raw = path.read_text()
+            d["file_readable"] = True
+            data = json.loads(raw)
+            d["valid_json"] = True
+            d["project_id"] = data.get("project_id")
+            if not data.get("private_key"):
+                d["last_error"] = "champ private_key absent du JSON"
+        except PermissionError:
+            d["last_error"] = "fichier illisible (droits)"
+        except json.JSONDecodeError as e:
+            d["last_error"] = f"JSON invalide : {e}"
+        except Exception as e:
+            d["last_error"] = str(e)
+    else:
+        d["last_error"] = "fichier credentials absent"
+    try:
+        import firebase_admin
+
+        d["sdk_installed"] = True
+        d["sdk_version"] = getattr(firebase_admin, "__version__", "?")
+    except ImportError:
+        d["last_error"] = "module python firebase_admin non installé (pip)"
+    d["initialized"] = available()
+    if d["initialized"]:
+        d["last_error"] = None
+    elif _last_error and not d["last_error"]:
+        d["last_error"] = _last_error
+    return d
 
 
 async def save_token(db, token: str, user_id: Optional[str] = None) -> Dict:
@@ -76,8 +130,8 @@ async def send_to_all(db, title: str, body: str, url: str = "/", tag: str = "sto
     """
     app = _get_app()
     if app is None:
-        logger.info("FCM send_to_all ignoré : SDK non initialisé")
-        return {"sent": 0, "total": 0, "disabled": True}
+        logger.info("FCM send_to_all ignoré : SDK non initialisé (%s)", _last_error)
+        return {"sent": 0, "total": 0, "disabled": True, "reason": _last_error}
     docs = await db.fcm_tokens.find({}, {"_id": 0, "token": 1}).to_list(2000)
     tokens = [d["token"] for d in docs]
     if not tokens:

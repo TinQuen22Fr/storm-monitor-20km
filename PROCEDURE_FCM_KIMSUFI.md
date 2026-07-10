@@ -1,130 +1,111 @@
 # Procédure FCM — Notifications natives Android sur le Kimsufi (PRODUCTION)
 
-> ⚠️ POINT CLÉ : le fichier `backend/firebase-admin.json` est volontairement
-> ignoré par Git (`.gitignore` ligne 33) et exclu du rsync de `upgrade.sh`
-> (sécurité : jamais de clé privée dans le dépôt GitHub).
-> **Il n'arrive donc JAMAIS tout seul sur le Kimsufi.**
-> Tant qu'il n'est pas déposé à la main dans `/var/www/storm-monitor/backend/`,
-> le backend logge "FCM désactivé : credentials absents" et AUCUNE notification
-> native Android ne peut partir. C'est l'unique étape manuelle, à faire UNE fois.
+> ⚠️ IMPORTANT — LOGS : sur le Kimsufi, le service N'ÉCRIT PAS dans journald.
+> L'unit systemd redirige tout vers des fichiers :
+> ```
+> tail -f /var/log/storm-monitor.err.log      # ← logs applicatifs (FCM, alertes…)
+> tail -f /var/log/storm-monitor.log          # stdout
+> ```
+> `journalctl -u storm-monitor` ne montrera RIEN d'applicatif. Ne pas l'utiliser.
+
+> ⚠️ CLÉ FIREBASE : `backend/firebase-admin.json` est volontairement ignoré par
+> Git et exclu du rsync d'`upgrade.sh` (jamais de clé privée sur GitHub).
+> Il doit être déposé À LA MAIN, une seule fois, sur le Kimsufi.
+> Depuis la version courante, PAS BESOIN de restart après dépôt : le backend
+> le détecte au prochain appel.
 
 ---
 
-## Étape 0 — Diagnostic immédiat (30 s, sur le Kimsufi)
-
-```bash
-ls -l /var/www/storm-monitor/backend/firebase-admin.json
-```
-
-- `No such file or directory` → c'est bien ça le problème, continuez.
-- Le fichier existe → passez directement à l'étape 3.
-
----
-
-## Étape 1 — Récupérer la clé de service Firebase (sur votre PC)
-
-1. Ouvrir https://console.firebase.google.com → projet **storm-monitor**
-2. ⚙️ **Paramètres du projet** → onglet **Comptes de service**
-3. Bouton **Générer une nouvelle clé privée** → un fichier
-   `storm-monitor-firebase-adminsdk-xxxxx.json` est téléchargé.
-
----
-
-## Étape 2 — Déposer la clé sur le Kimsufi (UNE seule fois)
-
-Depuis votre PC (adapter le nom du fichier téléchargé) :
-
-```bash
-scp storm-monitor-firebase-adminsdk-*.json \
-  root@storm-monitor.quentin-astro.fr:/var/www/storm-monitor/backend/firebase-admin.json
-```
-
-Puis sur le Kimsufi :
-
-```bash
-chmod 600 /var/www/storm-monitor/backend/firebase-admin.json
-chown root:root /var/www/storm-monitor/backend/firebase-admin.json
-```
-
-> Le nom DOIT être exactement `firebase-admin.json` (ou définir
-> `FIREBASE_CREDENTIALS=/chemin/vers/le/fichier.json` dans `backend/.env`).
-> `upgrade.sh` ne touchera plus jamais à ce fichier (exclu du rsync).
-
----
-
-## Étape 3 — Mettre à jour le code sur le Kimsufi
-
-Le bouton "Envoyer un test" + les logs FCM détaillés sont dans la branche
-`Version_With_Detector`. Sur le Kimsufi :
+## Étape 1 — Déployer la dernière version du code
 
 ```bash
 cd /opt/storm-monitor && bash upgrade.sh
 ```
 
----
+(`upgrade.sh` force désormais `pip install` si le module `firebase_admin`
+manque du venv.)
 
-## Étape 4 — Vérifier que FCM est actif (sur le Kimsufi)
+## Étape 2 — Diagnostic complet en UN curl (sans SSH, depuis n'importe où)
 
 ```bash
-systemctl restart storm-monitor
-journalctl -u storm-monitor -n 80 --no-pager | grep -i fcm
+curl -s https://storm-monitor.quentin-astro.fr/api/push/status | python3 -m json.tool
 ```
 
-Attendu :
+Réponse type :
 
+```json
+{
+  "fcm_available": false,
+  "fcm": {
+    "credentials_path": "/var/www/storm-monitor/backend/firebase-admin.json",
+    "file_exists": false,
+    "file_readable": false,
+    "valid_json": false,
+    "project_id": null,
+    "sdk_installed": true,
+    "sdk_version": "7.5.0",
+    "initialized": false,
+    "last_error": "fichier credentials absent"
+  },
+  "fcm_tokens": 1,
+  "webpush_subscriptions": 0
+}
 ```
-FCM initialisé (projet storm-monitor)
-FCM prêt · notifications Android natives activées
-```
 
-Si vous voyez `FCM désactivé : credentials absents` → le fichier de l'étape 2
-n'est pas au bon endroit / mauvais nom.
+`last_error` nomme le problème exact. Interprétation :
 
----
-
-## Étape 5 — Nouvelle APK (compilée automatiquement par GitHub)
-
-1. Le push sur la branche `Version_With_Detector` déclenche le workflow
-   **Build Android APK** (l'APK embarque déjà `google-services.json`,
-   qui lui EST versionné — c'est normal, il ne contient pas de secret).
-2. Sur le téléphone : GitHub → repo → **Releases** → dernière release
-   `android-vXX` → télécharger `storm-monitor-debug.apk` → installer
-   par-dessus l'ancienne version.
-
----
-
-## Étape 6 — Test de bout en bout (sur le téléphone)
-
-1. Ouvrir l'appli → se connecter → **activer les notifications push**
-   (accepter la permission Android).
-2. Sur le Kimsufi, vérifier l'enregistrement du téléphone :
-   ```bash
-   journalctl -u storm-monitor -n 50 --no-pager | grep "FCM token"
-   ```
-   Attendu : `FCM token enregistré (user_id=..., token=xxxx…)`
-3. Dans l'appli, appuyer sur le bouton rouge **"Envoyer un test"**.
-4. Attendu côté serveur :
-   ```
-   FCM envoi vers 1 appareils · titre='Test · Alerte orage'
-   FCM résultat · envoyés=1 purgés=0 erreurs=0 total=1
-   ```
-5. Attendu côté téléphone : notification native
-   **"Test · Alerte orage — Ceci est un test de notification push"**
-   (fonctionne appli fermée / écran verrouillé).
-
----
-
-## Dépannage rapide
-
-| Symptôme (journalctl) | Cause | Correctif |
+| `last_error` | Cause | Correctif |
 |---|---|---|
-| `FCM désactivé : credentials absents` | `firebase-admin.json` absent sur le Kimsufi | Étapes 1–2 |
-| `FCM init échoué : ...` | JSON corrompu / mauvais projet | Regénérer la clé (étape 1) |
-| `FCM send_to_all : aucun token Android enregistré` | Le téléphone ne s'est pas abonné | Réactiver les notifs dans l'appli, vérifier `FCM token enregistré` |
-| `envoyés=0 purgés=1` | Token expiré (APK réinstallée) | Désactiver puis réactiver les notifs dans l'appli |
-| Rien ne s'affiche avec `grep FCM` | Ancien code encore en prod | `bash upgrade.sh` puis `systemctl restart storm-monitor` |
+| `fichier credentials absent` | Clé pas déposée / mauvais chemin ou nom | Étape 3 |
+| `module python firebase_admin non installé (pip)` | venv incomplet | relancer `bash upgrade.sh` |
+| `JSON invalide : ...` | Fichier corrompu (copier-coller raté) | re-télécharger la clé, re-scp |
+| `fichier illisible (droits)` | chmod/chown trop restrictif | `chmod 600` + `chown root:root` |
+| `champ private_key absent du JSON` | Mauvais fichier (ce n'est pas la clé admin) | Étape 3, bien prendre "Comptes de service" |
+| `null` + `initialized: true` | ✅ Tout fonctionne | — |
 
-Vérifier les tokens enregistrés en base :
+## Étape 3 — Déposer la clé Firebase (si `file_exists: false`)
+
+1. https://console.firebase.google.com → projet **storm-monitor** →
+   ⚙️ Paramètres du projet → **Comptes de service** →
+   **Générer une nouvelle clé privée** → fichier JSON téléchargé.
+2. Depuis le PC :
+   ```bash
+   scp storm-monitor-firebase-adminsdk-*.json \
+     root@storm-monitor.quentin-astro.fr:/var/www/storm-monitor/backend/firebase-admin.json
+   ```
+3. Sur le Kimsufi :
+   ```bash
+   chmod 600 /var/www/storm-monitor/backend/firebase-admin.json
+   chown root:root /var/www/storm-monitor/backend/firebase-admin.json
+   ```
+4. Re-lancer le curl de l'étape 2 → `initialized: true` attendu
+   (aucun restart nécessaire). Le log confirme :
+   ```bash
+   grep -i fcm /var/log/storm-monitor.err.log | tail -5
+   # → "FCM initialisé (projet storm-monitor)"
+   ```
+
+## Étape 4 — APK et test sur le téléphone
+
+1. Push de la branche `Version_With_Detector` → GitHub Actions compile →
+   Releases → `android-vXX` → installer `storm-monitor-debug.apk`.
+2. Dans l'appli : activer **Push serveur actif** (désactiver/réactiver si déjà
+   actif, pour ré-envoyer le token). Le toast indique désormais si le serveur
+   a bien FCM actif.
+3. Vérifier côté serveur : le curl de l'étape 2 doit montrer `fcm_tokens ≥ 1`.
+4. Se connecter dans l'appli → bouton **"Envoyer un test"** →
+   notification native attendue + toast `Test envoyé (1/1 appareils)`.
+   Le toast explique tout échec (FCM désactivé serveur / aucun appareil /
+   0 délivrés).
+
+## Dépannage — logs applicatifs
+
+```bash
+grep -i fcm /var/log/storm-monitor.err.log | tail -20
+tail -30 /var/log/storm-monitor.err.log
+```
+
+Tokens en base :
 
 ```bash
 mongosh --quiet --eval 'db.getSiblingDB("storm_lourdes").fcm_tokens.countDocuments({})'

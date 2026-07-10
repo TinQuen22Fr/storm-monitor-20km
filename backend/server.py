@@ -1050,6 +1050,7 @@ async def push_status():
     """Diagnostic public : état FCM serveur + nombre d'appareils enregistrés."""
     return {
         "fcm_available": fcm_mod.available(),
+        "fcm": fcm_mod.diagnose(),
         "fcm_tokens": await db.fcm_tokens.count_documents({}),
         "webpush_subscriptions": await db.push_subscriptions.count_documents({}),
     }

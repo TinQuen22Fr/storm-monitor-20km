@@ -65,10 +65,17 @@ async function subscribeNative() {
       PushNotifications.addListener("registration", async ({ value }) => {
         clearTimeout(timer);
         try {
-          await api.post("/push/fcm/subscribe", { token: value });
+          const { data } = await api.post("/push/fcm/subscribe", { token: value });
           localStorage.setItem(LS_ENABLED, "1");
           localStorage.setItem(LS_FCM_TOKEN, value);
-          toast.success("Notifications push activées");
+          if (data.fcm_available === false) {
+            toast.warning(
+              "Token enregistré, mais FCM est désactivé côté serveur (firebase-admin.json)",
+              { duration: 8000 }
+            );
+          } else {
+            toast.success("Notifications push activées");
+          }
           resolve(true);
         } catch {
           toast.error("Erreur d'enregistrement du push");
