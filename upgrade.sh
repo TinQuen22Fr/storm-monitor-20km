@@ -184,12 +184,26 @@ if [[ -f "$ENV_FILE" ]]; then
   BACKUP_DIR="$APP_DIR/backend/.env.backups"
   mkdir -p "$BACKUP_DIR"
   BACKUP_FILE="$BACKUP_DIR/.env.$(date -u +%Y%m%dT%H%M%SZ)"
-  cp -a "$ENV_FILE" "$BACKUP_FILE"
+  # cp SANS -a : le mtime du backup = maintenant (pas celui, ancien, du .env
+  # source). Avec -a, le backup héritait d'un mtime vieux de plusieurs semaines :
+  # invisible dans `ls -lt` et supprimable par la rotation triée par date.
+  cp "$ENV_FILE" "$BACKUP_FILE"
   chmod 600 "$BACKUP_FILE"
+  if [[ ! -s "$BACKUP_FILE" ]]; then
+    echo "ERROR: backup .env échoué ($BACKUP_FILE absent ou vide)" >&2
+    exit 1
+  fi
   echo ""
   echo "==> Étape 3 — Backup .env → $BACKUP_FILE"
-  # Rotation FIFO 10 derniers
-  ls -1t "$BACKUP_DIR"/.env.* 2>/dev/null | tail -n +11 | xargs -r rm -f
+  ls -l "$BACKUP_FILE"
+  # Rotation FIFO 10 derniers — tri par NOM (l'horodatage est dans le nom,
+  # donc l'ordre lexical = l'ordre chronologique, indépendant des mtimes)
+  ROTATED=$(ls -1 "$BACKUP_DIR"/.env.* 2>/dev/null | sort -r | tail -n +11 || true)
+  if [[ -n "$ROTATED" ]]; then
+    echo "$ROTATED" | xargs -r rm -f
+    echo "    Rotation : $(echo "$ROTATED" | wc -l) ancien(s) backup(s) supprimé(s)"
+  fi
+  echo "    Backups présents : $(ls -1 "$BACKUP_DIR"/.env.* 2>/dev/null | wc -l)"
 fi
 
 # ---------------------------------------------------------------------------

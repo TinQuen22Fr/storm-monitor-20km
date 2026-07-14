@@ -103,6 +103,8 @@ L'utilisateur a finalisé lui-même la mise en production (install manuelle de f
 
 - **[2026-07] Fix bug critique : mutation des points d'analyse au changement de rayon (SOUMIS EN RELECTURE)** : cause racine dans `weather.py` — `sampling_grid` avait un pas dépendant du rayon (`step=max(4, r/4)`) → grille recalculée à des positions différentes à chaque rayon + cache indexé par rayon. Correctif : grille maîtresse ABSOLUE (maillage fixe 14 km, couverture 70 km, cache unique `zones-master`), sévérité calculée une fois par point, le rayon = pur filtre spatial (haversine). Agrégats (storm_active, max_cape) calculés sur le sous-ensemble filtré → alertes push inchangées sémantiquement. Prouvé sandbox : 9/13/37/71 points à 20/30/50/70 km, sous-ensembles stricts, sévérités identiques. Bonus : moins d'appels Open-Meteo (1 fetch partagé entre tous les rayons). FCM non touché (vérifié). Backend uniquement, API contract identique.
 
+- **[2026-07] Fix backup .env "silencieusement" perdu (upgrade.sh, SOUMIS EN RELECTURE)** : cause = `cp -a` préservait le mtime (juin) du .env source → backup du jour invisible dans `ls -lt` ET supprimable par la rotation triée par mtime (`ls -1t`). Fix : `cp` simple (mtime = création), vérification `test -s` avec ERROR+exit si échec, `ls -l` du backup affiché, rotation triée par NOM (horodatage dans le nom). Prouvé par simulation : backup du jour conservé, 3 plus vieux purgés, 10 restants.
+
 ## 🟡 Backlog
 - **P1** — Valider le 1er run GitHub Actions Android + installer l'APK sur téléphone
 - **P2** — Remplacer l'icône générée par l'image personnelle de l'utilisateur (quand fournie)
