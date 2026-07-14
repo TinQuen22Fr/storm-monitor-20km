@@ -109,6 +109,12 @@ if [[ $STASH_CREATED -eq 1 ]]; then
     echo "    WARN: conflits au stash pop — voir 'git stash list'"
 fi
 
+# Les fichiers de dépendances doivent TOUJOURS être ceux du dépôt : une modif
+# locale (npm install parasite, merge raté…) casse `yarn --frozen-lockfile`
+# et fausse la détection pip. On les restaure d'office après le stash pop.
+git -C "$WORK_DIR" checkout -- frontend/yarn.lock frontend/package.json backend/requirements.txt 2>/dev/null || true
+rm -f "$WORK_DIR/package-lock.json"   # artefact npm à la racine, jamais légitime ici
+
 if [[ "$OLD_COMMIT" == "$NEW_COMMIT" ]]; then
   echo "    ✓ Déjà à jour sur $(git -C "$WORK_DIR" rev-parse --short HEAD) — rien à puller"
   ALREADY_UP_TO_DATE=1
