@@ -105,6 +105,8 @@ L'utilisateur a finalisé lui-même la mise en production (install manuelle de f
 
 - **[2026-07] Fix backup .env "silencieusement" perdu (upgrade.sh, SOUMIS EN RELECTURE)** : cause = `cp -a` préservait le mtime (juin) du .env source → backup du jour invisible dans `ls -lt` ET supprimable par la rotation triée par mtime (`ls -1t`). Fix : `cp` simple (mtime = création), vérification `test -s` avec ERROR+exit si échec, `ls -l` du backup affiché, rotation triée par NOM (horodatage dans le nom). Prouvé par simulation : backup du jour conservé, 3 plus vieux purgés, 10 restants.
 
+- **[2026-07] Densification maillage + chunking Open-Meteo (SOUMIS EN RELECTURE)** : grille maîtresse 60 km / pas 8 km = 177 points, découpés en lots de ≤85 (`ZONE_CHUNK_SIZE`) pour respecter la limite 100 coords/requête Open-Meteo, réponses concaténées dans l'ordre. Aide upgrade.sh corrigée (`ls -lta`). Testé : 21/45/121/177 points à 20/30/50/60 km, sous-ensembles stricts, sévérités invariantes, 70 km plafonné à la grille 60 (signalé à l'utilisateur), FCM intact.
+
 ## 🟡 Backlog
 - **P1** — Valider le 1er run GitHub Actions Android + installer l'APK sur téléphone
 - **P2** — Remplacer l'icône générée par l'image personnelle de l'utilisateur (quand fournie)

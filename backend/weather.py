@@ -517,8 +517,10 @@ async def _fetch_storm_risk_impl(lat: float, lon: float, days: int) -> Dict[str,
 # Grille maîtresse ABSOLUE des zones d'analyse : maillage fixe de 14 km couvrant
 # 70 km (max du slider). L'état/sévérité d'un point est calculé une seule fois,
 # indépendamment du rayon choisi. Le rayon ne sert QUE de filtre spatial.
-MASTER_ZONE_RADIUS_KM = 70.0
-MASTER_ZONE_STEP_KM = 14.0
+MASTER_ZONE_RADIUS_KM = 60.0
+MASTER_ZONE_STEP_KM = 8.0
+# Limite Open-Meteo : 100 coordonnées max par requête → on découpe en lots de 85
+ZONE_CHUNK_SIZE = 85
 
 
 async def fetch_storm_zones(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM) -> Dict[str, Any]:
@@ -584,25 +586,27 @@ async def _fetch_wind_grid_impl(lat: float, lon: float, radius_km: float) -> Dic
 
 
 async def _fetch_storm_zones_impl(lat: float, lon: float) -> Dict[str, Any]:
-    """Échantillonne la grille maîtresse fixe (indépendante du rayon d'affichage)."""
+    """Échantillonne la grille maîtresse fixe (indépendante du rayon d'affichage).
+    Les points sont interrogés par lots de ZONE_CHUNK_SIZE (limite Open-Meteo).
+    """
     points = sampling_grid(lat, lon, MASTER_ZONE_RADIUS_KM, step_km=MASTER_ZONE_STEP_KM)
 
-    # Batch all points into single Open-Meteo request (supports comma-sep lat/lon)
-    lats = ",".join(str(p["lat"]) for p in points)
-    lons = ",".join(str(p["lon"]) for p in points)
-    params = {
-        "latitude": lats,
-        "longitude": lons,
-        "current": "weather_code,precipitation,wind_gusts_10m",
-        "hourly": "cape,lightning_potential",
-        "timezone": "auto",
-        "forecast_days": 1,
-    }
-    r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=20)
-    raw = r.json()
-
-    # Response is a list when multiple lat/lon provided
-    responses = raw if isinstance(raw, list) else [raw]
+    # Batch par lots ≤ 85 coordonnées, résultats concaténés dans l'ordre des points
+    responses: List[Dict[str, Any]] = []
+    for start in range(0, len(points), ZONE_CHUNK_SIZE):
+        chunk = points[start:start + ZONE_CHUNK_SIZE]
+        params = {
+            "latitude": ",".join(str(p["lat"]) for p in chunk),
+            "longitude": ",".join(str(p["lon"]) for p in chunk),
+            "current": "weather_code,precipitation,wind_gusts_10m",
+            "hourly": "cape,lightning_potential",
+            "timezone": "auto",
+            "forecast_days": 1,
+        }
+        r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=20)
+        raw = r.json()
+        # Response is a list when multiple lat/lon provided
+        responses.extend(raw if isinstance(raw, list) else [raw])
 
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:00")
     zones: List[Dict[str, Any]] = []
