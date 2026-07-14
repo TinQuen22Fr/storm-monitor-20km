@@ -175,11 +175,13 @@ def sampling_grid(lat: float, lon: float, radius_km: float, step_km: float | Non
     if step_km is None:
         # Scale step with radius so we always fit roughly 7x7 points = 49
         step_km = max(4.0, radius_km / 4.0)
+        half = 3 if radius_km > 25 else 2
+    else:
+        # Fixed absolute lattice: half derived from radius, spacing constant
+        half = max(1, int(radius_km // step_km))
     points: List[Dict[str, float]] = []
     dlat = km_to_deg_lat(step_km)
     dlon = km_to_deg_lon(step_km, lat)
-    # Up to 7x7 = 49 points (Open-Meteo multi-coord limit is 100, we stay well under)
-    half = 3 if radius_km > 25 else 2
     for i in range(-half, half + 1):
         for j in range(-half, half + 1):
             plat = lat + i * dlat
@@ -512,8 +514,27 @@ async def _fetch_storm_risk_impl(lat: float, lon: float, days: int) -> Dict[str,
     return {"days": out}
 
 
+# Grille maîtresse ABSOLUE des zones d'analyse : maillage fixe de 14 km couvrant
+# 70 km (max du slider). L'état/sévérité d'un point est calculé une seule fois,
+# indépendamment du rayon choisi. Le rayon ne sert QUE de filtre spatial.
+MASTER_ZONE_RADIUS_KM = 70.0
+MASTER_ZONE_STEP_KM = 14.0
+
+
 async def fetch_storm_zones(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM) -> Dict[str, Any]:
-    return await _cached(f"zones:{lat}:{lon}:{radius_km}", 240.0, lambda: _fetch_storm_zones_impl(lat, lon, radius_km))
+    """Zones d'analyse : valeurs absolues (grille fixe), rayon = filtre d'exclusion spatiale."""
+    master = await _cached(f"zones-master:{lat}:{lon}", 240.0, lambda: _fetch_storm_zones_impl(lat, lon))
+    r = min(float(radius_km), MASTER_ZONE_RADIUS_KM)
+    zones = [z for z in master["zones"] if haversine_km(lat, lon, z["lat"], z["lon"]) <= r]
+    return {
+        "center": master["center"],
+        "radius_km": radius_km,
+        "zones": zones,
+        "storm_active": any(z["is_thunder"] or z["severity"] >= 40 for z in zones),
+        "max_cape": max((z["cape"] for z in zones), default=0),
+        "max_lightning_potential": max((z["lightning_potential"] for z in zones), default=0),
+        "fetched_at": master["fetched_at"],
+    }
 
 
 async def fetch_wind_grid(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM) -> Dict[str, Any]:
@@ -562,9 +583,9 @@ async def _fetch_wind_grid_impl(lat: float, lon: float, radius_km: float) -> Dic
     }
 
 
-async def _fetch_storm_zones_impl(lat: float, lon: float, radius_km: float) -> Dict[str, Any]:
-    """Sample the grid for active storm/convective zones around Lourdes."""
-    points = sampling_grid(lat, lon, radius_km)
+async def _fetch_storm_zones_impl(lat: float, lon: float) -> Dict[str, Any]:
+    """Échantillonne la grille maîtresse fixe (indépendante du rayon d'affichage)."""
+    points = sampling_grid(lat, lon, MASTER_ZONE_RADIUS_KM, step_km=MASTER_ZONE_STEP_KM)
 
     # Batch all points into single Open-Meteo request (supports comma-sep lat/lon)
     lats = ",".join(str(p["lat"]) for p in points)
@@ -585,9 +606,6 @@ async def _fetch_storm_zones_impl(lat: float, lon: float, radius_km: float) -> D
 
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:00")
     zones: List[Dict[str, Any]] = []
-    storm_active = False
-    max_cape = 0.0
-    max_lp = 0.0
 
     for i, resp in enumerate(responses):
         p = points[i] if i < len(points) else {"lat": lat, "lon": lon}
@@ -608,15 +626,8 @@ async def _fetch_storm_zones_impl(lat: float, lon: float, radius_km: float) -> D
         gust = current.get("wind_gusts_10m", 0) or 0
 
         is_thunder = code in THUNDERSTORM_CODES
-        # Severity score 0-100
+        # Severity score 0-100 — valeur ABSOLUE du point, jamais influencée par le rayon
         severity = min(100, int((cape / 30.0) + (lp * 4) + (precip * 8) + (30 if is_thunder else 0)))
-        if is_thunder or severity >= 40:
-            storm_active = True
-
-        if cape > max_cape:
-            max_cape = cape
-        if lp > max_lp:
-            max_lp = lp
 
         zones.append({
             "lat": p["lat"],
@@ -632,10 +643,6 @@ async def _fetch_storm_zones_impl(lat: float, lon: float, radius_km: float) -> D
 
     return {
         "center": {"lat": lat, "lon": lon},
-        "radius_km": radius_km,
         "zones": zones,
-        "storm_active": storm_active,
-        "max_cape": max_cape,
-        "max_lightning_potential": max_lp,
         "fetched_at": datetime.now(timezone.utc).isoformat(),
     }
