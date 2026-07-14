@@ -295,8 +295,13 @@ if [[ $PKG_CHANGED -eq 1 ]]; then
   YARN_LOG="/var/log/storm-monitor-yarn-install.log"
   : > "$YARN_LOG"
   set +e
-  yarn install --frozen-lockfile 2>&1 | tee "$YARN_LOG" | grep -vE '^warning |^$'
+  yarn install --frozen-lockfile --network-timeout 600000 2>&1 | tee "$YARN_LOG" | grep -vE '^warning |^$'
   YARN_RC=${PIPESTATUS[0]}
+  if [[ $YARN_RC -ne 0 ]]; then
+    echo "    WARN: --frozen-lockfile a échoué (rc=$YARN_RC) — nouvel essai en mode normal..."
+    yarn install --network-timeout 600000 2>&1 | tee -a "$YARN_LOG" | grep -vE '^warning |^$'
+    YARN_RC=${PIPESTATUS[0]}
+  fi
   set -e
   if [[ $YARN_RC -ne 0 ]]; then
     echo "ERROR: yarn install failed (rc=$YARN_RC). Voir $YARN_LOG." >&2
