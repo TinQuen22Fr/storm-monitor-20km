@@ -9,7 +9,7 @@ import { playThunder, unlockAudio, ensureThunderBuffer } from "@/lib/thunderSoun
  * Fullscreen dark "Night Storm" mode.
  * - Dark CartoDB tiles
  * - Auto-zoom to encompass recent strikes within 70km
- * - Plays a thunder sound on each new strike < 30km from center
+ * - Plays a thunder sound on each new visible strike (volume decreases with distance)
  */
 function strikeIcon(ageSec) {
   const fresh = ageSec < 30;
@@ -64,12 +64,14 @@ export default function NightStormMode({ open, onClose, center = LOURDES }) {
         });
         if (cancel) return;
         const all = data.strikes || [];
-        // Detect fresh strikes close to center → beep
+        // Nouveaux impacts visibles → tonnerre, volume dégressif avec la distance
         const fresh = all.filter(
-          (s) => !seenTs.current.has(s.ts) && s.distance_km < 30 && (Date.now() / 1000 - s.ts) < 60
+          (s) => !seenTs.current.has(s.ts) && (Date.now() / 1000 - s.ts) < 300
         );
         if (soundOn && fresh.length > 0 && seenTs.current.size > 0) {
-          playThunder();
+          const minDist = Math.min(...fresh.map((s) => s.distance_km ?? 70));
+          const volume = Math.max(0.25, 0.9 * (1 - minDist / 100));
+          playThunder(false, volume);
         }
         for (const s of all) seenTs.current.add(s.ts);
         setStrikes(all);

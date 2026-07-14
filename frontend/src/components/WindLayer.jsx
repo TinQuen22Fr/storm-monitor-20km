@@ -17,16 +17,21 @@ function buildArrowIcon(speed, direction) {
   const rot = (direction + 180) % 360;
   const label = Math.round(speed);
   const delay = (Math.random() * 1.5).toFixed(2);
+  // Rotation sur le conteneur (style inline), animation UNIQUEMENT sur le svg
+  // interne : une animation de `transform` sur le conteneur écraserait la
+  // rotation inline. Le label vitesse est hors du repère tourné, sous la flèche.
   return L.divIcon({
     className: "",
-    html: `<div class="wind-arrow-anim" style="width:${size}px;height:${size}px;position:relative;transform:rotate(${rot}deg);animation-delay:${delay}s">
-      <svg viewBox="0 0 24 24" width="${size}" height="${size}" style="filter:drop-shadow(0 1px 1px rgba(0,0,0,0.25))">
-        <path d="M12 2 L16 10 L13 10 L13 22 L11 22 L11 10 L8 10 Z"
-              fill="${color}" stroke="#ffffff" stroke-width="1" stroke-linejoin="round" />
-      </svg>
-      <span style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(${-rot}deg);font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;color:#fff;text-shadow:0 1px 1px rgba(0,0,0,0.6);pointer-events:none">${label}</span>
+    html: `<div style="width:${size}px;height:${size + 14}px;position:relative">
+      <div style="width:${size}px;height:${size}px;transform:rotate(${rot}deg);transform-origin:center">
+        <svg class="wind-arrow-anim" viewBox="0 0 24 24" width="${size}" height="${size}" style="animation-delay:${delay}s;filter:drop-shadow(0 1px 1px rgba(0,0,0,0.25))">
+          <path d="M12 2 L16 10 L13 10 L13 22 L11 22 L11 10 L8 10 Z"
+                fill="${color}" stroke="#ffffff" stroke-width="1" stroke-linejoin="round" />
+        </svg>
+      </div>
+      <span style="position:absolute;left:50%;top:${size}px;transform:translateX(-50%);font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:700;line-height:1;color:#fff;background:rgba(15,23,42,0.75);padding:1px 4px;border-radius:6px;white-space:nowrap;pointer-events:none">${label} km/h</span>
     </div>`,
-    iconSize: [size, size],
+    iconSize: [size, size + 14],
     iconAnchor: [size / 2, size / 2],
   });
 }

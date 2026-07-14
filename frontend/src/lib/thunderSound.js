@@ -56,7 +56,7 @@ export function ensureThunderBuffer() {
  * relance PAS une deuxième piste par-dessus (retour false).
  * `force=true` (bouton d'activation du son) : coupe proprement la piste en
  * cours puis relance depuis le début. */
-export function playThunder(force = false) {
+export function playThunder(force = false, volume = 0.9) {
   const c = getCtx();
   if (!c || c.state !== "running") return false;
   if (isPlaying) {
@@ -71,7 +71,7 @@ export function playThunder(force = false) {
     const src = c.createBufferSource();
     src.buffer = thunderBuffer;
     const g = c.createGain();
-    g.gain.value = 0.9;
+    g.gain.value = Math.max(0.05, Math.min(1, volume));
     src.connect(g).connect(c.destination);
     const clear = () => {
       if (activeSource === src) activeSource = null;
