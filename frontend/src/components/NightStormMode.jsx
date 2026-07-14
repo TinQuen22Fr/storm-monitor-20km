@@ -3,7 +3,7 @@ import { Circle, MapContainer, Marker, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import { X, Volume2, VolumeX } from "lucide-react";
 import { api, LOURDES } from "@/lib/api";
-import { playThunder, unlockAudio } from "@/lib/thunderSound";
+import { playThunder, unlockAudio, ensureThunderBuffer } from "@/lib/thunderSound";
 
 /**
  * Fullscreen dark "Night Storm" mode.
@@ -182,6 +182,8 @@ export default function NightStormMode({ open, onClose, center = LOURDES }) {
               setSoundOn(next);
               if (next) {
                 await unlockAudio();
+                // Attend le décodage du .wav pour jouer LE fichier, pas le repli
+                await ensureThunderBuffer();
                 playThunder(true);
               }
             }}

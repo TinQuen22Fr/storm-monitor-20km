@@ -4,7 +4,7 @@ let bufferLoading = null;
 let isPlaying = false;
 let activeSource = null;
 
-const THUNDER_WAV_URL = `${process.env.PUBLIC_URL || ""}/sounds/thunder-strike.wav`;
+const THUNDER_SOUND_URL = `${process.env.PUBLIC_URL || ""}/sounds/thunder-strike.mp3`;
 
 function getCtx() {
   if (!ctx) {
@@ -20,7 +20,7 @@ function loadThunderBuffer() {
   if (bufferLoading) return bufferLoading;
   const c = getCtx();
   if (!c) return Promise.resolve(null);
-  bufferLoading = fetch(THUNDER_WAV_URL)
+  bufferLoading = fetch(THUNDER_SOUND_URL)
     .then((r) => {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.arrayBuffer();
@@ -46,7 +46,12 @@ export async function unlockAudio() {
   return c;
 }
 
-/** Joue le son de tonnerre (fichier .wav ~15 s).
+/** Attend que le .wav soit téléchargé et décodé (null si échec). */
+export function ensureThunderBuffer() {
+  return loadThunderBuffer();
+}
+
+/** Joue le son de tonnerre (fichier mp3 ~11 s, converti depuis le FLAC fourni).
  * Anti-superposition : si la piste est déjà en cours, un nouvel impact ne
  * relance PAS une deuxième piste par-dessus (retour false).
  * `force=true` (bouton d'activation du son) : coupe proprement la piste en

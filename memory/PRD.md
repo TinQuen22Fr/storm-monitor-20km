@@ -111,6 +111,8 @@ L'utilisateur a finalisé lui-même la mise en production (install manuelle de f
 
 - **[2026-07] Diagnostic "rien n'a changé en prod" + 2 fixes (PRÊTS À PUSHER)** : GitHub et /opt étaient à jour, backend prod à jour (177 pts vérifiés), mais build web prod daté du 10/07 — un run upgrade.sh avait pull puis planté avant le build (OOM), les runs suivants disaient "Déjà à jour" et sautaient yarn build. Preuve : /sounds/thunder-strike.wav servi en text/html (fallback SPA). Fix 1 : empreinte `build/.build-commit` comparée au dernier commit touchant frontend/ → rebuild forcé si périmé. Fix 2 : bouton son mode soirée muet car le flag anti-superposition bloquait les clics répétés → `playThunder(force)` coupe et relance (bouton), impacts toujours sans superposition. Procédure donnée : nettoyage artefacts Gemini dans /opt (yarn.lock, package-lock.json, keystore à l'abri), `rm -rf build` + upgrade.sh, vérif content-type du wav, APK v10 déjà complète pour le téléphone.
 
+- **[2026-07] Son tonnerre v2 : FLAC utilisateur → MP3 universel (PRÊT À PUSHER)** : "Tonnerre 3 LaSonothèque" (11,2s) converti en MP3 192kbps (263 Ko) car décodage FLAC non garanti partout (exigence "son PARTOUT") ; remplace le .wav (supprimé). Bouton d'activation : attend désormais `ensureThunderBuffer()` avant de jouer → joue LE fichier utilisateur, plus le repli synthétisé. Testé en vrai navigateur : decodeAudioData OK 11,2s/2ch. Déploiement web réparé côté user (build 338s OK, wav servi en octet-stream = normal). Reste : push + upgrade.sh + APK v11.
+
 ## 🟡 Backlog
 - **P1** — Valider le 1er run GitHub Actions Android + installer l'APK sur téléphone
 - **P2** — Remplacer l'icône générée par l'image personnelle de l'utilisateur (quand fournie)
