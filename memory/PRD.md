@@ -109,6 +109,8 @@ L'utilisateur a finalisé lui-même la mise en production (install manuelle de f
 
 - **[2026-07] Slider 60 km max + son tonnerre .wav mode soirée (SOUMIS EN RELECTURE)** : presets rayon 20-60 (70 retiré, aligné sur la grille maîtresse). Fichier utilisateur `public/sounds/thunder-strike.wav` (15,9s stéréo) joué à chaque nouvel impact en mode soirée via AudioContext partagé ; anti-superposition stricte (flag isPlaying + onended + timeout de sécurité), préchargement à l'ouverture du mode, repli synthétisé pendant le décodage. Vérifié : presets corrects en live, wav servi HTTP 200, compile OK. Note : édition RADIUS_STEPS perdue une 1re fois en batch parallèle, réappliquée et re-vérifiée.
 
+- **[2026-07] Diagnostic "rien n'a changé en prod" + 2 fixes (PRÊTS À PUSHER)** : GitHub et /opt étaient à jour, backend prod à jour (177 pts vérifiés), mais build web prod daté du 10/07 — un run upgrade.sh avait pull puis planté avant le build (OOM), les runs suivants disaient "Déjà à jour" et sautaient yarn build. Preuve : /sounds/thunder-strike.wav servi en text/html (fallback SPA). Fix 1 : empreinte `build/.build-commit` comparée au dernier commit touchant frontend/ → rebuild forcé si périmé. Fix 2 : bouton son mode soirée muet car le flag anti-superposition bloquait les clics répétés → `playThunder(force)` coupe et relance (bouton), impacts toujours sans superposition. Procédure donnée : nettoyage artefacts Gemini dans /opt (yarn.lock, package-lock.json, keystore à l'abri), `rm -rf build` + upgrade.sh, vérif content-type du wav, APK v10 déjà complète pour le téléphone.
+
 ## 🟡 Backlog
 - **P1** — Valider le 1er run GitHub Actions Android + installer l'APK sur téléphone
 - **P2** — Remplacer l'icône générée par l'image personnelle de l'utilisateur (quand fournie)

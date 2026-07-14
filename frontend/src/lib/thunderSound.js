@@ -2,6 +2,7 @@ let ctx = null;
 let thunderBuffer = null;
 let bufferLoading = null;
 let isPlaying = false;
+let activeSource = null;
 
 const THUNDER_WAV_URL = `${process.env.PUBLIC_URL || ""}/sounds/thunder-strike.wav`;
 
@@ -46,12 +47,19 @@ export async function unlockAudio() {
 }
 
 /** Joue le son de tonnerre (fichier .wav ~15 s).
- * Anti-superposition : si la piste est déjà en cours de lecture,
- * un nouvel impact ne relance PAS une deuxième piste par-dessus. */
-export function playThunder() {
+ * Anti-superposition : si la piste est déjà en cours, un nouvel impact ne
+ * relance PAS une deuxième piste par-dessus (retour false).
+ * `force=true` (bouton d'activation du son) : coupe proprement la piste en
+ * cours puis relance depuis le début. */
+export function playThunder(force = false) {
   const c = getCtx();
   if (!c || c.state !== "running") return false;
-  if (isPlaying) return false;
+  if (isPlaying) {
+    if (!force) return false;
+    try { activeSource && activeSource.stop(); } catch { /* ignore */ }
+    activeSource = null;
+    isPlaying = false;
+  }
 
   if (thunderBuffer) {
     isPlaying = true;
@@ -60,10 +68,14 @@ export function playThunder() {
     const g = c.createGain();
     g.gain.value = 0.9;
     src.connect(g).connect(c.destination);
-    const clear = () => { isPlaying = false; };
+    const clear = () => {
+      if (activeSource === src) activeSource = null;
+      isPlaying = false;
+    };
     src.onended = clear;
     // Filet de sécurité si onended ne remonte pas (webview)
     setTimeout(clear, (thunderBuffer.duration + 1) * 1000);
+    activeSource = src;
     src.start();
     return true;
   }

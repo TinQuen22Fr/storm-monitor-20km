@@ -152,6 +152,16 @@ if [[ -x "$APP_DIR/backend/venv/bin/python" ]]; then
     echo "    WARN: module firebase_admin absent du venv — installe-le manuellement ou lance '--with-deps'"
   fi
 fi
+# Force le rebuild si le build déployé ne correspond pas au dernier commit ayant
+# touché frontend/ (protège contre un run précédent planté APRÈS le git pull :
+# le code est à jour dans /opt mais le build de /var/www est resté ancien,
+# et « Déjà à jour » sautait silencieusement le yarn build).
+FRONTEND_COMMIT="$(git -C "$WORK_DIR" log -1 --format=%H -- frontend/ 2>/dev/null || echo unknown)"
+BUILD_STAMP="$APP_DIR/frontend/build/.build-commit"
+if [[ ! -f "$BUILD_STAMP" || "$(cat "$BUILD_STAMP" 2>/dev/null)" != "$FRONTEND_COMMIT" ]]; then
+  echo "    build frontend absent ou issu d'un ancien commit — rebuild forcé"
+  FRONTEND_CHANGED=1
+fi
 # Si le build n'existe pas, on force aussi
 if [[ ! -d "$APP_DIR/frontend/build" ]]; then
   FRONTEND_CHANGED=1
@@ -302,6 +312,8 @@ if [[ $FRONTEND_CHANGED -eq 1 ]]; then
   echo "==> Étape 7 — Build du frontend (RAM plafonnée pour éviter l'OOM Killer)..."
   # Kimsufi Atom : limite la heap Node à 1 Go pour ne pas déclencher l'OOM Killer
   NODE_OPTIONS="--max-old-space-size=1024" GENERATE_SOURCEMAP=false yarn build
+  # Empreinte du build : permet aux runs suivants de détecter un build périmé
+  echo "$FRONTEND_COMMIT" > build/.build-commit
 else
   echo ""
   echo "==> Étape 7 — yarn build skip (aucun fichier frontend modifié)"

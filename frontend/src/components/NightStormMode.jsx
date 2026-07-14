@@ -182,7 +182,7 @@ export default function NightStormMode({ open, onClose, center = LOURDES }) {
               setSoundOn(next);
               if (next) {
                 await unlockAudio();
-                playThunder();
+                playThunder(true);
               }
             }}
             className={`w-11 h-11 border flex items-center justify-center transition-colors ${
