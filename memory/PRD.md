@@ -107,6 +107,8 @@ L'utilisateur a finalisé lui-même la mise en production (install manuelle de f
 
 - **[2026-07] Densification maillage + chunking Open-Meteo (SOUMIS EN RELECTURE)** : grille maîtresse 60 km / pas 8 km = 177 points, découpés en lots de ≤85 (`ZONE_CHUNK_SIZE`) pour respecter la limite 100 coords/requête Open-Meteo, réponses concaténées dans l'ordre. Aide upgrade.sh corrigée (`ls -lta`). Testé : 21/45/121/177 points à 20/30/50/60 km, sous-ensembles stricts, sévérités invariantes, 70 km plafonné à la grille 60 (signalé à l'utilisateur), FCM intact.
 
+- **[2026-07] Slider 60 km max + son tonnerre .wav mode soirée (SOUMIS EN RELECTURE)** : presets rayon 20-60 (70 retiré, aligné sur la grille maîtresse). Fichier utilisateur `public/sounds/thunder-strike.wav` (15,9s stéréo) joué à chaque nouvel impact en mode soirée via AudioContext partagé ; anti-superposition stricte (flag isPlaying + onended + timeout de sécurité), préchargement à l'ouverture du mode, repli synthétisé pendant le décodage. Vérifié : presets corrects en live, wav servi HTTP 200, compile OK. Note : édition RADIUS_STEPS perdue une 1re fois en batch parallèle, réappliquée et re-vérifiée.
+
 ## 🟡 Backlog
 - **P1** — Valider le 1er run GitHub Actions Android + installer l'APK sur téléphone
 - **P2** — Remplacer l'icône générée par l'image personnelle de l'utilisateur (quand fournie)

@@ -29,7 +29,7 @@ const REFRESH_MS = 120_000;
 const STRIKES_MS = 15_000;
 const STRIKES_WINDOW_S = 24 * 3600;
 const DISPLAY_WINDOW_S = 3600;
-const RADIUS_STEPS = [20, 30, 40, 50, 60, 70];
+const RADIUS_STEPS = [20, 30, 40, 50, 60];
 const DEFAULT_RADIUS = 20;
 
 export default function Dashboard() {
@@ -622,7 +622,7 @@ export default function Dashboard() {
               data-testid="radius-slider"
               value={[radius]}
               min={20}
-              max={70}
+              max={60}
               step={10}
               onValueChange={(v) => setRadius(v[0])}
               className="mt-1"

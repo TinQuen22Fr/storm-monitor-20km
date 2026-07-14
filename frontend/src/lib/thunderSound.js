@@ -1,4 +1,9 @@
 let ctx = null;
+let thunderBuffer = null;
+let bufferLoading = null;
+let isPlaying = false;
+
+const THUNDER_WAV_URL = `${process.env.PUBLIC_URL || ""}/sounds/thunder-strike.wav`;
 
 function getCtx() {
   if (!ctx) {
@@ -9,18 +14,71 @@ function getCtx() {
   return ctx;
 }
 
+function loadThunderBuffer() {
+  if (thunderBuffer) return Promise.resolve(thunderBuffer);
+  if (bufferLoading) return bufferLoading;
+  const c = getCtx();
+  if (!c) return Promise.resolve(null);
+  bufferLoading = fetch(THUNDER_WAV_URL)
+    .then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.arrayBuffer();
+    })
+    .then((ab) => c.decodeAudioData(ab))
+    .then((buf) => {
+      thunderBuffer = buf;
+      return buf;
+    })
+    .catch(() => {
+      bufferLoading = null;
+      return null;
+    });
+  return bufferLoading;
+}
+
 export async function unlockAudio() {
   const c = getCtx();
   if (c && c.state === "suspended") {
     try { await c.resume(); } catch { /* ignore */ }
   }
+  loadThunderBuffer();
   return c;
 }
 
+/** Joue le son de tonnerre (fichier .wav ~15 s).
+ * Anti-superposition : si la piste est déjà en cours de lecture,
+ * un nouvel impact ne relance PAS une deuxième piste par-dessus. */
 export function playThunder() {
   const c = getCtx();
   if (!c || c.state !== "running") return false;
+  if (isPlaying) return false;
+
+  if (thunderBuffer) {
+    isPlaying = true;
+    const src = c.createBufferSource();
+    src.buffer = thunderBuffer;
+    const g = c.createGain();
+    g.gain.value = 0.9;
+    src.connect(g).connect(c.destination);
+    const clear = () => { isPlaying = false; };
+    src.onended = clear;
+    // Filet de sécurité si onended ne remonte pas (webview)
+    setTimeout(clear, (thunderBuffer.duration + 1) * 1000);
+    src.start();
+    return true;
+  }
+
+  // Fichier pas encore décodé : on lance le chargement et on joue le
+  // tonnerre synthétisé en attendant (même règle anti-superposition).
+  loadThunderBuffer();
+  return playSynthThunder(c);
+}
+
+function playSynthThunder(c) {
   const now = c.currentTime;
+  const dur = 1.6;
+  isPlaying = true;
+  setTimeout(() => { isPlaying = false; }, (dur + 0.2) * 1000);
 
   // Craquement initial (claquement de foudre)
   const crackDur = 0.09;
@@ -38,7 +96,6 @@ export function playThunder() {
   crack.start(now);
 
   // Grondement de tonnerre (bruit filtré, décroissance ~1.6s)
-  const dur = 1.6;
   const buf = c.createBuffer(1, Math.floor(c.sampleRate * dur), c.sampleRate);
   const d = buf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
