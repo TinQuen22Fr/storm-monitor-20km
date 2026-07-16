@@ -83,16 +83,12 @@ function buildStrikeIcon(ageSec) {
   });
 }
 
-function FitToRadius({ center, radiusKm, override }) {
+function FitToRadius({ center, radiusKm }) {
   const map = useMap();
   useEffect(() => {
-    if (override) {
-      map.setView(center, override, { animate: true });
-      return;
-    }
     const zoomForRadius = radiusKm >= 60 ? 9 : radiusKm >= 40 ? 10 : 11;
     map.setView(center, zoomForRadius, { animate: true });
-  }, [center, radiusKm, override, map]);
+  }, [center, radiusKm, map]);
   return null;
 }
 
@@ -150,8 +146,6 @@ export default function MapPanel({
   const wx = useWeatherLayersState({ cursorTs, isLive });
   const isMobile = useIsMobile();
   const [fitSignal, setFitSignal] = useState(0);
-  // Auto-zoom to 7 when Rain is active (to see broader storm context beyond 20-70km)
-  const zoomOverride = wx.showRain ? 7 : null;
 
   return (
     <div className="relative h-full w-full flex flex-col" data-testid="map-panel">
@@ -186,7 +180,7 @@ export default function MapPanel({
           cursorTs={cursorTs}
           isLive={isLive}
         />
-        <FitToRadius center={centerLL} radiusKm={radiusKm} override={zoomOverride} />
+        <FitToRadius center={centerLL} radiusKm={radiusKm} />
         <InvalidateOnResize trigger={fullscreen} />
         {!noZone && (
           <Circle

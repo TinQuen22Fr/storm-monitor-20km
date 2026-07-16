@@ -115,6 +115,8 @@ L'utilisateur a finalisé lui-même la mise en production (install manuelle de f
 
 - **[2026-07] Fix son impacts + label vent (PRÊT À PUSHER)** : (1) mode soirée — la règle cachée distance<30km bloquait le son des impacts visibles plus lointains ; désormais tout nouvel impact joue le tonnerre avec volume dégressif selon distance (0.9*(1-d/100), plancher 0.25), anti-superposition conservé. (2) calque vent — l'animation CSS wind-drift sur le conteneur écrasait le transform:rotate inline (rotation + label cassés) ; animation déplacée sur le SVG interne, rotation sur conteneur dédié, vitesse dans une pastille lisible "XX km/h" sous la flèche. Compile OK. NB sandbox : Open-Meteo 429 temporaire suite aux tests de grille (cache backend le gère).
 
+- **[2026-07] Radar pluie : zoom libre + pas de dézoom forcé (PRÊT À PUSHER)** : suppression du zoomOverride=7 à l'activation de Pluie (la carte reste sur la zone affichée) ; tuiles RainViewer 512px (tileSize 512 + zoomOffset -1), maxNativeZoom 12 (au lieu de 256px/10) → zoom libre jusqu'à 18 avec agrandissement lissé, plus de tuiles grises/blocage. Vérifié en live : 16 tuiles 512px HTTP 200, zoom rue de Lourdes avec radar actif. Sécurité : les 4 correctifs P2 restent en attente à la demande de l'utilisateur (ne plus relancer le sujet).
+
 ## 🟡 Backlog
 - **P1** — Valider le 1er run GitHub Actions Android + installer l'APK sur téléphone
 - **P2** — Remplacer l'icône générée par l'image personnelle de l'utilisateur (quand fournie)

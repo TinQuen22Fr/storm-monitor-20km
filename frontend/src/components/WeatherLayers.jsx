@@ -38,9 +38,9 @@ function cloudFrames() {
 }
 
 function buildRadarUrl(host, path) {
-  // Color 4 = The Weather Channel style (professional pro radar look)
+  // Color 4 = The Weather Channel style · tuiles 512px (rendu fin au zoom)
   // Options: smooth=1, snow=1 (distinguish snow)
-  return `${host}${path}/256/{z}/{x}/{y}/4/1_1.png`;
+  return `${host}${path}/512/{z}/{x}/{y}/4/1_1.png`;
 }
 
 export function useWeatherLayersState({ cursorTs = null, isLive = true } = {}) {
@@ -176,9 +176,10 @@ export function WeatherTileLayer({ url, showClouds, showRain }) {
       key={url}
       url={url}
       opacity={showClouds ? 0.55 : 0.75}
-      tileSize={256}
+      tileSize={showRain ? 512 : 256}
+      zoomOffset={showRain ? -1 : 0}
       pane="weatherPane"
-      maxNativeZoom={showRain ? 10 : 9}
+      maxNativeZoom={showRain ? 12 : 9}
       maxZoom={20}
       noWrap
     />
