@@ -117,6 +117,8 @@ L'utilisateur a finalisé lui-même la mise en production (install manuelle de f
 
 - **[2026-07] Radar pluie : zoom libre + pas de dézoom forcé (PRÊT À PUSHER)** : suppression du zoomOverride=7 à l'activation de Pluie (la carte reste sur la zone affichée) ; tuiles RainViewer 512px (tileSize 512 + zoomOffset -1), maxNativeZoom 12 (au lieu de 256px/10) → zoom libre jusqu'à 18 avec agrandissement lissé, plus de tuiles grises/blocage. Vérifié en live : 16 tuiles 512px HTTP 200, zoom rue de Lourdes avec radar actif. Sécurité : les 4 correctifs P2 restent en attente à la demande de l'utilisateur (ne plus relancer le sujet).
 
+- **[2026-07] Fix définitif radar pluie (PRÊT À PUSHER)** : cause réelle mesurée — RainViewer a restreint son cache public au zoom natif ≤7 (tuile image "Zoom Level Not Supported" à z≥8, en 256 et 512px ; sondage complet z5-13 effectué). Le correctif précédent (natif 12/512px) empirait donc. Réglage final : 256px, maxNativeZoom=7, Leaflet agrandit lissé jusqu'à 20 (comme le site de référence). Vérifié en live : zoom niveau rue → uniquement des requêtes z7, 0 erreur, 0 tuile d'erreur. Pas de dézoom au toggle Pluie (conservé).
+
 ## 🟡 Backlog
 - **P1** — Valider le 1er run GitHub Actions Android + installer l'APK sur téléphone
 - **P2** — Remplacer l'icône générée par l'image personnelle de l'utilisateur (quand fournie)

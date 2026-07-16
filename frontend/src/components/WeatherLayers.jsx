@@ -38,9 +38,11 @@ function cloudFrames() {
 }
 
 function buildRadarUrl(host, path) {
-  // Color 4 = The Weather Channel style · tuiles 512px (rendu fin au zoom)
-  // Options: smooth=1, snow=1 (distinguish snow)
-  return `${host}${path}/512/{z}/{x}/{y}/4/1_1.png`;
+  // Color 4 = The Weather Channel style · smooth=1, snow=1
+  // NB: le cache public RainViewer ne sert plus AUCUNE tuile au-delà du zoom
+  // natif 7 (image "Zoom Level Not Supported" sinon). On demande donc z≤7 et
+  // Leaflet agrandit les tuiles au-delà (maxNativeZoom=7).
+  return `${host}${path}/256/{z}/{x}/{y}/4/1_1.png`;
 }
 
 export function useWeatherLayersState({ cursorTs = null, isLive = true } = {}) {
@@ -176,10 +178,9 @@ export function WeatherTileLayer({ url, showClouds, showRain }) {
       key={url}
       url={url}
       opacity={showClouds ? 0.55 : 0.75}
-      tileSize={showRain ? 512 : 256}
-      zoomOffset={showRain ? -1 : 0}
+      tileSize={256}
       pane="weatherPane"
-      maxNativeZoom={showRain ? 12 : 9}
+      maxNativeZoom={showRain ? 7 : 9}
       maxZoom={20}
       noWrap
     />
