@@ -23,7 +23,7 @@ from collections import deque
 from datetime import datetime, timezone
 from typing import Any, Deque, Dict, List, Optional, Tuple
 
-from weather import OPEN_METEO_BASE, _cached, get_with_retry
+from weather import OPEN_METEO_BASE, _cached, get_with_retry, LOURDES_LAT, LOURDES_LON
 
 logger = logging.getLogger(__name__)
 
@@ -353,6 +353,7 @@ async def _fetch_severe_impl(lat: float, lon: float, hours: int) -> Dict[str, An
 
     return {
         "timezone": tz_name,
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
         "hours": len(out),
         "hourly": out,
         "max_hail_score": max_score,
@@ -535,6 +536,36 @@ async def _save_bulk_to_disk_async(snap: Dict[str, Any]) -> None:
         await asyncio.to_thread(_save_bulk_to_disk, snap)
     except Exception as e:
         logger.warning("Bulk save thread failed: %s", e)
+
+
+async def bulk_refresher_loop() -> None:
+    """Rafraîchisseur AUTONOME du cache local (page Prévisions + carte France).
+
+    Le cache ne se régénérait qu'à la demande (requête utilisateur) : la nuit,
+    quand le quota Open-Meteo est disponible (reset à 00:00 UTC), personne ne
+    consulte → pas de refresh ; le jour, quota épuisé → 429 → cache périmé
+    servi indéfiniment. Cette boucle tente un refresh toutes les 30 min,
+    24h/24 : les tentatives nocturnes garantissent AU PIRE une régénération
+    quotidienne du cache local, sans aucune requête utilisateur.
+    """
+    await asyncio.sleep(20)  # laisse le serveur finir de démarrer
+    while True:
+        try:
+            snap = await _get_or_refresh_bulk()
+            age_h = (time.time() - snap.get("fetched_at", 0)) / 3600
+            if age_h > 3:
+                logger.warning("Refresher : bulk France encore périmé (%.1f h)", age_h)
+            else:
+                logger.info("Refresher : bulk France OK (age %.1f h)", age_h)
+        except Exception as e:
+            logger.warning("Refresher : échec bulk France (%s)", type(e).__name__)
+        try:
+            data = await fetch_severe(LOURDES_LAT, LOURDES_LON, 48)
+            last = (data.get("hourly") or [{}])[-1].get("time")
+            logger.info("Refresher : prévisions 48h Lourdes → dernière heure %s", last)
+        except Exception as e:
+            logger.warning("Refresher : échec prévisions 48h (%s)", type(e).__name__)
+        await asyncio.sleep(1800)
 
 
 async def _get_or_refresh_bulk() -> Dict[str, Any]:

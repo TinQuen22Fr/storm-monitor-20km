@@ -1260,6 +1260,11 @@ async def _start_lightning_listener():
     asyncio.create_task(_alert_watcher())
     logger.info("Alert watcher started")
 
+    # Rafraîchisseur autonome du cache local Prévisions/carte France (24h/24,
+    # profite du créneau nocturne où le quota Open-Meteo est disponible)
+    asyncio.create_task(severe_mod.bulk_refresher_loop())
+    logger.info("Bulk refresher started")
+
 
 # Shared state for alerter
 _alerter_state = {

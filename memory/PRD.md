@@ -119,6 +119,8 @@ L'utilisateur a finalisé lui-même la mise en production (install manuelle de f
 
 - **[2026-07] Fix définitif radar pluie (PRÊT À PUSHER)** : cause réelle mesurée — RainViewer a restreint son cache public au zoom natif ≤7 (tuile image "Zoom Level Not Supported" à z≥8, en 256 et 512px ; sondage complet z5-13 effectué). Le correctif précédent (natif 12/512px) empirait donc. Réglage final : 256px, maxNativeZoom=7, Leaflet agrandit lissé jusqu'à 20 (comme le site de référence). Vérifié en live : zoom niveau rue → uniquement des requêtes z7, 0 erreur, 0 tuile d'erreur. Pas de dézoom au toggle Pluie (conservé).
 
+- **[2026-07-19] Fix page Prévisions figée (PRÊT À PUSHER)** : données bloquées au 15/07 sur prod — cause : cache bulk local uniquement rafraîchi à la demande ; la nuit (quota Open-Meteo dispo, reset 00:00 UTC) aucune requête → pas de refresh ; le jour quota épuisé (429, ~63k appels/j par la grille 177 pts vs 10k gratuits) → stale servi silencieusement. Correctif : `bulk_refresher_loop()` autonome (30 min, 24h/24) régénérant bulk France + prévisions 48h Lourdes sans visite utilisateur + `fetched_at` exposé dans /weather/severe + logs "Refresher :". Prouvé en sandbox : dernière heure = J+48. RESTE (archivé, non fait) : réduire la conso quota de la grille zones/watcher ; nuages EUMETSAT WMS (option 1 validée d'intérêt, en attente).
+
 ## 🟡 Backlog
 - **P1** — Valider le 1er run GitHub Actions Android + installer l'APK sur téléphone
 - **P2** — Remplacer l'icône générée par l'image personnelle de l'utilisateur (quand fournie)
