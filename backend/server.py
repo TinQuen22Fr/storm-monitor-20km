@@ -46,6 +46,7 @@ import severe as severe_mod
 import webhooks as webhooks_mod
 import uploads as uploads_mod
 import vigilance as vigilance_mod
+import proxy_manager as proxy_mod
 import share_card as share_card_mod
 import email_service as email_mod
 import secrets
@@ -406,6 +407,13 @@ async def weather_wind_grid(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, 
         return await fetch_wind_grid(lat, lon, radius_km)
     except Exception as e:
         return _degraded("wind", e)
+
+
+@api_router.get("/proxy/status")
+async def proxy_status():
+    """Diagnostic du gestionnaire de proxies Open-Meteo (IP masquées)."""
+    return proxy_mod.status()
+
 
 
 @api_router.get("/weather/severe")

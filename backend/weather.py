@@ -38,39 +38,46 @@ _STALE_FILE = Path(
 )
 
 
-# ---------- Resilient HTTP with 429 retry ----------
+# ---------- Resilient HTTP with 429 retry + failover proxies ----------
 async def get_with_retry(url: str, params: Dict[str, Any] | None = None,
                         headers: Dict[str, Any] | None = None,
                         timeout: float = 10.0, max_retries: int = 4) -> httpx.Response:
-    """GET with exponential backoff on 429/503.
+    """GET avec failover proxy sur 429 et backoff exponentiel.
 
-    Open-Meteo's free tier shares a per-IP minute-bucket limit. When a user
-    rapidly toggles params on the Forecast map, several big multi-location
-    calls can stack up in <2s. We retry up to 4 times with backoff
-    `2 ** attempt` (1, 2, 4, 8 s) — total worst-case wait ≈15s before
-    surrendering. This stays under the FastAPI request timeout while giving
-    the rate-limit window enough room to drain."""
+    Priorité 1 : IP principale (Kimsufi). Sur 429 : bascule immédiate vers le
+    meilleur proxy de proxies.json (sticky 30 min, cf. proxy_manager). Un proxy
+    en erreur réseau est marqué suspect et écarté. Sans proxy valide : backoff
+    classique 1/2/4/8 s."""
+    import proxy_manager
     last_response: httpx.Response | None = None
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        for attempt in range(max_retries):
-            try:
+    for attempt in range(max_retries):
+        proxy_url = proxy_manager.current_proxy_url()
+        try:
+            async with httpx.AsyncClient(timeout=timeout, proxy=proxy_url) as client:
                 r = await client.get(url, params=params, headers=headers)
-                last_response = r
-                if r.status_code in (429, 503):
-                    if attempt >= max_retries - 1:
-                        break
-                    wait = float(2 ** attempt)  # 1s, 2s, 4s, 8s
-                    logger.info("Rate-limited (%s), waiting %.1fs (attempt %d/%d)",
-                               r.status_code, wait, attempt + 1, max_retries)
-                    await asyncio.sleep(wait)
+            last_response = r
+            if r.status_code in (429, 503):
+                switched = await proxy_manager.on_rate_limited(exclude_url=proxy_url)
+                if switched:
+                    logger.info("Rate-limited (%s) — retry immédiat via proxy", r.status_code)
                     continue
-                r.raise_for_status()
-                return r
-            except (httpx.TimeoutException, httpx.NetworkError):
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(1.0)
-                    continue
-                raise
+                if attempt >= max_retries - 1:
+                    break
+                wait = float(2 ** attempt)  # 1s, 2s, 4s, 8s
+                logger.info("Rate-limited (%s), waiting %.1fs (attempt %d/%d)",
+                           r.status_code, wait, attempt + 1, max_retries)
+                await asyncio.sleep(wait)
+                continue
+            r.raise_for_status()
+            return r
+        except (httpx.TimeoutException, httpx.NetworkError, httpx.ProxyError) as e:
+            if proxy_url:
+                # Auto-maintenance : le proxy est défaillant, pas Open-Meteo
+                proxy_manager.mark_suspect(proxy_url, type(e).__name__)
+            if attempt < max_retries - 1:
+                await asyncio.sleep(1.0)
+                continue
+            raise
     if last_response is not None:
         last_response.raise_for_status()
         return last_response
