@@ -33,6 +33,7 @@ from weather import (
     fetch_history_days,
     fetch_storm_risk_forecast,
     fetch_storm_zones,
+    fetch_storm_zones_local,
     fetch_wind_grid,
 )
 import lightning as lightning_mod
@@ -1281,7 +1282,8 @@ async def _alert_watcher():
     while True:
         try:
             await asyncio.sleep(45)
-            zones = await fetch_storm_zones(LOURDES_LAT, LOURDES_LON, RADIUS_KM)
+            # Watcher en arrière-plan : lit le snapshot LOCAL (0 appel API 24h/24)
+            zones = await fetch_storm_zones_local(LOURDES_LAT, LOURDES_LON, RADIUS_KM)
             storm_now = bool(zones.get("storm_active"))
             was_storm = _alerter_state["storm_active"]
             if storm_now and not was_storm:
