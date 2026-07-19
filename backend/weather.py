@@ -515,27 +515,30 @@ async def _fetch_storm_risk_impl(lat: float, lon: float, days: int) -> Dict[str,
 
 
 # =============================================================================
-# Zones + vent — GRILLE 9 POINTS (3×3), 100 % TEMPS RÉEL, ZÉRO CACHE.
-# UNE seule requête HTTP Open-Meteo (9 coordonnées) par consultation.
+# Zones + vent — GRILLE FIXE 25 POINTS (5×5), 100 % TEMPS RÉEL, ZÉRO CACHE.
+# Le nombre de points n'augmente JAMAIS avec le rayon : la grille 5×5 est
+# simplement étendue spatialement (espacement plus large) pour couvrir la zone.
+# UNE seule requête HTTP Open-Meteo (25 coordonnées) par consultation.
 # Aucun polling de fond : appel déclenché uniquement par le chargement de la
 # carte ou un rafraîchissement manuel. En cas d'échec (429/panne) : erreur
 # propre remontée au frontend, aucun repli sur cache.
 # =============================================================================
 
-def grid_9(lat: float, lon: float, radius_km: float) -> List[Dict[str, float]]:
-    """Grille fixe 3×3 = 9 points couvrant le rayon demandé (coins sur le cercle)."""
-    step_km = float(radius_km) / math.sqrt(2)
+def grid_25(lat: float, lon: float, radius_km: float) -> List[Dict[str, float]]:
+    """Grille fixe 5×5 = 25 points couvrant le rayon demandé (coins sur le cercle).
+    Toujours 25 points quel que soit le rayon (20 → 60 km) : seul l'espacement change."""
+    step_km = float(radius_km) / (2 * math.sqrt(2))
     dlat = km_to_deg_lat(step_km)
     dlon = km_to_deg_lon(step_km, lat)
     return [
         {"lat": round(lat + i * dlat, 4), "lon": round(lon + j * dlon, 4)}
-        for i in (-1, 0, 1) for j in (-1, 0, 1)
+        for i in (-2, -1, 0, 1, 2) for j in (-2, -1, 0, 1, 2)
     ]
 
 
 async def fetch_storm_zones(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM) -> Dict[str, Any]:
-    """Zones de la carte principale — 9 points, 1 requête globale, temps réel pur."""
-    points = grid_9(lat, lon, radius_km)
+    """Zones de la carte principale — 25 points (5×5), 1 requête globale, temps réel pur."""
+    points = grid_25(lat, lon, radius_km)
     params = {
         "latitude": ",".join(str(p["lat"]) for p in points),
         "longitude": ",".join(str(p["lon"]) for p in points),
@@ -583,8 +586,8 @@ async def fetch_storm_zones(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, 
 
 
 async def fetch_wind_grid(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM) -> Dict[str, Any]:
-    """Flèches de vent — 9 points, 1 requête globale, temps réel pur."""
-    points = grid_9(lat, lon, radius_km)
+    """Flèches de vent — 25 points (5×5), 1 requête globale, temps réel pur."""
+    points = grid_25(lat, lon, radius_km)
     params = {
         "latitude": ",".join(str(p["lat"]) for p in points),
         "longitude": ",".join(str(p["lon"]) for p in points),

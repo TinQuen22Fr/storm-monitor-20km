@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Bell, BellOff, Download, LocateFixed, Map as MapIcon, MapPin, Moon, PlayCircle, RefreshCw, Share2, X, Zap } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import MapPanel from "@/components/MapPanel";
+import DataFreshnessBadge from "@/components/DataFreshnessBadge";
 import AlertBanner from "@/components/AlertBanner";
 import ApproachAlert from "@/components/ApproachAlert";
 import Timeline from "@/components/Timeline";
@@ -446,6 +447,7 @@ export default function Dashboard() {
             overlays={visibleOverlays}
             noZone={noZone}
           />
+          {!noZone && <DataFreshnessBadge fetchedAt={zones?.fetched_at} />}
         </div>
         <Timeline
           cursorTs={cursorTs}

@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 32 — validated the 3 major changes: (1) zones/wind-grid = strict 25 points regardless of radius (20-60 km) with source='live' and zero cache (fetched_at changes between calls), (2) new DataFreshnessBadge visible on map showing 'Open-Meteo · il y a X s', (3) full Vite migration regression: all pages render, all assets 200, zero console errors. Backend: 11/11 pytest passed. Frontend: 6/6 pages OK, no polling on /api/storms/zones over 20s window, all map layers toggle.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter32_zones_wind.py",
+    "/app/test_reports/pytest/pytest_iter32.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Vite migration is clean: index.html at root, src/index.jsx entry, vite.config.js with define process.env.REACT_APP_BACKEND_URL — all pages hydrate with 0 console errors.",
+    "Zones/wind-grid endpoints correctly return exactly 25 points at radius 20 and 60 km; fetched_at delta confirmed on 2 consecutive calls (no cache).",
+    "DataFreshnessBadge (data-testid='data-freshness-badge') is visible and updates ('Open-Meteo · il y a 0 s'). Refresh button (data-testid='refresh-button') triggers reload.",
+    "Confirmed NO polling on /api/storms/zones: 0 new requests over a 20s window after initial load — matches the removed setInterval loadWeather requirement.",
+    "All 6 navigation routes (/, /vigilance, /grele, /previsions, /replay, /detector, /historique) return HTTP 200 and render content. Note: routes are /detector and /historique (not /detecteur or /history) — worth documenting for future testers.",
+    "Static assets /sounds/alert.mp3 and /geo/departments.json served by Vite return 200.",
+    "Slider radius change (20→60 km) works and map still shows 25 points."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter32_zones_wind.py"],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "100% (all routes + interactions OK)"},
+  "test_credentials": "not required — all tested views are public",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "live_evidence": {
+    "zones_radius_20_count": 25,
+    "zones_radius_60_count": 25,
+    "wind_grid_arrows_count": 25,
+    "source_field": "live",
+    "fetched_at_changes_between_calls": true,
+    "freshness_badge_text": "Open-Meteo · il y a 0 s",
+    "zones_polling_over_20s": 0,
+    "static_sounds_alert_mp3": 200,
+    "static_geo_departments_json": 200,
+    "console_errors": 0
+  },
+  "context_for_next_testing_agent": "Vite migration is stable; regression clean. Routes to remember: /detector (not /detecteur), /historique (not /history). Backend zones endpoint has 0 cache — fetched_at strictly monotonic. If Open-Meteo returns 429, severe/grid returns 503 with friendly FR msg (kept from iter30/31)."
+}
