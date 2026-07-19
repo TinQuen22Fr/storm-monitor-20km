@@ -514,125 +514,173 @@ async def _fetch_storm_risk_impl(lat: float, lon: float, days: int) -> Dict[str,
     return {"days": out}
 
 
-# Grille maîtresse ABSOLUE des zones d'analyse : maillage fixe de 14 km couvrant
-# 70 km (max du slider). L'état/sévérité d'un point est calculé une seule fois,
-# indépendamment du rayon choisi. Le rayon ne sert QUE de filtre spatial.
+# =============================================================================
+# BULK LOCAL "zones + vent" — même philosophie que la carte France :
+# UN fetch périodique (rafraîchisseur nocturne/6 h) → fichier cache local →
+# toute la journée les requêtes utilisateurs sont servies depuis CE fichier,
+# ZÉRO appel Open-Meteo déclenché par la consultation.
+# Grille maîtresse ABSOLUE : maillage fixe 8 km couvrant 60 km. La sévérité
+# d'un point est une valeur absolue ; le rayon = pur filtre spatial.
+# =============================================================================
 MASTER_ZONE_RADIUS_KM = 60.0
 MASTER_ZONE_STEP_KM = 8.0
-# Limite Open-Meteo : 100 coordonnées max par requête → on découpe en lots de 85
-ZONE_CHUNK_SIZE = 85
+ZONE_CHUNK_SIZE = 85          # limite Open-Meteo : 100 coordonnées / requête
+ZONES_BULK_TTL_S = 6 * 3600.0  # 4 refreshs/jour max ≈ 708 appels/j (quota 10k)
+ZONES_BULK_VARS = [
+    "weather_code", "cape", "lightning_potential", "precipitation",
+    "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m",
+]
+ZONES_BULK_FILE = Path(__file__).parent / "cache" / "zones_bulk.json"
+
+_zones_bulk_mem: Dict[str, Dict[str, Any]] = {}
+_zones_bulk_lock = asyncio.Lock()
+_zones_bulk_disk_loaded = False
 
 
-async def fetch_storm_zones(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM) -> Dict[str, Any]:
-    """Zones d'analyse : valeurs absolues (grille fixe), rayon = filtre d'exclusion spatiale."""
-    master = await _cached(f"zones-master:{lat}:{lon}", 240.0, lambda: _fetch_storm_zones_impl(lat, lon))
-    r = min(float(radius_km), MASTER_ZONE_RADIUS_KM)
-    zones = [z for z in master["zones"] if haversine_km(lat, lon, z["lat"], z["lon"]) <= r]
-    return {
-        "center": master["center"],
-        "radius_km": radius_km,
-        "zones": zones,
-        "storm_active": any(z["is_thunder"] or z["severity"] >= 40 for z in zones),
-        "max_cape": max((z["cape"] for z in zones), default=0),
-        "max_lightning_potential": max((z["lightning_potential"] for z in zones), default=0),
-        "fetched_at": master["fetched_at"],
-    }
+def _zb_key(lat: float, lon: float) -> str:
+    return f"{round(float(lat), 3)}:{round(float(lon), 3)}"
 
 
-async def fetch_wind_grid(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM) -> Dict[str, Any]:
-    return await _cached(f"wind:{lat}:{lon}:{radius_km}", 300.0, lambda: _fetch_wind_grid_impl(lat, lon, radius_km))
+def _zb_save_disk() -> None:
+    try:
+        ZONES_BULK_FILE.parent.mkdir(parents=True, exist_ok=True)
+        # Ne garde que les 6 centres les plus récents (Lourdes + favoris)
+        keys = sorted(_zones_bulk_mem, key=lambda k: _zones_bulk_mem[k]["fetched_at"], reverse=True)[:6]
+        payload = {k: _zones_bulk_mem[k] for k in keys}
+        tmp = ZONES_BULK_FILE.with_suffix(".json.tmp")
+        with tmp.open("w", encoding="utf-8") as f:
+            json.dump(payload, f, separators=(",", ":"))
+        tmp.replace(ZONES_BULK_FILE)
+    except Exception as e:
+        logger.warning("Zones bulk : écriture disque impossible (%s)", e)
 
 
-async def _fetch_wind_grid_impl(lat: float, lon: float, radius_km: float) -> Dict[str, Any]:
-    """Sample wind speed + direction at grid points to draw vector arrows."""
-    points = sampling_grid(lat, lon, radius_km)
-    lats = ",".join(str(p["lat"]) for p in points)
-    lons = ",".join(str(p["lon"]) for p in points)
-    params = {
-        "latitude": lats,
-        "longitude": lons,
-        "current": "wind_speed_10m,wind_direction_10m,wind_gusts_10m",
-        "timezone": "auto",
-        "forecast_days": 1,
-    }
-    r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=20)
-    raw = r.json()
-
-    responses = raw if isinstance(raw, list) else [raw]
-    arrows: List[Dict[str, Any]] = []
-    max_speed = 0.0
-    for i, resp in enumerate(responses):
-        p = points[i] if i < len(points) else {"lat": lat, "lon": lon}
-        current = resp.get("current", {})
-        speed = float(current.get("wind_speed_10m") or 0)
-        direction = float(current.get("wind_direction_10m") or 0)
-        gust = float(current.get("wind_gusts_10m") or 0)
-        arrows.append({
-            "lat": p["lat"],
-            "lon": p["lon"],
-            "speed": round(speed, 1),
-            "direction": round(direction, 0),
-            "gust": round(gust, 1),
-        })
-        if speed > max_speed:
-            max_speed = speed
-    return {
-        "center": {"lat": lat, "lon": lon},
-        "radius_km": radius_km,
-        "arrows": arrows,
-        "max_speed": round(max_speed, 1),
-        "fetched_at": datetime.now(timezone.utc).isoformat(),
-    }
+def _zb_load_disk() -> None:
+    global _zones_bulk_disk_loaded
+    _zones_bulk_disk_loaded = True
+    if not ZONES_BULK_FILE.exists():
+        return
+    try:
+        with ZONES_BULK_FILE.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        for k, v in data.items():
+            _zones_bulk_mem.setdefault(k, v)
+        logger.info("Zones bulk : %d centre(s) rechargé(s) depuis le disque", len(data))
+    except Exception as e:
+        logger.warning("Zones bulk : lecture disque impossible (%s)", e)
 
 
-async def _fetch_storm_zones_impl(lat: float, lon: float) -> Dict[str, Any]:
-    """Échantillonne la grille maîtresse fixe (indépendante du rayon d'affichage).
-    Les points sont interrogés par lots de ZONE_CHUNK_SIZE (limite Open-Meteo).
-    """
+async def get_zones_bulk(lat: float = LOURDES_LAT, lon: float = LOURDES_LON) -> Dict[str, Any]:
+    """Snapshot bulk (177 pts × 48 h × 7 variables) pour un centre donné.
+    Mémoire → disque → fetch. En cas d'échec réseau : sert le cache local
+    périmé (et retentera au prochain passage du rafraîchisseur)."""
+    key = _zb_key(lat, lon)
+    now = time.time()
+    snap = _zones_bulk_mem.get(key)
+    if snap and now - snap["fetched_at"] < ZONES_BULK_TTL_S:
+        return snap
+    async with _zones_bulk_lock:
+        if not _zones_bulk_disk_loaded:
+            _zb_load_disk()
+        snap = _zones_bulk_mem.get(key)
+        if snap and now - snap["fetched_at"] < ZONES_BULK_TTL_S:
+            return snap
+        try:
+            fresh = await _fetch_zones_bulk_impl(lat, lon)
+            _zones_bulk_mem[key] = fresh
+            try:
+                asyncio.create_task(asyncio.to_thread(_zb_save_disk))
+            except RuntimeError:
+                pass
+            return fresh
+        except Exception as e:
+            if snap is not None:
+                logger.warning(
+                    "Zones bulk : refresh impossible (%s) — cache local servi (age %.1f h)",
+                    type(e).__name__, (now - snap["fetched_at"]) / 3600,
+                )
+                return snap
+            raise
+
+
+async def _fetch_zones_bulk_impl(lat: float, lon: float) -> Dict[str, Any]:
+    """LE seul point d'accès réseau zones/vent : grille maîtresse complète,
+    48 h de données horaires, par lots ≤ 85 coordonnées."""
     points = sampling_grid(lat, lon, MASTER_ZONE_RADIUS_KM, step_km=MASTER_ZONE_STEP_KM)
-
-    # Batch par lots ≤ 85 coordonnées, résultats concaténés dans l'ordre des points
     responses: List[Dict[str, Any]] = []
     for start in range(0, len(points), ZONE_CHUNK_SIZE):
         chunk = points[start:start + ZONE_CHUNK_SIZE]
         params = {
             "latitude": ",".join(str(p["lat"]) for p in chunk),
             "longitude": ",".join(str(p["lon"]) for p in chunk),
-            "current": "weather_code,precipitation,wind_gusts_10m",
-            "hourly": "cape,lightning_potential",
-            "timezone": "auto",
-            "forecast_days": 1,
+            "hourly": ",".join(ZONES_BULK_VARS),
+            "timezone": "UTC",
+            "forecast_days": 2,
         }
-        r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=20)
+        r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=40)
         raw = r.json()
-        # Response is a list when multiple lat/lon provided
         responses.extend(raw if isinstance(raw, list) else [raw])
 
+    times: List[str] = []
+    series: Dict[str, List[List[Any]]] = {v: [] for v in ZONES_BULK_VARS}
+    for resp in responses:
+        h = resp.get("hourly") or {}
+        if not times:
+            times = h.get("time") or []
+        for v in ZONES_BULK_VARS:
+            series[v].append(h.get(v) or [])
+
+    snap = {
+        "fetched_at": time.time(),
+        "fetched_at_iso": datetime.now(timezone.utc).isoformat(),
+        "center": {"lat": lat, "lon": lon},
+        "points": [{"lat": p["lat"], "lon": p["lon"]} for p in points],
+        "times": times,
+        "series": series,
+    }
+    logger.info(
+        "Zones bulk : %d points × %d heures × %d variables rafraîchis",
+        len(points), len(times), len(ZONES_BULK_VARS),
+    )
+    return snap
+
+
+def _zb_hour_index(times: List[str]) -> int:
+    """Index de l'heure courante (UTC) dans le snapshot ; borné aux limites."""
+    if not times:
+        return 0
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:00")
+    for k, t in enumerate(times):
+        if t >= now_iso:
+            return k
+    return len(times) - 1
+
+
+def _zb_val(snap: Dict[str, Any], var: str, i: int, idx: int) -> float:
+    try:
+        v = snap["series"][var][i][idx]
+        return float(v) if v is not None else 0.0
+    except (IndexError, KeyError, TypeError, ValueError):
+        return 0.0
+
+
+async def fetch_storm_zones(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM) -> Dict[str, Any]:
+    """Zones d'analyse — découpe LOCALE du snapshot bulk à l'heure courante.
+    Aucun appel Open-Meteo ici : le rafraîchisseur d'arrière-plan s'en charge."""
+    snap = await get_zones_bulk(lat, lon)
+    idx = _zb_hour_index(snap["times"])
+    r = min(float(radius_km), MASTER_ZONE_RADIUS_KM)
     zones: List[Dict[str, Any]] = []
-
-    for i, resp in enumerate(responses):
-        p = points[i] if i < len(points) else {"lat": lat, "lon": lon}
-        current = resp.get("current", {})
-        hourly = resp.get("hourly", {})
-        times = hourly.get("time", [])
-        idx = 0
-        for k, t in enumerate(times):
-            if t >= now_iso:
-                idx = k
-                break
-        cape = (hourly.get("cape") or [0])[idx] if times else 0
-        lp = (hourly.get("lightning_potential") or [0])[idx] if times else 0
-        cape = cape or 0
-        lp = lp or 0
-        code = current.get("weather_code")
-        precip = current.get("precipitation", 0) or 0
-        gust = current.get("wind_gusts_10m", 0) or 0
-
+    for i, p in enumerate(snap["points"]):
+        if haversine_km(lat, lon, p["lat"], p["lon"]) > r:
+            continue
+        cape = _zb_val(snap, "cape", i, idx)
+        lp = _zb_val(snap, "lightning_potential", i, idx)
+        precip = _zb_val(snap, "precipitation", i, idx)
+        gust = _zb_val(snap, "wind_gusts_10m", i, idx)
+        code = int(_zb_val(snap, "weather_code", i, idx))
         is_thunder = code in THUNDERSTORM_CODES
-        # Severity score 0-100 — valeur ABSOLUE du point, jamais influencée par le rayon
         severity = min(100, int((cape / 30.0) + (lp * 4) + (precip * 8) + (30 if is_thunder else 0)))
-
         zones.append({
             "lat": p["lat"],
             "lon": p["lon"],
@@ -644,9 +692,44 @@ async def _fetch_storm_zones_impl(lat: float, lon: float) -> Dict[str, Any]:
             "is_thunder": is_thunder,
             "severity": severity,
         })
-
     return {
-        "center": {"lat": lat, "lon": lon},
+        "center": snap["center"],
+        "radius_km": radius_km,
         "zones": zones,
-        "fetched_at": datetime.now(timezone.utc).isoformat(),
+        "storm_active": any(z["is_thunder"] or z["severity"] >= 40 for z in zones),
+        "max_cape": max((z["cape"] for z in zones), default=0),
+        "max_lightning_potential": max((z["lightning_potential"] for z in zones), default=0),
+        "fetched_at": snap["fetched_at_iso"],
+    }
+
+
+async def fetch_wind_grid(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM) -> Dict[str, Any]:
+    """Flèches de vent — découpe LOCALE du même snapshot bulk que les zones.
+    Aucun appel Open-Meteo déclenché par la consultation."""
+    snap = await get_zones_bulk(lat, lon)
+    idx = _zb_hour_index(snap["times"])
+    r = min(float(radius_km), MASTER_ZONE_RADIUS_KM)
+    arrows: List[Dict[str, Any]] = []
+    max_speed = 0.0
+    for i, p in enumerate(snap["points"]):
+        if haversine_km(lat, lon, p["lat"], p["lon"]) > r:
+            continue
+        speed = _zb_val(snap, "wind_speed_10m", i, idx)
+        direction = _zb_val(snap, "wind_direction_10m", i, idx)
+        gust = _zb_val(snap, "wind_gusts_10m", i, idx)
+        arrows.append({
+            "lat": p["lat"],
+            "lon": p["lon"],
+            "speed": round(speed, 1),
+            "direction": round(direction, 0),
+            "gust": round(gust, 1),
+        })
+        if speed > max_speed:
+            max_speed = speed
+    return {
+        "center": snap["center"],
+        "radius_km": radius_km,
+        "arrows": arrows,
+        "max_speed": round(max_speed, 1),
+        "fetched_at": snap["fetched_at_iso"],
     }

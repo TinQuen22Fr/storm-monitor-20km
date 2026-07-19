@@ -121,6 +121,8 @@ L'utilisateur a finalisé lui-même la mise en production (install manuelle de f
 
 - **[2026-07-19] Fix page Prévisions figée (PRÊT À PUSHER)** : données bloquées au 15/07 sur prod — cause : cache bulk local uniquement rafraîchi à la demande ; la nuit (quota Open-Meteo dispo, reset 00:00 UTC) aucune requête → pas de refresh ; le jour quota épuisé (429, ~63k appels/j par la grille 177 pts vs 10k gratuits) → stale servi silencieusement. Correctif : `bulk_refresher_loop()` autonome (30 min, 24h/24) régénérant bulk France + prévisions 48h Lourdes sans visite utilisateur + `fetched_at` exposé dans /weather/severe + logs "Refresher :". Prouvé en sandbox : dernière heure = J+48. RESTE (archivé, non fait) : réduire la conso quota de la grille zones/watcher ; nuages EUMETSAT WMS (option 1 validée d'intérêt, en attente).
 
+- **[2026-07-19] Architecture "bulk local" généralisée zones+vent (PRÊT À PUSHER)** : sur directive utilisateur ferme (1 fetch nocturne → fichier cache → journée servie SANS API). Nouveau `get_zones_bulk` (177 pts × 48h × 7 vars, chunks ≤85, TTL 6h, persisté `cache/zones_bulk.json`, stale fallback) rafraîchi par le refresher autonome ; `fetch_storm_zones` et `fetch_wind_grid` = pures découpes locales à l'heure courante (aucun appel réseau à la consultation). Budget API : ~63k/j → ~2k/j (plafond 10k). Cause du calque vent vide : 429 en journée → 0 flèche ; réglé par le bulk. Vérifié en live : refresher OK, 21 zones + 21 flèches avec pastilles km/h + animation + rotation (screenshot), fichier disque 249 Ko. Foudre reste temps réel (Blitzortung WS).
+
 ## 🟡 Backlog
 - **P1** — Valider le 1er run GitHub Actions Android + installer l'APK sur téléphone
 - **P2** — Remplacer l'icône générée par l'image personnelle de l'utilisateur (quand fournie)
