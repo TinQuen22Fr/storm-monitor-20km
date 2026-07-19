@@ -81,22 +81,6 @@ OLD_COMMIT="$(git -C "$WORK_DIR" rev-parse HEAD 2>/dev/null || echo 'unknown')"
 # Discard les fichiers runtime jamais trackés
 rm -f "$WORK_DIR/backend/.stale_cache.pkl"
 
-# ---------------------------------------------------------------------------
-# 1-bis. Sauvegarde de proxies.json AVANT toute opération git
-# ---------------------------------------------------------------------------
-# Config runtime (liste de proxys anti-429) éditée par l'admin sur le serveur :
-# elle ne doit JAMAIS être écrasée par un pull/reset/stash. Source prioritaire :
-# /opt (édition admin), sinon /var/www (runtime). Restaurée juste après le git.
-PROXIES_KEEP=""
-for cand in "$WORK_DIR/backend/proxies.json" "$APP_DIR/backend/proxies.json"; do
-  if [[ -s "$cand" ]] && python3 -c "import json,sys;d=json.load(open('$cand'));sys.exit(0 if isinstance(d,list) and len(d)>0 else 1)" 2>/dev/null; then
-    PROXIES_KEEP="$(mktemp /tmp/proxies.keep.XXXXXX)"
-    cp "$cand" "$PROXIES_KEEP"
-    echo "    proxies.json : config sauvegardée depuis $cand ($(python3 -c "import json;print(len(json.load(open('$cand'))))") proxy(s))"
-    break
-  fi
-done
-
 STASH_CREATED=0
 if ! git -C "$WORK_DIR" diff --quiet || ! git -C "$WORK_DIR" diff --cached --quiet; then
   echo "    Modifs locales détectées — stash automatique..."
@@ -130,24 +114,6 @@ fi
 # et fausse la détection pip. On les restaure d'office après le stash pop.
 git -C "$WORK_DIR" checkout -- frontend/yarn.lock frontend/package.json backend/requirements.txt 2>/dev/null || true
 rm -f "$WORK_DIR/package-lock.json"   # artefact npm à la racine, jamais légitime ici
-
-# ---------------------------------------------------------------------------
-# 1-ter. Restauration de proxies.json APRÈS les opérations git
-# ---------------------------------------------------------------------------
-if [[ -n "$PROXIES_KEEP" && -s "$PROXIES_KEEP" ]]; then
-  cp "$PROXIES_KEEP" "$WORK_DIR/backend/proxies.json"
-  # Nettoie toute entrée d'index résiduelle (ex: conflit modify/delete au stash
-  # pop lors de la transition tracké → non-tracké) : le fichier doit rester
-  # un simple fichier local, invisible pour git (.gitignore côté dépôt).
-  git -C "$WORK_DIR" rm -q --cached backend/proxies.json 2>/dev/null || true
-  # Backup horodaté avec rotation (10 derniers), comme pour le .env
-  PROX_BK_DIR="$APP_DIR/backend/.proxies.backups"
-  mkdir -p "$PROX_BK_DIR"
-  cp "$PROXIES_KEEP" "$PROX_BK_DIR/proxies.$(date -u +%Y%m%dT%H%M%SZ).json"
-  ls -1 "$PROX_BK_DIR"/proxies.*.json 2>/dev/null | sort -r | tail -n +11 | xargs -r rm -f
-  rm -f "$PROXIES_KEEP"
-  echo "    ✓ proxies.json restauré → $WORK_DIR/backend/proxies.json (propagé vers $APP_DIR au rsync)"
-fi
 
 if [[ "$OLD_COMMIT" == "$NEW_COMMIT" ]]; then
   echo "    ✓ Déjà à jour sur $(git -C "$WORK_DIR" rev-parse --short HEAD) — rien à puller"
@@ -267,7 +233,6 @@ rsync -a --delete \
   --exclude='.git' \
   --exclude='backend/.env' \
   --exclude='backend/.env.backups' \
-  --exclude='backend/.proxies.backups' \
   --exclude='backend/venv' \
   --exclude='backend/storm_data.json' \
   --exclude='backend/firebase-admin.json' \

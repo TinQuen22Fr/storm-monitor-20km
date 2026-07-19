@@ -38,46 +38,32 @@ _STALE_FILE = Path(
 )
 
 
-# ---------- Resilient HTTP with 429 retry + failover proxies ----------
+# ---------- Resilient HTTP with 429 retry ----------
 async def get_with_retry(url: str, params: Dict[str, Any] | None = None,
                         headers: Dict[str, Any] | None = None,
                         timeout: float = 10.0, max_retries: int = 4) -> httpx.Response:
-    """GET avec failover proxy sur 429 et backoff exponentiel.
-
-    Priorité 1 : IP principale (Kimsufi). Sur 429 : bascule immédiate vers le
-    meilleur proxy de proxies.json (sticky 30 min, cf. proxy_manager). Un proxy
-    en erreur réseau est marqué suspect et écarté. Sans proxy valide : backoff
-    classique 1/2/4/8 s."""
-    import proxy_manager
+    """GET with exponential backoff on 429/503 (1, 2, 4, 8 s)."""
     last_response: httpx.Response | None = None
-    for attempt in range(max_retries):
-        proxy_url = proxy_manager.current_proxy_url()
-        try:
-            async with httpx.AsyncClient(timeout=timeout, proxy=proxy_url) as client:
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        for attempt in range(max_retries):
+            try:
                 r = await client.get(url, params=params, headers=headers)
-            last_response = r
-            if r.status_code in (429, 503):
-                switched = await proxy_manager.on_rate_limited(exclude_url=proxy_url)
-                if switched:
-                    logger.info("Rate-limited (%s) — retry immédiat via proxy", r.status_code)
+                last_response = r
+                if r.status_code in (429, 503):
+                    if attempt >= max_retries - 1:
+                        break
+                    wait = float(2 ** attempt)  # 1s, 2s, 4s, 8s
+                    logger.info("Rate-limited (%s), waiting %.1fs (attempt %d/%d)",
+                               r.status_code, wait, attempt + 1, max_retries)
+                    await asyncio.sleep(wait)
                     continue
-                if attempt >= max_retries - 1:
-                    break
-                wait = float(2 ** attempt)  # 1s, 2s, 4s, 8s
-                logger.info("Rate-limited (%s), waiting %.1fs (attempt %d/%d)",
-                           r.status_code, wait, attempt + 1, max_retries)
-                await asyncio.sleep(wait)
-                continue
-            r.raise_for_status()
-            return r
-        except (httpx.TimeoutException, httpx.NetworkError, httpx.ProxyError) as e:
-            if proxy_url:
-                # Auto-maintenance : le proxy est défaillant, pas Open-Meteo
-                proxy_manager.mark_suspect(proxy_url, type(e).__name__)
-            if attempt < max_retries - 1:
-                await asyncio.sleep(1.0)
-                continue
-            raise
+                r.raise_for_status()
+                return r
+            except (httpx.TimeoutException, httpx.NetworkError):
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1.0)
+                    continue
+                raise
     if last_response is not None:
         last_response.raise_for_status()
         return last_response

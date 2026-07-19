@@ -390,5 +390,3 @@ frontend/node_modules/.cache/default-development/13.pack
 backend/.stale_cache.pkl
 *.pkl
 
-# Config runtime proxys anti-429 — éditée par l'admin sur le serveur, JAMAIS versionnée
-backend/proxies.json
