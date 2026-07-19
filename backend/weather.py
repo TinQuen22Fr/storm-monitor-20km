@@ -704,8 +704,68 @@ async def fetch_storm_zones(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, 
 
 
 async def fetch_wind_grid(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM) -> Dict[str, Any]:
-    """Flèches de vent — découpe LOCALE du même snapshot bulk que les zones.
-    Aucun appel Open-Meteo déclenché par la consultation."""
+    """Flèches de vent — données EN DIRECT (champ `current` Open-Meteo).
+
+    Le vent est activé ponctuellement par l'utilisateur : l'appel direct ne
+    pèse presque rien sur le quota (cache 10 min anti-spam). Si Open-Meteo
+    est indisponible (429/panne), repli automatique sur la découpe du
+    snapshot bulk local (donnée horaire prévue, marquée `source`)."""
+    return await _cached(f"wind:{lat}:{lon}:{radius_km}", 600.0, lambda: _fetch_wind_grid_live(lat, lon, radius_km))
+
+
+async def _fetch_wind_grid_live(lat: float, lon: float, radius_km: float) -> Dict[str, Any]:
+    r = min(float(radius_km), MASTER_ZONE_RADIUS_KM)
+    pts = [
+        p for p in sampling_grid(lat, lon, MASTER_ZONE_RADIUS_KM, step_km=MASTER_ZONE_STEP_KM)
+        if haversine_km(lat, lon, p["lat"], p["lon"]) <= r
+    ]
+    try:
+        responses: List[Dict[str, Any]] = []
+        for start in range(0, len(pts), ZONE_CHUNK_SIZE):
+            chunk = pts[start:start + ZONE_CHUNK_SIZE]
+            params = {
+                "latitude": ",".join(str(p["lat"]) for p in chunk),
+                "longitude": ",".join(str(p["lon"]) for p in chunk),
+                "current": "wind_speed_10m,wind_direction_10m,wind_gusts_10m",
+                "timezone": "UTC",
+                "forecast_days": 1,
+            }
+            resp = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=20)
+            raw = resp.json()
+            responses.extend(raw if isinstance(raw, list) else [raw])
+    except Exception as e:
+        logger.warning("Vent : direct indisponible (%s) — repli sur le cache local", type(e).__name__)
+        return await _wind_grid_from_bulk(lat, lon, radius_km)
+
+    arrows: List[Dict[str, Any]] = []
+    max_speed = 0.0
+    for i, resp in enumerate(responses):
+        p = pts[i] if i < len(pts) else {"lat": lat, "lon": lon}
+        cur = resp.get("current") or {}
+        speed = float(cur.get("wind_speed_10m") or 0)
+        direction = float(cur.get("wind_direction_10m") or 0)
+        gust = float(cur.get("wind_gusts_10m") or 0)
+        arrows.append({
+            "lat": p["lat"],
+            "lon": p["lon"],
+            "speed": round(speed, 1),
+            "direction": round(direction, 0),
+            "gust": round(gust, 1),
+        })
+        if speed > max_speed:
+            max_speed = speed
+    return {
+        "center": {"lat": lat, "lon": lon},
+        "radius_km": radius_km,
+        "arrows": arrows,
+        "max_speed": round(max_speed, 1),
+        "source": "live",
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+async def _wind_grid_from_bulk(lat: float, lon: float, radius_km: float) -> Dict[str, Any]:
+    """Repli : découpe du snapshot bulk local (prévision horaire)."""
     snap = await get_zones_bulk(lat, lon)
     idx = _zb_hour_index(snap["times"])
     r = min(float(radius_km), MASTER_ZONE_RADIUS_KM)
@@ -731,5 +791,6 @@ async def fetch_wind_grid(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, ra
         "radius_km": radius_km,
         "arrows": arrows,
         "max_speed": round(max_speed, 1),
+        "source": "cache_local",
         "fetched_at": snap["fetched_at_iso"],
     }

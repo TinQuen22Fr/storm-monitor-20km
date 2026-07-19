@@ -123,6 +123,14 @@ L'utilisateur a finalisé lui-même la mise en production (install manuelle de f
 
 - **[2026-07-19] Architecture "bulk local" généralisée zones+vent (PRÊT À PUSHER)** : sur directive utilisateur ferme (1 fetch nocturne → fichier cache → journée servie SANS API). Nouveau `get_zones_bulk` (177 pts × 48h × 7 vars, chunks ≤85, TTL 6h, persisté `cache/zones_bulk.json`, stale fallback) rafraîchi par le refresher autonome ; `fetch_storm_zones` et `fetch_wind_grid` = pures découpes locales à l'heure courante (aucun appel réseau à la consultation). Budget API : ~63k/j → ~2k/j (plafond 10k). Cause du calque vent vide : 429 en journée → 0 flèche ; réglé par le bulk. Vérifié en live : refresher OK, 21 zones + 21 flèches avec pastilles km/h + animation + rotation (screenshot), fichier disque 249 Ko. Foudre reste temps réel (Blitzortung WS).
 
+- **[2026-07-19] Vent repassé en DIRECT sur demande utilisateur (PRÊT À PUSHER)** : `fetch_wind_grid` = appel `current` Open-Meteo en direct sur les points de la grille dans le rayon (cache anti-spam 10 min), repli automatique sur la découpe du bulk local si 429/panne (`source: live|cache_local`). Vérifié : source live, 21 flèches, mesures temps réel. Zones/carte restent sur bulk local.
+
+## 📝 Trace archivée — historique de la grille (demande utilisateur du 19/07)
+- Exigence d'origine : grille ABSOLUE (état d'un point invariant au rayon ; rayon = filtre spatial pur).
+- v1 : pas 14 km / couverture 70 km → 9 points seulement à 20 km → trop pauvre.
+- v2 (actuelle) : pas 8 km / plafond 60 km = 177 points (21 à 20 km), découpés en lots ≤85 (limite Open-Meteo 100 coords/requête), slider plafonné à 60.
+- Piste si retour à 70 km souhaité : garder pas 8 km → ~240 points (3 lots), budget bulk ~960 appels/j à 4 refreshs — faisable sans exploser le quota.
+
 ## 🟡 Backlog
 - **P1** — Valider le 1er run GitHub Actions Android + installer l'APK sur téléphone
 - **P2** — Remplacer l'icône générée par l'image personnelle de l'utilisateur (quand fournie)
