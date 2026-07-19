@@ -57,11 +57,10 @@ export default function WindLayer({ center, radiusKm, enabled, onMaxSpeedChange 
         onMaxSpeedChange && onMaxSpeedChange(data.max_speed);
       } catch { /* ignore */ }
     };
+    // Chargement uniquement à l'activation de la couche (pas de polling)
     load();
-    const t = setInterval(load, 5 * 60_000);
     return () => {
       cancel = true;
-      clearInterval(t);
     };
   }, [enabled, center.lat, center.lon, radiusKm, onMaxSpeedChange]);
 

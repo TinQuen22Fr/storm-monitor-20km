@@ -515,202 +515,38 @@ async def _fetch_storm_risk_impl(lat: float, lon: float, days: int) -> Dict[str,
 
 
 # =============================================================================
-# BULK LOCAL "zones + vent" — même philosophie que la carte France :
-# UN fetch périodique (rafraîchisseur nocturne/6 h) → fichier cache local →
-# toute la journée les requêtes utilisateurs sont servies depuis CE fichier,
-# ZÉRO appel Open-Meteo déclenché par la consultation.
-# Grille maîtresse ABSOLUE : maillage fixe 8 km couvrant 60 km. La sévérité
-# d'un point est une valeur absolue ; le rayon = pur filtre spatial.
+# Zones + vent — GRILLE 9 POINTS (3×3), 100 % TEMPS RÉEL, ZÉRO CACHE.
+# UNE seule requête HTTP Open-Meteo (9 coordonnées) par consultation.
+# Aucun polling de fond : appel déclenché uniquement par le chargement de la
+# carte ou un rafraîchissement manuel. En cas d'échec (429/panne) : erreur
+# propre remontée au frontend, aucun repli sur cache.
 # =============================================================================
-MASTER_ZONE_RADIUS_KM = 60.0
-MASTER_ZONE_STEP_KM = 8.0
-ZONE_CHUNK_SIZE = 85          # limite Open-Meteo : 100 coordonnées / requête
-ZONES_BULK_TTL_S = 6 * 3600.0  # 4 refreshs/jour max ≈ 708 appels/j (quota 10k)
-ZONES_BULK_VARS = [
-    "weather_code", "cape", "lightning_potential", "precipitation",
-    "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m",
-]
-ZONES_BULK_FILE = Path(__file__).parent / "cache" / "zones_bulk.json"
 
-_zones_bulk_mem: Dict[str, Dict[str, Any]] = {}
-_zones_bulk_lock = asyncio.Lock()
-_zones_bulk_disk_loaded = False
+def grid_9(lat: float, lon: float, radius_km: float) -> List[Dict[str, float]]:
+    """Grille fixe 3×3 = 9 points couvrant le rayon demandé (coins sur le cercle)."""
+    step_km = float(radius_km) / math.sqrt(2)
+    dlat = km_to_deg_lat(step_km)
+    dlon = km_to_deg_lon(step_km, lat)
+    return [
+        {"lat": round(lat + i * dlat, 4), "lon": round(lon + j * dlon, 4)}
+        for i in (-1, 0, 1) for j in (-1, 0, 1)
+    ]
 
 
-def _zb_key(lat: float, lon: float) -> str:
-    return f"{round(float(lat), 3)}:{round(float(lon), 3)}"
-
-
-def _zb_save_disk() -> None:
-    try:
-        ZONES_BULK_FILE.parent.mkdir(parents=True, exist_ok=True)
-        # Ne garde que les 6 centres les plus récents (Lourdes + favoris)
-        keys = sorted(_zones_bulk_mem, key=lambda k: _zones_bulk_mem[k]["fetched_at"], reverse=True)[:6]
-        payload = {k: _zones_bulk_mem[k] for k in keys}
-        tmp = ZONES_BULK_FILE.with_suffix(".json.tmp")
-        with tmp.open("w", encoding="utf-8") as f:
-            json.dump(payload, f, separators=(",", ":"))
-        tmp.replace(ZONES_BULK_FILE)
-    except Exception as e:
-        logger.warning("Zones bulk : écriture disque impossible (%s)", e)
-
-
-def _zb_load_disk() -> None:
-    global _zones_bulk_disk_loaded
-    _zones_bulk_disk_loaded = True
-    if not ZONES_BULK_FILE.exists():
-        return
-    try:
-        with ZONES_BULK_FILE.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-        for k, v in data.items():
-            _zones_bulk_mem.setdefault(k, v)
-        logger.info("Zones bulk : %d centre(s) rechargé(s) depuis le disque", len(data))
-    except Exception as e:
-        logger.warning("Zones bulk : lecture disque impossible (%s)", e)
-
-
-async def get_zones_bulk(lat: float = LOURDES_LAT, lon: float = LOURDES_LON) -> Dict[str, Any]:
-    """Snapshot bulk (177 pts × 48 h × 7 variables) pour un centre donné.
-    Mémoire → disque → fetch. En cas d'échec réseau : sert le cache local
-    périmé (et retentera au prochain passage du rafraîchisseur)."""
-    key = _zb_key(lat, lon)
-    now = time.time()
-    snap = _zones_bulk_mem.get(key)
-    if snap and now - snap["fetched_at"] < ZONES_BULK_TTL_S:
-        return snap
-    async with _zones_bulk_lock:
-        if not _zones_bulk_disk_loaded:
-            _zb_load_disk()
-        snap = _zones_bulk_mem.get(key)
-        if snap and now - snap["fetched_at"] < ZONES_BULK_TTL_S:
-            return snap
-        try:
-            fresh = await _fetch_zones_bulk_impl(lat, lon)
-            _zones_bulk_mem[key] = fresh
-            try:
-                asyncio.create_task(asyncio.to_thread(_zb_save_disk))
-            except RuntimeError:
-                pass
-            return fresh
-        except Exception as e:
-            if snap is not None:
-                logger.warning(
-                    "Zones bulk : refresh impossible (%s) — cache local servi (age %.1f h)",
-                    type(e).__name__, (now - snap["fetched_at"]) / 3600,
-                )
-                return snap
-            raise
-
-
-async def _fetch_zones_bulk_impl(lat: float, lon: float) -> Dict[str, Any]:
-    """LE seul point d'accès réseau zones/vent : grille maîtresse complète,
-    48 h de données horaires, par lots ≤ 85 coordonnées."""
-    points = sampling_grid(lat, lon, MASTER_ZONE_RADIUS_KM, step_km=MASTER_ZONE_STEP_KM)
-    responses: List[Dict[str, Any]] = []
-    for start in range(0, len(points), ZONE_CHUNK_SIZE):
-        chunk = points[start:start + ZONE_CHUNK_SIZE]
-        params = {
-            "latitude": ",".join(str(p["lat"]) for p in chunk),
-            "longitude": ",".join(str(p["lon"]) for p in chunk),
-            "hourly": ",".join(ZONES_BULK_VARS),
-            "timezone": "UTC",
-            "forecast_days": 2,
-        }
-        r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=40)
-        raw = r.json()
-        responses.extend(raw if isinstance(raw, list) else [raw])
-
-    times: List[str] = []
-    series: Dict[str, List[List[Any]]] = {v: [] for v in ZONES_BULK_VARS}
-    for resp in responses:
-        h = resp.get("hourly") or {}
-        if not times:
-            times = h.get("time") or []
-        for v in ZONES_BULK_VARS:
-            series[v].append(h.get(v) or [])
-
-    snap = {
-        "fetched_at": time.time(),
-        "fetched_at_iso": datetime.now(timezone.utc).isoformat(),
-        "center": {"lat": lat, "lon": lon},
-        "points": [{"lat": p["lat"], "lon": p["lon"]} for p in points],
-        "times": times,
-        "series": series,
+async def fetch_storm_zones(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM) -> Dict[str, Any]:
+    """Zones de la carte principale — 9 points, 1 requête globale, temps réel pur."""
+    points = grid_9(lat, lon, radius_km)
+    params = {
+        "latitude": ",".join(str(p["lat"]) for p in points),
+        "longitude": ",".join(str(p["lon"]) for p in points),
+        "current": "weather_code,precipitation,wind_gusts_10m",
+        "hourly": "cape,lightning_potential",
+        "timezone": "UTC",
+        "forecast_days": 1,
     }
-    logger.info(
-        "Zones bulk : %d points × %d heures × %d variables rafraîchis",
-        len(points), len(times), len(ZONES_BULK_VARS),
-    )
-    return snap
-
-
-def _zb_hour_index(times: List[str]) -> int:
-    """Index de l'heure courante (UTC) dans le snapshot ; borné aux limites."""
-    if not times:
-        return 0
-    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:00")
-    for k, t in enumerate(times):
-        if t >= now_iso:
-            return k
-    return len(times) - 1
-
-
-def _zb_val(snap: Dict[str, Any], var: str, i: int, idx: int) -> float:
-    try:
-        v = snap["series"][var][i][idx]
-        return float(v) if v is not None else 0.0
-    except (IndexError, KeyError, TypeError, ValueError):
-        return 0.0
-
-
-def _zones_master_from_bulk(snap: Dict[str, Any]) -> Dict[str, Any]:
-    """Construit l'état des zones depuis le snapshot local (repli/watcher)."""
-    idx = _zb_hour_index(snap["times"])
-    zones: List[Dict[str, Any]] = []
-    for i, p in enumerate(snap["points"]):
-        cape = _zb_val(snap, "cape", i, idx)
-        lp = _zb_val(snap, "lightning_potential", i, idx)
-        precip = _zb_val(snap, "precipitation", i, idx)
-        gust = _zb_val(snap, "wind_gusts_10m", i, idx)
-        code = int(_zb_val(snap, "weather_code", i, idx))
-        is_thunder = code in THUNDERSTORM_CODES
-        severity = min(100, int((cape / 30.0) + (lp * 4) + (precip * 8) + (30 if is_thunder else 0)))
-        zones.append({
-            "lat": p["lat"], "lon": p["lon"], "weather_code": code,
-            "precipitation": precip, "wind_gust": gust, "cape": cape,
-            "lightning_potential": lp, "is_thunder": is_thunder, "severity": severity,
-        })
-    return {
-        "center": snap["center"],
-        "zones": zones,
-        "fetched_at": snap["fetched_at_iso"],
-        "source": "cache_local",
-    }
-
-
-async def _fetch_zones_live(lat: float, lon: float) -> Dict[str, Any]:
-    """Zones EN DIRECT (champ `current` + heure courante). Repli automatique
-    sur le snapshot local si Open-Meteo est indisponible."""
-    points = sampling_grid(lat, lon, MASTER_ZONE_RADIUS_KM, step_km=MASTER_ZONE_STEP_KM)
-    try:
-        responses: List[Dict[str, Any]] = []
-        for start in range(0, len(points), ZONE_CHUNK_SIZE):
-            chunk = points[start:start + ZONE_CHUNK_SIZE]
-            params = {
-                "latitude": ",".join(str(p["lat"]) for p in chunk),
-                "longitude": ",".join(str(p["lon"]) for p in chunk),
-                "current": "weather_code,precipitation,wind_gusts_10m",
-                "hourly": "cape,lightning_potential",
-                "timezone": "UTC",
-                "forecast_days": 1,
-            }
-            r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=30)
-            raw = r.json()
-            responses.extend(raw if isinstance(raw, list) else [raw])
-    except Exception as e:
-        logger.warning("Zones : direct indisponible (%s) — repli sur le cache local", type(e).__name__)
-        return _zones_master_from_bulk(await get_zones_bulk(lat, lon))
+    r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=20)
+    raw = r.json()
+    responses = raw if isinstance(raw, list) else [raw]
 
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:00")
     zones: List[Dict[str, Any]] = []
@@ -736,81 +572,35 @@ async def _fetch_zones_live(lat: float, lon: float) -> Dict[str, Any]:
         })
     return {
         "center": {"lat": lat, "lon": lon},
-        "zones": zones,
-        "fetched_at": datetime.now(timezone.utc).isoformat(),
-        "source": "live",
-    }
-
-
-def _filter_zones(master: Dict[str, Any], lat: float, lon: float, radius_km: float) -> Dict[str, Any]:
-    r = min(float(radius_km), MASTER_ZONE_RADIUS_KM)
-    zones = [z for z in master["zones"] if haversine_km(lat, lon, z["lat"], z["lon"]) <= r]
-    return {
-        "center": master["center"],
         "radius_km": radius_km,
         "zones": zones,
         "storm_active": any(z["is_thunder"] or z["severity"] >= 40 for z in zones),
         "max_cape": max((z["cape"] for z in zones), default=0),
         "max_lightning_potential": max((z["lightning_potential"] for z in zones), default=0),
-        "fetched_at": master["fetched_at"],
-        "source": master.get("source", "live"),
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+        "source": "live",
     }
 
 
-async def fetch_storm_zones(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM) -> Dict[str, Any]:
-    """Zones de la carte principale — DONNÉES EN DIRECT (règle : seule la page
-    Prévisions exploite le cache journalier ; le reste est live).
-    Cache anti-rafale 240 s ; repli cache local uniquement en cas de panne."""
-    master = await _cached(f"zones-live:{lat}:{lon}", 240.0, lambda: _fetch_zones_live(lat, lon))
-    return _filter_zones(master, lat, lon, radius_km)
-
-
-async def fetch_storm_zones_local(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM) -> Dict[str, Any]:
-    """Variante SANS appel réseau (snapshot local) — réservée au guetteur
-    d'alertes en arrière-plan pour ne rien consommer 24h/24."""
-    snap = await get_zones_bulk(lat, lon)
-    return _filter_zones(_zones_master_from_bulk(snap), lat, lon, radius_km)
-
-
 async def fetch_wind_grid(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM) -> Dict[str, Any]:
-    """Flèches de vent — données EN DIRECT (champ `current` Open-Meteo).
-
-    Le vent est activé ponctuellement par l'utilisateur : l'appel direct ne
-    pèse presque rien sur le quota (cache 10 min anti-spam). Si Open-Meteo
-    est indisponible (429/panne), repli automatique sur la découpe du
-    snapshot bulk local (donnée horaire prévue, marquée `source`)."""
-    return await _cached(f"wind:{lat}:{lon}:{radius_km}", 600.0, lambda: _fetch_wind_grid_live(lat, lon, radius_km))
-
-
-async def _fetch_wind_grid_live(lat: float, lon: float, radius_km: float) -> Dict[str, Any]:
-    r = min(float(radius_km), MASTER_ZONE_RADIUS_KM)
-    pts = [
-        p for p in sampling_grid(lat, lon, MASTER_ZONE_RADIUS_KM, step_km=MASTER_ZONE_STEP_KM)
-        if haversine_km(lat, lon, p["lat"], p["lon"]) <= r
-    ]
-    try:
-        responses: List[Dict[str, Any]] = []
-        for start in range(0, len(pts), ZONE_CHUNK_SIZE):
-            chunk = pts[start:start + ZONE_CHUNK_SIZE]
-            params = {
-                "latitude": ",".join(str(p["lat"]) for p in chunk),
-                "longitude": ",".join(str(p["lon"]) for p in chunk),
-                "current": "wind_speed_10m,wind_direction_10m,wind_gusts_10m",
-                "timezone": "UTC",
-                "forecast_days": 1,
-            }
-            resp = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=20)
-            raw = resp.json()
-            responses.extend(raw if isinstance(raw, list) else [raw])
-    except Exception as e:
-        logger.warning("Vent : direct indisponible (%s) — repli sur le cache local", type(e).__name__)
-        return await _wind_grid_from_bulk(lat, lon, radius_km)
+    """Flèches de vent — 9 points, 1 requête globale, temps réel pur."""
+    points = grid_9(lat, lon, radius_km)
+    params = {
+        "latitude": ",".join(str(p["lat"]) for p in points),
+        "longitude": ",".join(str(p["lon"]) for p in points),
+        "current": "wind_speed_10m,wind_direction_10m,wind_gusts_10m",
+        "timezone": "UTC",
+        "forecast_days": 1,
+    }
+    resp = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=20)
+    raw = resp.json()
+    responses = raw if isinstance(raw, list) else [raw]
 
     arrows: List[Dict[str, Any]] = []
     max_speed = 0.0
-    for i, resp in enumerate(responses):
-        p = pts[i] if i < len(pts) else {"lat": lat, "lon": lon}
-        cur = resp.get("current") or {}
+    for i, r in enumerate(responses):
+        p = points[i] if i < len(points) else {"lat": lat, "lon": lon}
+        cur = r.get("current") or {}
         speed = float(cur.get("wind_speed_10m") or 0)
         direction = float(cur.get("wind_direction_10m") or 0)
         gust = float(cur.get("wind_gusts_10m") or 0)
@@ -830,36 +620,4 @@ async def _fetch_wind_grid_live(lat: float, lon: float, radius_km: float) -> Dic
         "max_speed": round(max_speed, 1),
         "source": "live",
         "fetched_at": datetime.now(timezone.utc).isoformat(),
-    }
-
-
-async def _wind_grid_from_bulk(lat: float, lon: float, radius_km: float) -> Dict[str, Any]:
-    """Repli : découpe du snapshot bulk local (prévision horaire)."""
-    snap = await get_zones_bulk(lat, lon)
-    idx = _zb_hour_index(snap["times"])
-    r = min(float(radius_km), MASTER_ZONE_RADIUS_KM)
-    arrows: List[Dict[str, Any]] = []
-    max_speed = 0.0
-    for i, p in enumerate(snap["points"]):
-        if haversine_km(lat, lon, p["lat"], p["lon"]) > r:
-            continue
-        speed = _zb_val(snap, "wind_speed_10m", i, idx)
-        direction = _zb_val(snap, "wind_direction_10m", i, idx)
-        gust = _zb_val(snap, "wind_gusts_10m", i, idx)
-        arrows.append({
-            "lat": p["lat"],
-            "lon": p["lon"],
-            "speed": round(speed, 1),
-            "direction": round(direction, 0),
-            "gust": round(gust, 1),
-        })
-        if speed > max_speed:
-            max_speed = speed
-    return {
-        "center": snap["center"],
-        "radius_km": radius_km,
-        "arrows": arrows,
-        "max_speed": round(max_speed, 1),
-        "source": "cache_local",
-        "fetched_at": snap["fetched_at_iso"],
     }

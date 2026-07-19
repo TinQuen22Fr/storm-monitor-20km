@@ -23,7 +23,7 @@ from collections import deque
 from datetime import datetime, timezone
 from typing import Any, Deque, Dict, List, Optional, Tuple
 
-from weather import OPEN_METEO_BASE, _cached, get_with_retry, LOURDES_LAT, LOURDES_LON, get_zones_bulk
+from weather import OPEN_METEO_BASE, _cached, get_with_retry, LOURDES_LAT, LOURDES_LON
 
 logger = logging.getLogger(__name__)
 
@@ -565,12 +565,6 @@ async def bulk_refresher_loop() -> None:
             logger.info("Refresher : prévisions 48h Lourdes → dernière heure %s", last)
         except Exception as e:
             logger.warning("Refresher : échec prévisions 48h (%s)", type(e).__name__)
-        try:
-            snapz = await get_zones_bulk(LOURDES_LAT, LOURDES_LON)
-            agez = (time.time() - snapz.get("fetched_at", 0)) / 3600
-            logger.info("Refresher : bulk zones/vent OK (age %.1f h, %d points)", agez, len(snapz.get("points", [])))
-        except Exception as e:
-            logger.warning("Refresher : échec bulk zones/vent (%s)", type(e).__name__)
         await asyncio.sleep(1800)
 
 

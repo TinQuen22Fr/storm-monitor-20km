@@ -25,7 +25,6 @@ import * as push from "@/lib/push";
 import { setLocalTimezone, fmtLocal, fmtLocalTime } from "@/lib/timeFormat";
 import { useAuth } from "@/lib/auth";
 
-const REFRESH_MS = 120_000;
 const STRIKES_MS = 15_000;
 const STRIKES_WINDOW_S = 24 * 3600;
 const DISPLAY_WINDOW_S = 3600;
@@ -310,12 +309,13 @@ export default function Dashboard() {
   }, [center.lat, center.lon, center.name, radius, approach?.approaching, noZone]);
 
   useEffect(() => {
+    // Météo (zones Open-Meteo) : AUCUN polling automatique — chargement initial
+    // + bouton « Actualiser » uniquement. Les impacts Blitzortung restent en
+    // quasi temps réel (websocket local, 0 appel Open-Meteo).
     loadWeather();
     loadStrikes();
-    const wt = setInterval(loadWeather, REFRESH_MS);
     const st = setInterval(loadStrikes, STRIKES_MS);
     return () => {
-      clearInterval(wt);
       clearInterval(st);
     };
   }, [loadWeather, loadStrikes]);
@@ -355,11 +355,10 @@ export default function Dashboard() {
         return next;
       });
     };
+    // Chargement unique (pas de polling) — zones Open-Meteo 100 % à la demande
     fetchAll();
-    const t = setInterval(fetchAll, 30_000);
     return () => {
       cancel = true;
-      clearInterval(t);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overlayKey, center.lat, center.lon, radius]);

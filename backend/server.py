@@ -33,7 +33,6 @@ from weather import (
     fetch_history_days,
     fetch_storm_risk_forecast,
     fetch_storm_zones,
-    fetch_storm_zones_local,
     fetch_wind_grid,
 )
 import lightning as lightning_mod
@@ -1278,25 +1277,31 @@ _alerter_state = {
 
 
 async def _alert_watcher():
-    """Every 45s, check storm status + recent strikes inside 20km and fire push notifications on transitions."""
+    """Every 45s, check storm status + recent strikes inside 20km and fire push notifications on transitions.
+
+    Détection orage 100 % Blitzortung (0 appel Open-Meteo) : un orage est
+    considéré actif si ≥ 2 impacts réels dans le rayon sur les 15 dernières minutes."""
     while True:
         try:
             await asyncio.sleep(45)
-            # Watcher en arrière-plan : lit le snapshot LOCAL (0 appel API 24h/24)
-            zones = await fetch_storm_zones_local(LOURDES_LAT, LOURDES_LON, RADIUS_KM)
-            storm_now = bool(zones.get("storm_active"))
+            recent_strikes = await lightning_mod.store.recent(
+                LOURDES_LAT, LOURDES_LON, RADIUS_KM, since_ts=time.time() - 15 * 60
+            )
+            storm_now = len(recent_strikes) >= 2
             was_storm = _alerter_state["storm_active"]
             if storm_now and not was_storm:
+                closest_km = min(s["distance_km"] for s in recent_strikes)
+                body = f"{len(recent_strikes)} impacts de foudre détectés dans le rayon (le plus proche à {closest_km:.1f} km)."
                 await push_mod.send_to_all(
                     db,
                     title="Alerte orage · Lourdes",
-                    body=f"Activité orageuse détectée (CAPE {int(zones.get('max_cape') or 0)} J/kg).",
+                    body=body,
                     url="/",
                     tag="storm-active",
                 )
                 await webhooks_mod.dispatch(
                     title="Alerte orage · Lourdes",
-                    body=f"Activité orageuse détectée (CAPE {int(zones.get('max_cape') or 0)} J/kg).",
+                    body=body,
                     tag="storm-active",
                 )
             _alerter_state["storm_active"] = storm_now
