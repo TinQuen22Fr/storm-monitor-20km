@@ -240,6 +240,17 @@ systemctl enable --now mongod
 # ---------------------------------------------------------------------------
 mkdir -p /opt /var/www
 
+# --- 2-pre. Sauvegarde de proxies.json (config runtime admin, jamais versionnée) ---
+PROXIES_KEEP=""
+for cand in "$WORK_DIR/backend/proxies.json" "$APP_DIR/backend/proxies.json"; do
+  if [[ -s "$cand" ]] && python3 -c "import json,sys;d=json.load(open('$cand'));sys.exit(0 if isinstance(d,list) and len(d)>0 else 1)" 2>/dev/null; then
+    PROXIES_KEEP="$(mktemp /tmp/proxies.keep.XXXXXX)"
+    cp "$cand" "$PROXIES_KEEP"
+    echo "==> proxies.json : config sauvegardée depuis $cand"
+    break
+  fi
+done
+
 # --- 2a. WORK_DIR: clone OR pull ---
 if [[ -d "$WORK_DIR/.git" ]]; then
   echo "==> Existing clone detected at $WORK_DIR — pulling latest..."
@@ -301,6 +312,14 @@ if [[ ! -d "$WORK_DIR/backend" || ! -d "$WORK_DIR/frontend" ]]; then
   exit 1
 fi
 
+# --- 2-post. Restauration de proxies.json après clone/pull ---
+if [[ -n "$PROXIES_KEEP" && -s "$PROXIES_KEEP" ]]; then
+  cp "$PROXIES_KEEP" "$WORK_DIR/backend/proxies.json"
+  git -C "$WORK_DIR" rm -q --cached backend/proxies.json 2>/dev/null || true
+  rm -f "$PROXIES_KEEP"
+  echo "==> proxies.json restauré → $WORK_DIR/backend/proxies.json"
+fi
+
 # --- 2b. Sync WORK_DIR → APP_DIR (preserve runtime files) ---
 echo "==> Syncing $WORK_DIR → $APP_DIR (preserving .env, venv, data)..."
 mkdir -p "$APP_DIR"
@@ -320,6 +339,7 @@ rsync -a --delete \
   --exclude='.git' \
   --exclude='backend/.env' \
   --exclude='backend/.env.backups' \
+  --exclude='backend/.proxies.backups' \
   --exclude='backend/venv' \
   --exclude='backend/storm_data.json' \
   --exclude='backend/firebase-admin.json' \
