@@ -3,9 +3,6 @@ name: Build Android APK
 on:
   push:
     branches: [Version_With_Detector, main]
-    paths:
-      - "frontend/**"
-      - ".github/workflows/android-build.yml"
   workflow_dispatch:
 
 jobs:

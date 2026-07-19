@@ -133,6 +133,8 @@ L'utilisateur a finalisé lui-même la mise en production (install manuelle de f
 
 - **[2026-07-19] RÈGLE DÉFINITIVE cache vs live (utilisateur)** : le cache journalier = UNIQUEMENT page Prévisions + carte France. Tout le reste = DIRECT LIVE (zones carte via `_fetch_zones_live` chunked + _cached 240s, vent live 10 min, pluie RainViewer, foudre WS). Le snapshot bulk local ne sert plus que de : (1) repli en cas de panne Open-Meteo (`source: cache_local`), (2) source du guetteur d'alertes (`fetch_storm_zones_local`, 0 appel API 24h/24 — c'était lui le dévoreur de quota). Vérifié : zones et vent répondent `source: live`. PRÊT À PUSHER.
 
+- **[2026-07-19] Panne APK "plus de données" + APK non générée** : diagnostic — GitHub à jour (push 14:18) mais prod NON déployée (degraded:true, quota du jour épuisé par l'ancien code) ; l'APK n'y est pour rien. Fix workflow : suppression du filtre `paths: frontend/**` → chaque push déclenche désormais la build APK (+ rappel du déclenchement manuel Actions→Run workflow). Consigne donnée : Save to GitHub → upgrade.sh → reprise complète des données après le reset quota (~00h UTC), puis conso ~2k/j.
+
 ## 🟡 Backlog
 - **P1** — Valider le 1er run GitHub Actions Android + installer l'APK sur téléphone
 - **P2** — Remplacer l'icône générée par l'image personnelle de l'utilisateur (quand fournie)
