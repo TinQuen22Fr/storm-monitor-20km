@@ -401,6 +401,9 @@ print('RESEND_API_KEY=""')
 print('SENDER_EMAIL="Storm Monitoring <noreply@quentin-astro.fr>"')
 print('PUBLIC_APP_URL="https://storm-monitor.quentin-astro.fr"')
 print('ADMIN_EMAIL=""')
+# --- Xweather (Vaisala) — fallback météo si Open-Meteo est en panne/429 ---
+# Format : "<client_id>_<client_secret>" (token combiné, splitté au runtime)
+print('XWEATHER_COMBINED_TOKEN=""')
 PY
   chmod 600 .env
   deactivate
@@ -442,6 +445,7 @@ else
   ensure_env_var "TELEGRAM_CHAT_ID"     '""'
   ensure_env_var "WEBHOOK_APP_URL"      '"https://storm-monitor.quentin-astro.fr"'
   ensure_env_var "WEBHOOK_COOLDOWN_S"   '"900"'
+  ensure_env_var "XWEATHER_COMBINED_TOKEN" '""'
   chmod 600 "$ENV_FILE"
 fi
 

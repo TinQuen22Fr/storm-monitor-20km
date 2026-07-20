@@ -530,7 +530,8 @@ def grid_25(lat: float, lon: float, radius_km: float) -> List[Dict[str, float]]:
 
 
 async def fetch_storm_zones(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM) -> Dict[str, Any]:
-    """Zones de la carte principale — 25 points (5×5), 1 requête globale, temps réel pur."""
+    """Zones de la carte principale — 25 points (5×5), 1 requête globale, temps réel pur.
+    En cas d'échec Open-Meteo (429/timeout), bascule sur Xweather si configuré."""
     points = grid_25(lat, lon, radius_km)
     params = {
         "latitude": ",".join(str(p["lat"]) for p in points),
@@ -540,7 +541,14 @@ async def fetch_storm_zones(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, 
         "timezone": "UTC",
         "forecast_days": 1,
     }
-    r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=20)
+    try:
+        r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=20)
+    except Exception as exc:
+        from xweather import is_configured, fetch_zones_xweather
+        if is_configured():
+            logger.warning("Open-Meteo zones failed (%s) — falling back to Xweather", type(exc).__name__)
+            return await fetch_zones_xweather(points, lat, lon, radius_km)
+        raise
     raw = r.json()
     responses = raw if isinstance(raw, list) else [raw]
 
@@ -579,7 +587,8 @@ async def fetch_storm_zones(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, 
 
 
 async def fetch_wind_grid(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM) -> Dict[str, Any]:
-    """Flèches de vent — 25 points (5×5), 1 requête globale, temps réel pur."""
+    """Flèches de vent — 25 points (5×5), 1 requête globale, temps réel pur.
+    En cas d'échec Open-Meteo (429/timeout), bascule sur Xweather si configuré."""
     points = grid_25(lat, lon, radius_km)
     params = {
         "latitude": ",".join(str(p["lat"]) for p in points),
@@ -588,7 +597,14 @@ async def fetch_wind_grid(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, ra
         "timezone": "UTC",
         "forecast_days": 1,
     }
-    resp = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=20)
+    try:
+        resp = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=20)
+    except Exception as exc:
+        from xweather import is_configured, fetch_wind_xweather
+        if is_configured():
+            logger.warning("Open-Meteo wind failed (%s) — falling back to Xweather", type(exc).__name__)
+            return await fetch_wind_xweather(points, lat, lon, radius_km)
+        raise
     raw = resp.json()
     responses = raw if isinstance(raw, list) else [raw]
 
