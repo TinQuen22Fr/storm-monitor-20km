@@ -217,18 +217,18 @@ _TILE_TTL = 300.0
 _TILE_CACHE_MAX = 600
 
 
-async def fetch_radar_tile(z: int, x: int, y: int) -> bytes:
+async def fetch_radar_tile(z: int, x: int, y: int, offset: str = "current") -> bytes:
     """Proxy une tuile radar Xweather (clé cachée côté serveur), cache 5 min."""
     creds = _load_credentials()
     if creds is None:
         raise RuntimeError("Xweather credentials not configured (XWEATHER_COMBINED_TOKEN missing)")
-    key = f"{z}/{x}/{y}"
+    key = f"{z}/{x}/{y}/{offset}"
     now = asyncio.get_event_loop().time()
     hit = _TILE_CACHE.get(key)
     if hit and hit[0] > now:
         return hit[1]
     cid, secret = creds
-    url = f"https://maps.api.xweather.com/{cid}_{secret}/radar/{z}/{x}/{y}/current.png"
+    url = f"https://maps.api.xweather.com/{cid}_{secret}/radar/{z}/{x}/{y}/{offset}.png"
     async with httpx.AsyncClient(follow_redirects=True) as client:
         r = await client.get(url, timeout=15.0)
         r.raise_for_status()

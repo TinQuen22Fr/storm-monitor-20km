@@ -4,7 +4,18 @@ import { Activity, Cloud, CloudRain, Pause, Play, Radar, Wind } from "lucide-rea
 import { fmtLocalDate, fmtLocalTime } from "@/lib/timeFormat";
 import { API } from "@/lib/api";
 
-const XWEATHER_RADAR_URL = `${API}/xweather/radar/{z}/{x}/{y}.png`;
+const XWEATHER_RADAR_URL = `${API}/xweather/radar/{z}/{x}/{y}`;
+
+// Timeline radar Xweather : dernière heure, pas de 10 min (offsets AMP)
+const XWEATHER_OFFSETS = ["-50min", "-40min", "-30min", "-20min", "-10min", "current"];
+
+function xradarFrames() {
+  const nowSec = Math.floor(Date.now() / 1000);
+  return XWEATHER_OFFSETS.map((offset) => ({
+    offset,
+    time: offset === "current" ? nowSec : nowSec - parseInt(offset, 10) * -60,
+  }));
+}
 
 const RAINVIEWER_API = "https://api.rainviewer.com/public/weather-maps.json";
 const FRAME_DURATION_MS = 800;
@@ -79,7 +90,14 @@ export function useWeatherLayersState({ cursorTs = null, isLive = true } = {}) {
 
   const cloudsFrames = cloudFrames();
   const radarFrames = rvData?.radar?.past || [];
-  const activeFrames = showRain ? radarFrames : showClouds ? cloudsFrames : [];
+  const xwFrames = xradarFrames();
+  const activeFrames = showXRadar
+    ? xwFrames
+    : showRain
+    ? radarFrames
+    : showClouds
+    ? cloudsFrames
+    : [];
 
   useEffect(() => {
     // When a global timeline cursor is driving and not live, disable auto-play
@@ -87,7 +105,7 @@ export function useWeatherLayersState({ cursorTs = null, isLive = true } = {}) {
       clearInterval(tickRef.current);
       return;
     }
-    if (!playing || activeFrames.length === 0 || (!showRain && !showClouds)) {
+    if (!playing || activeFrames.length === 0 || (!showRain && !showClouds && !showXRadar)) {
       clearInterval(tickRef.current);
       return;
     }
@@ -95,7 +113,7 @@ export function useWeatherLayersState({ cursorTs = null, isLive = true } = {}) {
       setFrame((f) => (f + 1) % activeFrames.length);
     }, FRAME_DURATION_MS);
     return () => clearInterval(tickRef.current);
-  }, [playing, activeFrames.length, showRain, showClouds, isLive]);
+  }, [playing, activeFrames.length, showRain, showClouds, showXRadar, isLive]);
 
   // When cursor is set (non-live), snap frame to closest timestamp
   useEffect(() => {
@@ -114,7 +132,7 @@ export function useWeatherLayersState({ cursorTs = null, isLive = true } = {}) {
 
   useEffect(() => {
     if (activeFrames.length > 0 && isLive) setFrame(activeFrames.length - 1);
-  }, [showRain, showClouds, activeFrames.length, isLive]);
+  }, [showRain, showClouds, showXRadar, activeFrames.length, isLive]);
 
   const toggleClouds = () =>
     setShowClouds((v) => {
@@ -149,9 +167,9 @@ export function useWeatherLayersState({ cursorTs = null, isLive = true } = {}) {
   const currentFrame = activeFrames[frame];
   let url = null;
   let frameLabel = null;
-  if (showXRadar) {
-    url = XWEATHER_RADAR_URL;
-    frameLabel = "temps réel";
+  if (showXRadar && currentFrame) {
+    url = `${XWEATHER_RADAR_URL}/${currentFrame.offset}.png`;
+    frameLabel = currentFrame.offset === "current" ? "temps réel" : fmtLocalTime(currentFrame.time);
   } else if (showRain && currentFrame && rvData) {
     url = buildRadarUrl(rvData.host, currentFrame.path);
     frameLabel = fmtLocalTime(currentFrame.time);
@@ -315,7 +333,7 @@ export function WeatherLayersPanel({
         </button>
       </div>
 
-      {(showClouds || showRain) && activeFrames.length > 0 && (
+      {(showClouds || showRain || showXRadar) && activeFrames.length > 0 && (
         <div className="border-t border-slate-200 px-4 py-3 flex items-center gap-3">
           <button
             onClick={() => setPlaying((p) => !p)}
@@ -350,7 +368,7 @@ export function WeatherLayersPanel({
             : showRain
             ? "Source · RainViewer radar"
             : showXRadar
-            ? "Source · Xweather radar · temps réel"
+            ? "Source · Xweather radar · dernière heure"
             : "Source · Open-Meteo vent"}
         </div>
       )}
