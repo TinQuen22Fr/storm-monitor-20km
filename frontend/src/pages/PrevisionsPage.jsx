@@ -4,6 +4,7 @@ import { Loader2, RefreshCw, TrendingUp, Wind } from "lucide-react";
 import NavTabs from "@/components/NavTabs";
 import FranceMapPanel from "@/components/FranceMapPanel";
 import VerticalProfileChart from "@/components/VerticalProfileChart";
+import AirQualityCard from "@/components/AirQualityCard";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { useAuth } from "@/lib/auth";
 import { getSevere, listFavorites, LOURDES } from "@/lib/api";
@@ -365,6 +366,19 @@ export default function PrevisionsPage() {
           <div className="mt-6">
             <ErrorBoundary label="Erreur lors du rendu du profil vertical.">
               <VerticalProfileChart
+                lat={activeZone.lat}
+                lon={activeZone.lon}
+                name={activeZone.name}
+              />
+            </ErrorBoundary>
+          </div>
+        )}
+
+        {/* Qualité de l'air (Xweather) pour la zone active */}
+        {activeZone && (
+          <div className="mt-6">
+            <ErrorBoundary label="Erreur lors du rendu de la qualité de l'air.">
+              <AirQualityCard
                 lat={activeZone.lat}
                 lon={activeZone.lon}
                 name={activeZone.name}

@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { TileLayer, useMap } from "react-leaflet";
-import { Activity, Cloud, CloudRain, Pause, Play, Wind } from "lucide-react";
+import { Activity, Cloud, CloudRain, Pause, Play, Radar, Wind } from "lucide-react";
 import { fmtLocalDate, fmtLocalTime } from "@/lib/timeFormat";
+import { API } from "@/lib/api";
+
+const XWEATHER_RADAR_URL = `${API}/xweather/radar/{z}/{x}/{y}.png`;
 
 const RAINVIEWER_API = "https://api.rainviewer.com/public/weather-maps.json";
 const FRAME_DURATION_MS = 800;
@@ -49,6 +52,7 @@ export function useWeatherLayersState({ cursorTs = null, isLive = true } = {}) {
   const [rvData, setRvData] = useState(null);
   const [showClouds, setShowClouds] = useState(false);
   const [showRain, setShowRain] = useState(false);
+  const [showXRadar, setShowXRadar] = useState(false);
   const [showWind, setShowWind] = useState(false);
   const [showTrajectory, setShowTrajectory] = useState(true);
   const [windMaxSpeed, setWindMaxSpeed] = useState(null);
@@ -115,13 +119,28 @@ export function useWeatherLayersState({ cursorTs = null, isLive = true } = {}) {
   const toggleClouds = () =>
     setShowClouds((v) => {
       const next = !v;
-      if (next) setShowRain(false);
+      if (next) {
+        setShowRain(false);
+        setShowXRadar(false);
+      }
       return next;
     });
   const toggleRain = () =>
     setShowRain((v) => {
       const next = !v;
-      if (next) setShowClouds(false);
+      if (next) {
+        setShowClouds(false);
+        setShowXRadar(false);
+      }
+      return next;
+    });
+  const toggleXRadar = () =>
+    setShowXRadar((v) => {
+      const next = !v;
+      if (next) {
+        setShowClouds(false);
+        setShowRain(false);
+      }
       return next;
     });
   const toggleWind = () => setShowWind((v) => !v);
@@ -130,7 +149,10 @@ export function useWeatherLayersState({ cursorTs = null, isLive = true } = {}) {
   const currentFrame = activeFrames[frame];
   let url = null;
   let frameLabel = null;
-  if (showRain && currentFrame && rvData) {
+  if (showXRadar) {
+    url = XWEATHER_RADAR_URL;
+    frameLabel = "temps réel";
+  } else if (showRain && currentFrame && rvData) {
     url = buildRadarUrl(rvData.host, currentFrame.path);
     frameLabel = fmtLocalTime(currentFrame.time);
   } else if (showClouds && currentFrame) {
@@ -146,10 +168,12 @@ export function useWeatherLayersState({ cursorTs = null, isLive = true } = {}) {
     url,
     showClouds,
     showRain,
+    showXRadar,
     showWind,
     showTrajectory,
     toggleClouds,
     toggleRain,
+    toggleXRadar,
     toggleWind,
     toggleTrajectory,
     windMaxSpeed,
@@ -163,7 +187,7 @@ export function useWeatherLayersState({ cursorTs = null, isLive = true } = {}) {
   };
 }
 
-export function WeatherTileLayer({ url, showClouds, showRain }) {
+export function WeatherTileLayer({ url, showClouds, showRain, showXRadar }) {
   const map = useMap();
   useEffect(() => {
     if (map.getPane("weatherPane")) return;
@@ -180,7 +204,7 @@ export function WeatherTileLayer({ url, showClouds, showRain }) {
       opacity={showClouds ? 0.55 : 0.75}
       tileSize={256}
       pane="weatherPane"
-      maxNativeZoom={showRain ? 7 : 9}
+      maxNativeZoom={showXRadar ? 12 : showRain ? 7 : 9}
       maxZoom={20}
       noWrap
     />
@@ -190,10 +214,12 @@ export function WeatherTileLayer({ url, showClouds, showRain }) {
 export function WeatherLayersPanel({
   showClouds,
   showRain,
+  showXRadar,
   showWind,
   showTrajectory,
   toggleClouds,
   toggleRain,
+  toggleXRadar,
   toggleWind,
   toggleTrajectory,
   windMaxSpeed,
@@ -242,6 +268,19 @@ export function WeatherLayersPanel({
         >
           <CloudRain className="w-4 h-4" strokeWidth={1.8} />
           Pluie
+        </button>
+        <button
+          onClick={toggleXRadar}
+          className={`flex-1 flex items-center justify-center gap-2 px-3 h-11 border-r border-slate-200 transition-colors font-mono text-[10px] uppercase tracking-[0.2em] ${
+            showXRadar
+              ? "bg-slate-900 text-white"
+              : "bg-white text-slate-700 hover:text-slate-900"
+          }`}
+          data-testid="toggle-xradar"
+          title="Radar précipitations haute résolution (Xweather)"
+        >
+          <Radar className="w-4 h-4" strokeWidth={1.8} />
+          Radar X
         </button>
         <button
           onClick={toggleWind}
@@ -304,12 +343,14 @@ export function WeatherLayersPanel({
         </div>
       )}
 
-      {(showClouds || showRain || showWind) && (
+      {(showClouds || showRain || showXRadar || showWind) && (
         <div className="border-t border-slate-200 px-4 py-2 font-mono text-[9px] uppercase tracking-[0.2em] text-slate-400">
           {showClouds
             ? "Source · NASA MODIS Terra"
             : showRain
             ? "Source · RainViewer radar"
+            : showXRadar
+            ? "Source · Xweather radar · temps réel"
             : "Source · Open-Meteo vent"}
         </div>
       )}

@@ -408,6 +408,35 @@ async def weather_wind_grid(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, 
         return _degraded("wind", e)
 
 
+@api_router.get("/airquality")
+async def airquality(lat: float = LOURDES_LAT, lon: float = LOURDES_LON):
+    """Indice qualité de l'air (Xweather) — cache serveur 30 min."""
+    import xweather
+    if not xweather.is_configured():
+        raise HTTPException(status_code=503, detail="Xweather non configuré")
+    try:
+        return await xweather.fetch_airquality(lat, lon)
+    except Exception as e:
+        logger.warning("airquality fetch failed: %s", e)
+        raise HTTPException(status_code=502, detail="Erreur Xweather airquality")
+
+
+@api_router.get("/xweather/radar/{z}/{x}/{y}.png")
+async def xweather_radar_tile(z: int, x: int, y: int):
+    """Proxy tuiles radar Xweather (clé masquée) — cache serveur 5 min."""
+    import xweather
+    if not xweather.is_configured():
+        raise HTTPException(status_code=503, detail="Xweather non configuré")
+    if not (3 <= z <= 12):
+        raise HTTPException(status_code=400, detail="Zoom hors limites (3-12)")
+    try:
+        content = await xweather.fetch_radar_tile(z, x, y)
+    except Exception as e:
+        logger.warning("xweather tile %s/%s/%s failed: %s", z, x, y, e)
+        raise HTTPException(status_code=502, detail="Erreur tuile Xweather")
+    return Response(content=content, media_type="image/png", headers={"Cache-Control": "public, max-age=300"})
+
+
 @api_router.get("/weather/severe")
 async def weather_severe(
     lat: float = LOURDES_LAT,

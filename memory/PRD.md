@@ -149,10 +149,12 @@ L'utilisateur a finalisé lui-même la mise en production (install manuelle de f
 
 - **[2026-06 session courante] Fallback Xweather (Vaisala) OPÉRATIONNEL (PRÊT À PUSHER)** : `backend/xweather.py` (client fallback `/forecasts/{lat},{lon}` filter=1hr, token combiné `XWEATHER_COMBINED_TOKEN` splitté en client_id/client_secret au runtime) + try/except dans `weather.py` (`fetch_storm_zones` L544, `fetch_wind_grid` L600) : toute exception Open-Meteo (429/timeout/ConnectError) → bascule Xweather si configuré, même schéma JSON, `source: "xweather-fallback"`. Testé : simulation panne Open-Meteo → 25 zones + 25 flèches via Xweather OK ; chemin normal `source: live` intact. `install.sh` : `XWEATHER_COMBINED_TOKEN=""` ajouté au template .env premier install ET à `ensure_env_var` (préservé aux upgrades). Le faux-négatif précédent (`is_configured()` False) venait du script de test sans `load_dotenv()` — le code prod était correct.
 
+- **[2026-06 session courante] Qualité de l'air + Radar X (Xweather) (PRÊT À PUSHER)** : (1) `GET /api/airquality?lat&lon` — AQI US EPA via Xweather `/airquality`, cache serveur 30 min, catégorie traduite FR ; carte `AirQualityCard.jsx` (data-testid `airquality-card`) sur /previsions sous le profil vertical : badge AQI coloré, polluant dominant marqué ◂, barres par polluant (O3, PM2.5, PM10, CO, NO2, SO2). (2) `GET /api/xweather/radar/{z}/{x}/{y}.png` — proxy tuiles radar Xweather (clé masquée serveur), cache mémoire 5 min (max 600 tuiles), zoom limité 3-12 ; nouveau toggle « Radar X » (data-testid `toggle-xradar`) dans le panneau couches de la carte principale, exclusif avec Nuages/Pluie, zéro conso quota tant que désactivé. RainViewer (« Pluie ») conservé tel quel. Testé : AQ live (AQI 55 modérée), tuiles 200 via proxy, zoom 13 → 400, toggle UI vérifié par screenshot.
+
 ## 🟡 Backlog
 - **P1** — Sécurité (EN PAUSE demande user) : injection Mongo unsubscribe, endpoints test publics, rate-limit subscribe, admin email exposé dans /api/health
-- **P2** — Xweather étendu : qualité de l'air (/airquality/), cartes vent raster (MapsGL) page prévisions
-- **P2** — Alertes personnalisées par utilisateur (rayon/seuils) ; partage bulletin (WhatsApp/lien)
+- **P2** — Partage bulletin (WhatsApp/lien direct) — reporté par l'utilisateur (« on verra plus tard »)
+- **P2** — Alertes personnalisées par utilisateur (rayon/seuils)
 - **P1** — Valider le 1er run GitHub Actions Android + installer l'APK sur téléphone
 - **P2** — Remplacer l'icône générée par l'image personnelle de l'utilisateur (quand fournie)
 - **P2** — Réseau collaboratif : permettre aux users de contribuer des données au réseau d'orage

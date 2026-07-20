@@ -148,6 +148,99 @@ async def fetch_zones_xweather(
     }
 
 
+# ---------- Qualité de l'air (cache 30 min) ----------
+_AQ_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+_AQ_TTL = 1800.0
+
+_AQ_CATEGORY_FR = {
+    "good": "Bonne",
+    "moderate": "Modérée",
+    "usg": "Sensible",
+    "unhealthy": "Mauvaise",
+    "very unhealthy": "Très mauvaise",
+    "hazardous": "Dangereuse",
+}
+
+
+async def fetch_airquality(lat: float, lon: float) -> Dict[str, Any]:
+    """AQI Xweather pour un point, avec cache mémoire 30 min."""
+    creds = _load_credentials()
+    if creds is None:
+        raise RuntimeError("Xweather credentials not configured (XWEATHER_COMBINED_TOKEN missing)")
+    key = f"{round(lat, 3)},{round(lon, 3)}"
+    now = asyncio.get_event_loop().time()
+    hit = _AQ_CACHE.get(key)
+    if hit and hit[0] > now:
+        return hit[1]
+    cid, secret = creds
+    async with httpx.AsyncClient() as client:
+        r = await client.get(
+            f"{XWEATHER_BASE}/airquality/{lat},{lon}",
+            params={"client_id": cid, "client_secret": secret},
+            timeout=15.0,
+        )
+        r.raise_for_status()
+        data = r.json()
+    if not data.get("success"):
+        raise RuntimeError(f"Xweather airquality error: {data.get('error')}")
+    period = (data.get("response") or [{}])[0].get("periods", [{}])[0]
+    category = str(period.get("category") or "")
+    result = {
+        "lat": lat,
+        "lon": lon,
+        "aqi": period.get("aqi"),
+        "category": category,
+        "category_fr": _AQ_CATEGORY_FR.get(category.lower(), category),
+        "color": period.get("color"),
+        "dominant": period.get("dominant"),
+        "pollutants": [
+            {
+                "type": p.get("type"),
+                "name": p.get("name"),
+                "aqi": p.get("aqi"),
+                "category": p.get("category"),
+                "valueUGM3": p.get("valueUGM3"),
+            }
+            for p in (period.get("pollutants") or [])
+        ],
+        "timestamp": period.get("timestamp"),
+        "source": "xweather",
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _AQ_CACHE[key] = (now + _AQ_TTL, result)
+    return result
+
+
+# ---------- Tuiles radar (proxy + cache 5 min) ----------
+_TILE_CACHE: Dict[str, Tuple[float, bytes]] = {}
+_TILE_TTL = 300.0
+_TILE_CACHE_MAX = 600
+
+
+async def fetch_radar_tile(z: int, x: int, y: int) -> bytes:
+    """Proxy une tuile radar Xweather (clé cachée côté serveur), cache 5 min."""
+    creds = _load_credentials()
+    if creds is None:
+        raise RuntimeError("Xweather credentials not configured (XWEATHER_COMBINED_TOKEN missing)")
+    key = f"{z}/{x}/{y}"
+    now = asyncio.get_event_loop().time()
+    hit = _TILE_CACHE.get(key)
+    if hit and hit[0] > now:
+        return hit[1]
+    cid, secret = creds
+    url = f"https://maps.api.xweather.com/{cid}_{secret}/radar/{z}/{x}/{y}/current.png"
+    async with httpx.AsyncClient(follow_redirects=True) as client:
+        r = await client.get(url, timeout=15.0)
+        r.raise_for_status()
+        content = r.content
+    if len(_TILE_CACHE) >= _TILE_CACHE_MAX:
+        oldest = sorted(_TILE_CACHE.items(), key=lambda kv: kv[1][0])[: _TILE_CACHE_MAX // 2]
+        for k, _ in oldest:
+            _TILE_CACHE.pop(k, None)
+    _TILE_CACHE[key] = (now + _TILE_TTL, content)
+    return content
+
+
 async def fetch_wind_xweather(
     points: List[Dict[str, float]],
     center_lat: float,

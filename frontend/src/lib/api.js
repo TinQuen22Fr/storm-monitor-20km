@@ -31,6 +31,9 @@ export const getStrikes = (lat = LOURDES.lat, lon = LOURDES.lon, radius_km = LOU
 export const getSevere = (lat = LOURDES.lat, lon = LOURDES.lon, hours = 24, radius_km = LOURDES.radius) =>
   api.get("/weather/severe", { params: { lat, lon, hours, radius_km } }).then((r) => r.data);
 
+export const getAirQuality = (lat = LOURDES.lat, lon = LOURDES.lon) =>
+  api.get("/airquality", { params: { lat, lon } }).then((r) => r.data);
+
 export const getSevereGrid = (param = "t850", hour = 0) =>
   api.get("/weather/severe/grid", { params: { param, hour } }).then((r) => r.data);
 
