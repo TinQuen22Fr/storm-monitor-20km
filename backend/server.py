@@ -421,7 +421,7 @@ async def airquality(lat: float = LOURDES_LAT, lon: float = LOURDES_LON):
         raise HTTPException(status_code=502, detail="Erreur Xweather airquality")
 
 
-_XW_OFFSETS = {"current", "-10min", "-20min", "-30min", "-40min", "-50min"}
+_XW_OFFSETS = {"current", "-10min", "-20min", "-30min", "-40min", "-50min", "+10min", "+20min", "+30min"}
 
 
 @api_router.get("/xweather/radar/{z}/{x}/{y}/{offset}.png")

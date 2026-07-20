@@ -153,6 +153,8 @@ L'utilisateur a finalisé lui-même la mise en production (install manuelle de f
 
 - **[2026-06 session courante] Animation timeline Radar X (PRÊT À PUSHER)** : le toggle « Radar X » a désormais la même timeline animée que RainViewer — 6 images sur la dernière heure (offsets AMP `-50min` → `current`, pas de 10 min), slider + bouton play/pause réutilisés, label heure locale (« temps réel » sur l'image courante). Route élargie `GET /api/xweather/radar/{z}/{x}/{y}/{offset}.png` avec whitelist d'offsets (hors liste → 400), cache tuiles clé z/x/y/offset. Testé : 3 offsets 200 via proxy, -60min/invalide → 400, slider max=5, animation vérifiée par screenshot (frame 0→3 en lecture).
 
+- **[2026-06 session courante] Prévision radar +10→+30 min (PRÊT À PUSHER)** : timeline Radar X étendue à 9 frames (-50 min → +30 min, pas de 10 min). Offsets futurs (`+10min/+20min/+30min`) routés côté backend vers la couche Xweather `fradar` (radar prévisionnel), passé/présent sur `radar` observé. Curseur initial calé sur « temps réel » (index 5) et non plus la dernière frame ; labels futurs « +10 min ▸ » ; source « -50 min → +30 min (prévision) ». Testé : +10/+20/+30 → 200 via proxy, +40min → 400, UI vérifiée par screenshot (slider max=8, init=5).
+
 ## 🟡 Backlog
 - **P1** — Sécurité (EN PAUSE demande user) : injection Mongo unsubscribe, endpoints test publics, rate-limit subscribe, admin email exposé dans /api/health
 - **P2** — Partage bulletin (WhatsApp/lien direct) — reporté par l'utilisateur (« on verra plus tard »)

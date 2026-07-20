@@ -6,14 +6,16 @@ import { API } from "@/lib/api";
 
 const XWEATHER_RADAR_URL = `${API}/xweather/radar/{z}/{x}/{y}`;
 
-// Timeline radar Xweather : dernière heure, pas de 10 min (offsets AMP)
-const XWEATHER_OFFSETS = ["-50min", "-40min", "-30min", "-20min", "-10min", "current"];
+// Timeline radar Xweather : -50 min → +30 min, pas de 10 min
+// (passé/présent = couche radar observée, futur = fradar prévisionnel)
+const XWEATHER_OFFSETS = ["-50min", "-40min", "-30min", "-20min", "-10min", "current", "+10min", "+20min", "+30min"];
 
 function xradarFrames() {
   const nowSec = Math.floor(Date.now() / 1000);
   return XWEATHER_OFFSETS.map((offset) => ({
     offset,
-    time: offset === "current" ? nowSec : nowSec - parseInt(offset, 10) * -60,
+    future: offset.startsWith("+"),
+    time: offset === "current" ? nowSec : nowSec + parseInt(offset, 10) * 60,
   }));
 }
 
@@ -131,7 +133,9 @@ export function useWeatherLayersState({ cursorTs = null, isLive = true } = {}) {
   }, [cursorTs, isLive, activeFrames]);
 
   useEffect(() => {
-    if (activeFrames.length > 0 && isLive) setFrame(activeFrames.length - 1);
+    if (activeFrames.length > 0 && isLive) {
+      setFrame(showXRadar ? XWEATHER_OFFSETS.indexOf("current") : activeFrames.length - 1);
+    }
   }, [showRain, showClouds, showXRadar, activeFrames.length, isLive]);
 
   const toggleClouds = () =>
@@ -169,7 +173,12 @@ export function useWeatherLayersState({ cursorTs = null, isLive = true } = {}) {
   let frameLabel = null;
   if (showXRadar && currentFrame) {
     url = `${XWEATHER_RADAR_URL}/${currentFrame.offset}.png`;
-    frameLabel = currentFrame.offset === "current" ? "temps réel" : fmtLocalTime(currentFrame.time);
+    frameLabel =
+      currentFrame.offset === "current"
+        ? "temps réel"
+        : currentFrame.future
+        ? `${currentFrame.offset.replace("min", " min")} ▸`
+        : fmtLocalTime(currentFrame.time);
   } else if (showRain && currentFrame && rvData) {
     url = buildRadarUrl(rvData.host, currentFrame.path);
     frameLabel = fmtLocalTime(currentFrame.time);
@@ -368,7 +377,7 @@ export function WeatherLayersPanel({
             : showRain
             ? "Source · RainViewer radar"
             : showXRadar
-            ? "Source · Xweather radar · dernière heure"
+            ? "Source · Xweather radar · -50 min → +30 min (prévision)"
             : "Source · Open-Meteo vent"}
         </div>
       )}

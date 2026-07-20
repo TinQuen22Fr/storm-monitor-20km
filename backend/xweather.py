@@ -228,7 +228,8 @@ async def fetch_radar_tile(z: int, x: int, y: int, offset: str = "current") -> b
     if hit and hit[0] > now:
         return hit[1]
     cid, secret = creds
-    url = f"https://maps.api.xweather.com/{cid}_{secret}/radar/{z}/{x}/{y}/{offset}.png"
+    layer = "fradar" if offset.startswith("+") else "radar"
+    url = f"https://maps.api.xweather.com/{cid}_{secret}/{layer}/{z}/{x}/{y}/{offset}.png"
     async with httpx.AsyncClient(follow_redirects=True) as client:
         r = await client.get(url, timeout=15.0)
         r.raise_for_status()
