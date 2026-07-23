@@ -1,11 +1,11 @@
+/* IBM Plex Mono via Google Fonts — @import DOIT précéder toute autre règle
+   (sinon ignoré par les navigateurs, warning Vite/PostCSS au build).
+   Cabinet Grotesk + Outfit restent self-hosted via /public/fonts/fonts.css. */
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* Cabinet Grotesk + Outfit are self-hosted via /public/fonts/fonts.css
-   linked from index.html (CRA-native pattern). IBM Plex Mono stays on
-   Google Fonts (no third-party cookies, no SameSite warning). */
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap");
 
 :root {
   --font-heading: "Cabinet Grotesk", "Outfit", system-ui, sans-serif;
