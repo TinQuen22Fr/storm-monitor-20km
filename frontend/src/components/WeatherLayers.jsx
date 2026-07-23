@@ -269,10 +269,10 @@ export function WeatherLayersPanel({
       }`}
       data-testid="weather-layers-panel"
     >
-      <div className="flex">
+      <div className={`flex ${isMobile ? "flex-wrap" : ""}`}>
         <button
           onClick={toggleClouds}
-          className={`flex-1 flex items-center justify-center gap-2 px-3 h-11 border-r border-slate-200 transition-colors font-mono text-[10px] uppercase tracking-[0.2em] ${
+          className={`${isMobile ? "basis-1/3 grow border-b" : "flex-1"} flex items-center justify-center gap-2 px-3 h-11 border-r border-slate-200 transition-colors font-mono text-[10px] uppercase tracking-[0.2em] ${
             showClouds
               ? "bg-slate-900 text-white"
               : "bg-white text-slate-700 hover:text-slate-900"
@@ -285,7 +285,7 @@ export function WeatherLayersPanel({
         </button>
         <button
           onClick={toggleRain}
-          className={`flex-1 flex items-center justify-center gap-2 px-3 h-11 border-r border-slate-200 transition-colors font-mono text-[10px] uppercase tracking-[0.2em] ${
+          className={`${isMobile ? "basis-1/3 grow border-b" : "flex-1"} flex items-center justify-center gap-2 px-3 h-11 border-r border-slate-200 transition-colors font-mono text-[10px] uppercase tracking-[0.2em] ${
             showRain
               ? "bg-slate-900 text-white"
               : "bg-white text-slate-700 hover:text-slate-900"
@@ -298,7 +298,7 @@ export function WeatherLayersPanel({
         </button>
         <button
           onClick={toggleXRadar}
-          className={`flex-1 flex items-center justify-center gap-2 px-3 h-11 border-r border-slate-200 transition-colors font-mono text-[10px] uppercase tracking-[0.2em] ${
+          className={`${isMobile ? "basis-1/3 grow border-b" : "flex-1"} flex items-center justify-center gap-2 px-3 h-11 border-r border-slate-200 transition-colors font-mono text-[10px] uppercase tracking-[0.2em] ${
             showXRadar
               ? "bg-slate-900 text-white"
               : "bg-white text-slate-700 hover:text-slate-900"
@@ -311,7 +311,7 @@ export function WeatherLayersPanel({
         </button>
         <button
           onClick={toggleWind}
-          className={`flex-1 flex items-center justify-center gap-2 px-3 h-11 border-r border-slate-200 transition-colors font-mono text-[10px] uppercase tracking-[0.2em] ${
+          className={`${isMobile ? "basis-1/3 grow border-b" : "flex-1"} flex items-center justify-center gap-2 px-3 h-11 border-r border-slate-200 transition-colors font-mono text-[10px] uppercase tracking-[0.2em] ${
             showWind
               ? "bg-slate-900 text-white"
               : "bg-white text-slate-700 hover:text-slate-900"
@@ -329,7 +329,7 @@ export function WeatherLayersPanel({
         </button>
         <button
           onClick={toggleTrajectory}
-          className={`flex-1 flex items-center justify-center gap-2 px-3 h-11 transition-colors font-mono text-[10px] uppercase tracking-[0.2em] ${
+          className={`${isMobile ? "basis-1/3 grow border-b border-slate-200" : "flex-1"} flex items-center justify-center gap-2 px-3 h-11 transition-colors font-mono text-[10px] uppercase tracking-[0.2em] ${
             showTrajectory
               ? "bg-red-600 text-white"
               : "bg-white text-slate-700 hover:text-slate-900"
@@ -377,7 +377,7 @@ export function WeatherLayersPanel({
             : showRain
             ? "Source · RainViewer radar"
             : showXRadar
-            ? "Source · Xweather radar · -50 min → +30 min (prévision)"
+            ? "Source · Xweather radar-global · -50 min → +30 min (prévision)"
             : "Source · Open-Meteo vent"}
         </div>
       )}
