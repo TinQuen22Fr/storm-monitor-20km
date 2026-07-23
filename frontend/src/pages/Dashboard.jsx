@@ -10,6 +10,7 @@ import VigilanceBanner from "@/components/VigilanceBanner";
 import NightStormMode from "@/components/NightStormMode";
 import NavTabs from "@/components/NavTabs";
 import CurrentConditions from "@/components/CurrentConditions";
+import RainNowcastBadge from "@/components/RainNowcastBadge";
 import CapeGauge from "@/components/CapeGauge";
 import HistoryChart from "@/components/HistoryChart";
 import HistoryDaysChart from "@/components/HistoryDaysChart";
@@ -823,6 +824,9 @@ export default function Dashboard() {
 
         <div className="px-6 py-6 space-y-6 flex-1 shrink-0">
           <div className={noZone ? "opacity-40 pointer-events-none select-none" : ""} aria-hidden={noZone}>
+            <div className="mb-4">
+              <RainNowcastBadge lat={center.lat} lon={center.lon} />
+            </div>
             <div>
               <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400 mb-3">
                 Conditions actuelles

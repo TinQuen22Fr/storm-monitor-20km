@@ -31,6 +31,7 @@ from weather import (
     fetch_forecast,
     fetch_history_24h,
     fetch_history_days,
+    fetch_rain_nowcast,
     fetch_storm_risk_forecast,
     fetch_storm_zones,
     fetch_wind_grid,
@@ -419,6 +420,16 @@ async def airquality(lat: float = LOURDES_LAT, lon: float = LOURDES_LON):
     except Exception as e:
         logger.warning("airquality fetch failed: %s", e)
         raise HTTPException(status_code=502, detail="Erreur Xweather airquality")
+
+
+@api_router.get("/weather/rain-nowcast")
+async def weather_rain_nowcast(lat: float = LOURDES_LAT, lon: float = LOURDES_LON):
+    """Pluie imminente (minutely_15 AROME) — 1 point, indicateur dashboard."""
+    try:
+        return await fetch_rain_nowcast(lat, lon)
+    except Exception as e:
+        logger.warning("rain-nowcast failed: %s", e)
+        raise HTTPException(status_code=502, detail="Erreur prévision pluie imminente")
 
 
 @api_router.get("/weather/severe")

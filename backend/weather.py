@@ -633,3 +633,37 @@ async def fetch_wind_grid(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, ra
         "source": "live",
         "fetched_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+async def fetch_rain_nowcast(lat: float = LOURDES_LAT, lon: float = LOURDES_LON) -> Dict[str, Any]:
+    """Prévision pluie imminente — Open-Meteo minutely_15 (AROME 1,5 km), 1 point, 8 pas (2 h)."""
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "minutely_15": "precipitation",
+        "forecast_minutely_15": 8,
+        "timezone": "UTC",
+    }
+    r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=15)
+    raw = r.json()
+    m = raw.get("minutely_15") or {}
+    times = m.get("time") or []
+    precs = m.get("precipitation") or []
+    now = datetime.now(timezone.utc)
+    slots = []
+    for t, p in zip(times, precs):
+        start = datetime.fromisoformat(t).replace(tzinfo=timezone.utc)
+        minutes = (start - now).total_seconds() / 60.0
+        slots.append({"time": t, "in_minutes": round(minutes), "precipitation": float(p or 0)})
+    raining_now = any(s["precipitation"] > 0.05 and s["in_minutes"] <= 0 < s["in_minutes"] + 15 for s in slots)
+    next_rain = next((s for s in slots if s["in_minutes"] > 0 and s["precipitation"] > 0.05), None)
+    return {
+        "lat": lat,
+        "lon": lon,
+        "raining_now": raining_now,
+        "next_rain_minutes": next_rain["in_minutes"] if next_rain else None,
+        "next_rain_mm": next_rain["precipitation"] if next_rain else None,
+        "slots": slots,
+        "source": "open-meteo-minutely15",
+        "fetched_at": now.isoformat(),
+    }
