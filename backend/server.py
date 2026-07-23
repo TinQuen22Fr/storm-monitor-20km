@@ -421,27 +421,6 @@ async def airquality(lat: float = LOURDES_LAT, lon: float = LOURDES_LON):
         raise HTTPException(status_code=502, detail="Erreur Xweather airquality")
 
 
-_XW_OFFSETS = {"current", "-10min", "-20min", "-30min", "-40min", "-50min", "+10min", "+20min", "+30min"}
-
-
-@api_router.get("/xweather/radar/{z}/{x}/{y}/{offset}.png")
-async def xweather_radar_tile(z: int, x: int, y: int, offset: str = "current"):
-    """Proxy tuiles radar Xweather (clé masquée) — cache serveur 5 min. Offset temporel pour l'animation."""
-    import xweather
-    if not xweather.is_configured():
-        raise HTTPException(status_code=503, detail="Xweather non configuré")
-    if not (3 <= z <= 12):
-        raise HTTPException(status_code=400, detail="Zoom hors limites (3-12)")
-    if offset not in _XW_OFFSETS:
-        raise HTTPException(status_code=400, detail="Offset non autorisé")
-    try:
-        content = await xweather.fetch_radar_tile(z, x, y, offset)
-    except Exception as e:
-        logger.warning("xweather tile %s/%s/%s/%s failed: %s", z, x, y, offset, e)
-        raise HTTPException(status_code=502, detail="Erreur tuile Xweather")
-    return Response(content=content, media_type="image/png", headers={"Cache-Control": "public, max-age=300"})
-
-
 @api_router.get("/weather/severe")
 async def weather_severe(
     lat: float = LOURDES_LAT,

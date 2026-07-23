@@ -211,37 +211,10 @@ async def fetch_airquality(lat: float, lon: float) -> Dict[str, Any]:
     return result
 
 
-# ---------- Tuiles radar (proxy + cache 5 min) ----------
-_TILE_CACHE: Dict[str, Tuple[float, bytes]] = {}
-_TILE_TTL = 300.0
-_TILE_CACHE_MAX = 600
-
-
-async def fetch_radar_tile(z: int, x: int, y: int, offset: str = "current") -> bytes:
-    """Proxy une tuile radar Xweather (clé cachée côté serveur), cache 5 min."""
-    creds = _load_credentials()
-    if creds is None:
-        raise RuntimeError("Xweather credentials not configured (XWEATHER_COMBINED_TOKEN missing)")
-    key = f"{z}/{x}/{y}/{offset}"
-    now = asyncio.get_event_loop().time()
-    hit = _TILE_CACHE.get(key)
-    if hit and hit[0] > now:
-        return hit[1]
-    cid, secret = creds
-    # 'radar' ne couvre PAS le sud de la France (doc: "Northern France" only).
-    # 'radar-global' = radar réel + dérivé satellite, couverture mondiale, maj 2 min.
-    layer = "fradar" if offset.startswith("+") else "radar-global"
-    url = f"https://maps.api.xweather.com/{cid}_{secret}/{layer}/{z}/{x}/{y}/{offset}.png"
-    async with httpx.AsyncClient(follow_redirects=True) as client:
-        r = await client.get(url, timeout=15.0)
-        r.raise_for_status()
-        content = r.content
-    if len(_TILE_CACHE) >= _TILE_CACHE_MAX:
-        oldest = sorted(_TILE_CACHE.items(), key=lambda kv: kv[1][0])[: _TILE_CACHE_MAX // 2]
-        for k, _ in oldest:
-            _TILE_CACHE.pop(k, None)
-    _TILE_CACHE[key] = (now + _TILE_TTL, content)
-    return content
+# ---------- Tuiles radar : SUPPRIMÉ (2026-07) ----------
+# La couche Xweather 'radar' ne couvre pas le sud de la France et 'radar-global'
+# (dérivé satellite) est bien moins sensible que RainViewer sur notre zone.
+# Le nowcast RainViewer (+30 min) a remplacé cette fonctionnalité côté frontend.
 
 
 async def fetch_wind_xweather(

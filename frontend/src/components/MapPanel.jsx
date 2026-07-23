@@ -166,7 +166,7 @@ export default function MapPanel({
           minZoom={2}
           maxZoom={20}
         />
-        <WeatherTileLayer url={wx.url} showClouds={wx.showClouds} showRain={wx.showRain} showXRadar={wx.showXRadar} />
+        <WeatherTileLayer url={wx.url} showClouds={wx.showClouds} showRain={wx.showRain} />
         <WindLayer
           center={center}
           radiusKm={radiusKm}
