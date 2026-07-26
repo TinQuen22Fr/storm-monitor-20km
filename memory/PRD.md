@@ -161,6 +161,8 @@ L'utilisateur a finalisé lui-même la mise en production (install manuelle de f
 
 - **[2026-07-26] Thème graphique orage — image éclair en fond (PRÊT À PUSHER)** : `body::before` fixe (compatible WebView Android/APK, contrairement à background-attachment:fixed) avec `/frontend/public/storm-bg.jpg` (éclair violet nuit, 1264×848, 80 Ko optimisé). Pages : voile translucide `bg-slate-50/70` sur les 10 racines de pages (Dashboard, Vigilance, Grêle, Prévisions, Replay, Detector, DetectorTune, Historique, VerifyEmail, Admin) ; sidebar Dashboard `bg-white/90`. Cartes/panneaux blancs restent opaques = lisibilité conservée. NOTE : l'image exacte fournie par l'utilisateur n'était pas synchronisée dans le stockage des assets (le fichier hashé récupéré était un ancien screenshot du dashboard — d'où un fond « fantôme » corrigé) → image équivalente générée (Nano Banana). L'utilisateur peut remplacer `/frontend/public/storm-bg.jpg` par son fichier original s'il préfère. Vérifié desktop + mobile 390px.
 
+- **[2026-07-26] Fix thème mobile — transparence des fenêtres (PRÊT À PUSHER)** : sur mobile/APK les cartes pleine largeur masquaient totalement le fond. Correctif : surcharge globale `.bg-white → rgb(255 255 255 / 0.86)` dans index.css (placée après @tailwind utilities, l'ordre source gagne) + sidebar Dashboard `bg-white/90 → /80`. L'éclair transparaît désormais à travers toutes les fenêtres sur mobile ET desktop, lisibilité conservée. Vérifié viewport 390px (dashboard + prévisions).
+
 ## 🟡 Backlog
 - **P1** — Sécurité (EN PAUSE demande user) : injection Mongo unsubscribe, endpoints test publics, rate-limit subscribe, admin email exposé dans /api/health
 - **P2** — Partage bulletin (WhatsApp/lien direct) — reporté par l'utilisateur (« on verra plus tard »)

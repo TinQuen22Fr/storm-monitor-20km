@@ -467,7 +467,7 @@ export default function Dashboard() {
       <aside
         className={`${
           fullscreen ? "hidden" : "lg:col-span-4"
-        } col-span-1 order-2 lg:order-1 lg:h-full lg:overflow-y-auto bg-white/90 lg:border-r border-t lg:border-t-0 border-slate-200 relative z-10 flex flex-col`}
+        } col-span-1 order-2 lg:order-1 lg:h-full lg:overflow-y-auto bg-white/80 lg:border-r border-t lg:border-t-0 border-slate-200 relative z-10 flex flex-col`}
         data-testid="sidebar"
       >
         <AlertBanner

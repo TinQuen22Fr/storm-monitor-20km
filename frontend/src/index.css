@@ -40,6 +40,14 @@ body::before {
   background: #241f5c url("/storm-bg.jpg") center / cover no-repeat;
 }
 
+/* Thème orage — les fonds blancs des cartes/fenêtres laissent légèrement
+   transparaître l'image d'éclair (surtout visible sur mobile/APK où les
+   cartes occupent toute la largeur). Placé après @tailwind utilities pour
+   surcharger la classe .bg-white (même spécificité, ordre source gagne). */
+.bg-white {
+  background-color: rgb(255 255 255 / 0.86);
+}
+
 .font-heading {
   font-family: var(--font-heading);
   letter-spacing: -0.02em;
