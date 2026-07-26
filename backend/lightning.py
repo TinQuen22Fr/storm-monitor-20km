@@ -26,10 +26,12 @@ BO_SERVERS = [f"wss://ws{i}.blitzortung.org/" for i in range(1, 9)]
 # Lourdes + collection radius (wider than display radius so we see storms approaching)
 LOURDES_LAT = 43.0951
 LOURDES_LON = -0.0434
-COLLECT_RADIUS_KM = 120.0
+COLLECT_RADIUS_KM = 300.0  # Sud-Ouest élargi : couvre Toulouse, Bordeaux, Perpignan, Catalogne
 
-MAX_STRIKES = 5000  # Keep last N strikes in memory
+MAX_STRIKES = 20000  # Keep last N strikes in memory
 STRIKE_TTL_S = 24 * 3600  # Prune strikes older than 24h
+PERSIST_TTL_DAYS = 30  # Rétention MongoDB (purge auto via index TTL)
+FLUSH_INTERVAL_S = 10  # Écriture Mongo groupée (batch) — ménage le SSD
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -77,9 +79,11 @@ class StrikeStore:
         self._buf: Deque[Dict] = deque(maxlen=MAX_STRIKES)
         self._lock = asyncio.Lock()
 
-    async def add(self, strike: Dict) -> None:
+    async def add(self, strike: Dict, persist: bool = True) -> None:
         async with self._lock:
             self._buf.append(strike)
+        if persist and not strike.get("simulated"):
+            _pending.append(strike)
 
     async def recent(
         self,
@@ -111,6 +115,63 @@ class StrikeStore:
 
 
 store = StrikeStore()
+
+# ---------- Persistance MongoDB (batch + TTL 30 jours) ----------
+_col = None
+_pending: List[Dict] = []
+_flush_task: Optional[asyncio.Task] = None
+
+
+async def init_db(db) -> None:
+    """Active la persistance Mongo : index TTL, rechargement 24 h, flusher batch."""
+    global _col, _flush_task
+    _col = db["strikes"]
+    await _col.create_index("dt", expireAfterSeconds=PERSIST_TTL_DAYS * 24 * 3600)
+    await _col.create_index("ts")
+    cutoff = time.time() - STRIKE_TTL_S
+    n = 0
+    cursor = _col.find({"ts": {"$gte": cutoff}}, {"_id": 0, "dt": 0}).sort("ts", 1).limit(MAX_STRIKES)
+    async for doc in cursor:
+        await store.add(doc, persist=False)
+        n += 1
+    logger.info("Lightning: %d strikes des dernières 24h rechargés depuis MongoDB", n)
+    if _flush_task is None or _flush_task.done():
+        _flush_task = asyncio.get_event_loop().create_task(_flush_loop())
+
+
+async def _flush_loop() -> None:
+    """Écrit les impacts en attente par paquets (1 write/10 s au lieu de 1/impact)."""
+    from datetime import datetime as _dt, timezone as _tz
+    while True:
+        await asyncio.sleep(FLUSH_INTERVAL_S)
+        if not _pending or _col is None:
+            continue
+        batch = _pending[:]
+        del _pending[: len(batch)]
+        docs = [{**s, "dt": _dt.fromtimestamp(s["ts"], tz=_tz.utc)} for s in batch]
+        try:
+            await _col.insert_many(docs, ordered=False)
+        except Exception as e:
+            logger.warning("Lightning: flush Mongo échoué (%s) — %d strikes ré-empilés", e, len(batch))
+            _pending.extend(batch)
+
+
+async def strikes_between(
+    lat: float, lon: float, radius_km: float,
+    since_ts: float, until_ts: Optional[float] = None,
+) -> List[Dict]:
+    """Impacts persistés (MongoDB, jusqu'à 30 j) dans un rayon — historique multi-jours."""
+    if _col is None:
+        return []
+    q: Dict = {"ts": {"$gte": since_ts}}
+    if until_ts is not None:
+        q["ts"]["$lte"] = until_ts
+    out: List[Dict] = []
+    async for doc in _col.find(q, {"_id": 0, "lat": 1, "lon": 1, "ts": 1}):
+        if _haversine_km(lat, lon, doc["lat"], doc["lon"]) <= radius_km:
+            out.append(doc)
+    return out
+
 
 # Debug counters
 _total_received = 0

@@ -19,8 +19,8 @@ export const getCurrent = (lat = LOURDES.lat, lon = LOURDES.lon) =>
 export const getForecast = (lat = LOURDES.lat, lon = LOURDES.lon) =>
   api.get("/weather/forecast", { params: { lat, lon } }).then((r) => r.data);
 
-export const getHistory = (lat = LOURDES.lat, lon = LOURDES.lon) =>
-  api.get("/weather/history", { params: { lat, lon } }).then((r) => r.data);
+export const getHistory = (lat = LOURDES.lat, lon = LOURDES.lon, radius_km = LOURDES.radius) =>
+  api.get("/weather/history", { params: { lat, lon, radius_km } }).then((r) => r.data);
 
 export const getZones = (lat = LOURDES.lat, lon = LOURDES.lon, radius_km = LOURDES.radius) =>
   api.get("/storms/zones", { params: { lat, lon, radius_km } }).then((r) => r.data);

@@ -245,7 +245,7 @@ export default function Dashboard() {
       const [c, f, h, z] = await Promise.all([
         getCurrent(center.lat, center.lon),
         getForecast(center.lat, center.lon),
-        getHistory(center.lat, center.lon),
+        getHistory(center.lat, center.lon, radius),
         getZones(center.lat, center.lon, radius),
       ]);
       setCurrent(c);

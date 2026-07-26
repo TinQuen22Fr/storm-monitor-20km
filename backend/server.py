@@ -377,20 +377,66 @@ async def weather_forecast(lat: float = LOURDES_LAT, lon: float = LOURDES_LON):
         return _degraded("forecast", e)
 
 
+# Seuil « heure orageuse » basé impacts réels — cohérent avec min_strikes du Replay
+STORM_HOUR_MIN_STRIKES = 5
+
+
 @api_router.get("/weather/history")
-async def weather_history(lat: float = LOURDES_LAT, lon: float = LOURDES_LON):
+async def weather_history(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, radius_km: float = RADIUS_KM):
     try:
-        return await fetch_history_24h(lat, lon)
+        data = await fetch_history_24h(lat, lon)
     except Exception as e:
         return _degraded("history", e)
+    # Overlay impacts Blitzortung réels : une heure est orageuse si >= 5 impacts
+    # dans le rayon (le weather_code Open-Meteo, purement modèle, reste en complément)
+    try:
+        offset = int(data.get("utc_offset_seconds") or 0)
+        strikes = await lightning_mod.store.recent(lat, lon, radius_km, since_ts=None)
+        counts: dict[int, int] = {}
+        for s in strikes:
+            b = int((s["ts"] + offset) // 3600)
+            counts[b] = counts.get(b, 0) + 1
+        for h in data.get("hourly", []):
+            local_epoch = datetime.fromisoformat(h["time"]).replace(tzinfo=timezone.utc).timestamp()
+            c = counts.get(int(local_epoch // 3600), 0)
+            h["strike_count"] = c
+            if c >= STORM_HOUR_MIN_STRIKES:
+                h["is_storm"] = True
+    except Exception as e:
+        logger.warning("history 24h: overlay strikes échoué: %s", e)
+    return data
 
 
 @api_router.get("/weather/history-days")
-async def weather_history_days(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, days: int = 7):
+async def weather_history_days(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, days: int = 7, radius_km: float = RADIUS_KM):
     try:
-        return await fetch_history_days(lat, lon, days)
+        data = await fetch_history_days(lat, lon, days)
     except Exception as e:
         return _degraded("history", e)
+    # Overlay impacts persistés (MongoDB, 30 j) : heures orageuses réelles par jour
+    try:
+        offset = int(data.get("utc_offset_seconds") or 0)
+        since = datetime.now(timezone.utc).timestamp() - (days + 1) * 86400
+        strikes = await lightning_mod.strikes_between(lat, lon, radius_km, since_ts=since)
+        per_hour: dict[tuple[str, int], int] = {}
+        per_day: dict[str, int] = {}
+        for s in strikes:
+            local = datetime.fromtimestamp(s["ts"] + offset, tz=timezone.utc)
+            day = local.strftime("%Y-%m-%d")
+            k = (day, local.hour)
+            per_hour[k] = per_hour.get(k, 0) + 1
+            per_day[day] = per_day.get(day, 0) + 1
+        for d in data.get("days", []):
+            day = d["date"]
+            strike_hours = sum(
+                1 for (dd, _hh), n in per_hour.items()
+                if dd == day and n >= STORM_HOUR_MIN_STRIKES
+            )
+            d["strike_count"] = per_day.get(day, 0)
+            d["storm_hours"] = max(int(d.get("storm_hours") or 0), strike_hours)
+    except Exception as e:
+        logger.warning("history days: overlay strikes échoué: %s", e)
+    return data
 
 
 @api_router.get("/storms/zones")
@@ -648,9 +694,20 @@ async def replay_events(
       - A burst is kept only if it contains >= `min_strikes` strikes and spans >= 5 min.
       - Each event exposes start/end timestamps, peak 10-min rate, and centroid.
     """
+    # Vérification de couverture : la collecte Blitzortung est limitée à un rayon
+    # autour de Lourdes — au-delà, le Replay serait partiellement aveugle.
+    dist_lourdes = lightning_mod._haversine_km(LOURDES_LAT, LOURDES_LON, lat, lon)
+    covered = (dist_lourdes + radius_km) <= lightning_mod.COLLECT_RADIUS_KM
+    coverage = {
+        "covered": covered,
+        "collect_radius_km": lightning_mod.COLLECT_RADIUS_KM,
+        "distance_from_lourdes_km": round(dist_lourdes, 1),
+    }
+    if not covered:
+        return {"events": [], "source_window_h": 24, "coverage": coverage}
     strikes = await lightning_mod.store.recent(lat, lon, radius_km, since_ts=None)
     if not strikes:
-        return {"events": [], "source_window_h": 24}
+        return {"events": [], "source_window_h": 24, "coverage": coverage}
 
     strikes.sort(key=lambda s: s["ts"])
     gap_s = gap_min * 60.0
@@ -702,7 +759,7 @@ async def replay_events(
 
     # 3. Sort by intensity (peak rate then strike_count) descending, then recency
     events.sort(key=lambda e: (-e["peak_count_10min"], -e["strike_count"], -e["start_ts"]))
-    return {"events": events, "source_window_h": 24}
+    return {"events": events, "source_window_h": 24, "coverage": coverage}
 
 
 @api_router.get("/replay/demos")
@@ -1265,6 +1322,10 @@ logger = logging.getLogger(__name__)
 
 @app.on_event("startup")
 async def _start_lightning_listener():
+    try:
+        await lightning_mod.init_db(db)
+    except Exception as e:
+        logger.warning("Lightning: persistance Mongo indisponible: %s", e)
     try:
         lightning_mod.start()
         logger.info("Lightning listener started")

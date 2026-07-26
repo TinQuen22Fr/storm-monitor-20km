@@ -337,7 +337,7 @@ async def _fetch_history_24h_impl(lat: float, lon: float) -> Dict[str, Any]:
             "wind_gust": hourly.get("wind_gusts_10m", [None])[i],
             "is_storm": code in THUNDERSTORM_CODES if code is not None else False,
         })
-    return {"hourly": out}
+    return {"hourly": out, "utc_offset_seconds": int(data.get("utc_offset_seconds") or 0)}
 
 
 async def fetch_history_days(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, days: int = 7) -> Dict[str, Any]:
@@ -413,7 +413,7 @@ async def _fetch_history_days_impl(lat: float, lon: float, days: int) -> Dict[st
             d["max_temperature"] = round(d["max_temperature"], 1)
         if d["min_temperature"] is not None:
             d["min_temperature"] = round(d["min_temperature"], 1)
-    return {"days": out}
+    return {"days": out, "utc_offset_seconds": int(data.get("utc_offset_seconds") or 0)}
 
 
 async def fetch_storm_risk_forecast(lat: float = LOURDES_LAT, lon: float = LOURDES_LON, days: int = 7) -> Dict[str, Any]:

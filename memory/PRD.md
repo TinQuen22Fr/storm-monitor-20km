@@ -163,6 +163,13 @@ L'utilisateur a finalisé lui-même la mise en production (install manuelle de f
 
 - **[2026-07-26] Fix thème mobile — transparence des fenêtres (PRÊT À PUSHER)** : sur mobile/APK les cartes pleine largeur masquaient totalement le fond. Correctif : surcharge globale `.bg-white → rgb(255 255 255 / 0.86)` dans index.css (placée après @tailwind utilities, l'ordre source gagne) + sidebar Dashboard `bg-white/90 → /80`. L'éclair transparaît désormais à travers toutes les fenêtres sur mobile ET desktop, lisibilité conservée. Vérifié viewport 390px (dashboard + prévisions).
 
+- **[2026-07-26] Persistance foudre Mongo + heures orageuses réelles + Replay par zone (1A/2B/3C validés user, PRÊT À PUSHER)** :
+  (1) `lightning.py` : collecte élargie 120→300 km (Toulouse/Bordeaux/Perpignan couverts), buffer mémoire 5000→20000, persistance MongoDB collection `strikes` (flush batch 10 s pour ménager le SSD, index TTL `dt` 30 j vérifié, index `ts`), rechargement des 24 h en mémoire au démarrage (survit à upgrade.sh), `strikes_between()` pour requêtes multi-jours. Simulés non persistés.
+  (2) Heures orageuses réelles : `/weather/history` (+param radius_km) overlay impacts mémoire → `strike_count` par heure, `is_storm=true` si ≥5 impacts/h (STORM_HOUR_MIN_STRIKES=5, cohérent Replay) ; `/weather/history-days` (+radius_km) overlay Mongo → `strike_count`/jour, `storm_hours=max(code OMM, heures à ≥5 impacts)`. weather.py retourne `utc_offset_seconds` (conversion heure locale). Zéro changement frontend charts (is_storm/storm_hours réutilisés).
+  (3) Replay par zone : `/replay/events` → check couverture (covered = dist_Lourdes + radius ≤ 300), réponse `coverage{covered, collect_radius_km, distance_from_lourdes_km}` ; ReplayPage suit le 1er favori de l'utilisateur connecté (comme Dashboard), textes dynamiques, encart ambre « Zone hors couverture » (data-testid replay-coverage-warning).
+  (4) `/app/EVOLUTIONS_FUTURES.md` créé : 18 propositions classées (Collaboratif C1-C5, Données D1-D4, Confort U1-U5, Technique T1-T4).
+  TESTS (seed synthétique puis nettoyé) : rechargement 12/20 strikes <24h ✅, heure 15:00 orageuse (12 impacts) ✅, jours 24+26 juil. orageux 2/8 ✅, replay Lourdes 1 épisode 12 impacts/18.3 min ✅, Toulouse couvert 132.9 km ✅, Grenoble non couvert 515 km ✅, UI Replay vérifiée. NB : les erreurs WS Blitzortung dans l'env de dev sont préexistantes (réseau sandbox) — OK sur le Kimsufi.
+
 ## 🟡 Backlog
 - **P1** — Sécurité (EN PAUSE demande user) : injection Mongo unsubscribe, endpoints test publics, rate-limit subscribe, admin email exposé dans /api/health
 - **P2** — Partage bulletin (WhatsApp/lien direct) — reporté par l'utilisateur (« on verra plus tard »)
