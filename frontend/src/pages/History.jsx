@@ -121,7 +121,7 @@ export default function History() {
   };
 
   return (
-    <div className="min-h-screen w-full bg-slate-50" data-testid="history-page">
+    <div className="min-h-screen w-full bg-slate-50/70" data-testid="history-page">
       {/* Header */}
       <header className="bg-white border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-8 py-6 flex items-center justify-between gap-6">

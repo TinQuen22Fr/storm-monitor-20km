@@ -36,7 +36,7 @@ export default function VerifyEmailPage() {
   }, [token]);
 
   return (
-    <div className="min-h-screen w-full bg-slate-50 flex items-center justify-center px-6" data-testid="verify-email-page">
+    <div className="min-h-screen w-full bg-slate-50/70 flex items-center justify-center px-6" data-testid="verify-email-page">
       <div className="max-w-md w-full border border-slate-200 bg-white p-10">
         <div className="text-[10px] font-mono uppercase tracking-[0.3em] text-slate-400 mb-3">
           Storm Monitoring

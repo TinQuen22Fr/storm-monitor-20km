@@ -188,7 +188,7 @@ export default function VigilancePage() {
   const selectedInfo = filter === "all" ? null : PHENOMENA_FILTERS.find((p) => p.key === filter);
 
   return (
-    <div className="min-h-screen bg-slate-50" data-testid="vigilance-page">
+    <div className="min-h-screen bg-slate-50/70" data-testid="vigilance-page">
       <div className="border-b border-slate-200 bg-white">
         <div className="max-w-[1800px] mx-auto px-6 py-4 flex flex-col md:flex-row md:items-center gap-4">
           <div className="flex-1">

@@ -29,6 +29,17 @@ body {
   letter-spacing: -0.01em;
 }
 
+/* Thème orage — image éclair en fond fixe sur toutes les pages.
+   ::before fixé plutôt que background-attachment:fixed (cassé sur iOS/Android
+   WebView → APK Capacitor). Les pages posent un voile translucide par-dessus. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: #241f5c url("/storm-bg.jpg") center / cover no-repeat;
+}
+
 .font-heading {
   font-family: var(--font-heading);
   letter-spacing: -0.02em;

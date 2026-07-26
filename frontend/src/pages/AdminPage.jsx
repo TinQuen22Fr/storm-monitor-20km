@@ -83,7 +83,7 @@ export default function AdminPage() {
   };
 
   return (
-    <div className="min-h-screen w-full bg-slate-50" data-testid="admin-page">
+    <div className="min-h-screen w-full bg-slate-50/70" data-testid="admin-page">
       <header className="bg-white border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-6 lg:px-8 py-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>

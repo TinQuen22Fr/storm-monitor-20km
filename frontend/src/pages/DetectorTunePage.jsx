@@ -88,7 +88,7 @@ export default function DetectorTunePage() {
   const targetPct = ((TARGET_HZ - minDisp) / (maxDisp - minDisp)) * 100;
 
   return (
-    <div className="min-h-screen w-full bg-slate-50" data-testid="detector-tune-page">
+    <div className="min-h-screen w-full bg-slate-50/70" data-testid="detector-tune-page">
       <header className="bg-white border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-6 lg:px-8 py-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>

@@ -427,7 +427,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 lg:h-screen w-full lg:overflow-hidden bg-slate-50" data-testid="dashboard-root">
+    <div className="grid grid-cols-1 lg:grid-cols-12 lg:h-screen w-full lg:overflow-hidden bg-slate-50/70" data-testid="dashboard-root">
       {/* Map area — visible at top on mobile, right column on desktop */}
       <section
         className={`${
@@ -467,7 +467,7 @@ export default function Dashboard() {
       <aside
         className={`${
           fullscreen ? "hidden" : "lg:col-span-4"
-        } col-span-1 order-2 lg:order-1 lg:h-full lg:overflow-y-auto bg-white lg:border-r border-t lg:border-t-0 border-slate-200 relative z-10 flex flex-col`}
+        } col-span-1 order-2 lg:order-1 lg:h-full lg:overflow-y-auto bg-white/90 lg:border-r border-t lg:border-t-0 border-slate-200 relative z-10 flex flex-col`}
         data-testid="sidebar"
       >
         <AlertBanner

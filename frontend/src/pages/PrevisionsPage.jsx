@@ -137,7 +137,7 @@ export default function PrevisionsPage() {
   const maxShear = hourly.reduce((m, h) => (h.shear_0_6km != null && h.shear_0_6km > (m?.shear_0_6km || -1) ? h : m), null);
 
   return (
-    <div className="min-h-screen bg-slate-50" data-testid="previsions-page">
+    <div className="min-h-screen bg-slate-50/70" data-testid="previsions-page">
       <div className="max-w-7xl mx-auto px-4 lg:px-8 py-6 lg:py-10">
         <NavTabs />
 
