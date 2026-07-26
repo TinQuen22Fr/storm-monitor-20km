@@ -98,10 +98,19 @@ Xweather. Transparence pour la communauté + diagnostic rapide pour l'admin.
 mongodump quotidien vers un second emplacement du serveur (voire un stockage
 distant), rotation 7 jours. Protège l'historique communautaire.
 
-### T4 — Collecte Blitzortung France entière
-Si le projet dépasse le Sud-Ouest : passer la collecte de 300 km à la France
-entière. Volume : quelques centaines de Mo/mois en pleine saison — nécessite T3
-et éventuellement l'agrégation D1.
+### T4 — Collecte Blitzortung France entière *(discuté le 26/07/2026 — reporté volontairement)*
+**Contexte** : aujourd'hui la collecte couvre 300 km autour de Lourdes. Un membre
+au Mans ou à Saint-Brieuc n'a donc pas accès au Replay (message « hors couverture »).
+**Décision** : on garde 300 km tant que le Storm Monitor n'est pas diffusé largement —
+l'outil est né pour un usage perso/pro autour de Lourdes et sa communauté actuelle
+est Sud-Ouest. À réévaluer quand la diffusion (écosystème Sentinelle du Ciel) amènera
+des membres hors Sud-Ouest.
+**Plan technique prêt le jour venu** : remplacer le filtre rayon par un rectangle
+France métropolitaine + Andorre (lat 41→51.5, lon −5.5→9.7), cohérent avec la page
+Vigilance. Volume estimé au pire (grosse journée orageuse nationale) : 100 à 300 k
+impacts/jour ≈ 1-2 Go max en base avec la purge 30 j — négligeable sur le SSD 500 Go.
+Mémoire : ~10 Mo. Le flux réseau Blitzortung ne change pas. Prérequis conseillés :
+T3 (sauvegardes) et D1 (agrégats saisonniers).
 
 ---
 
