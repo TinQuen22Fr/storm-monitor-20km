@@ -807,8 +807,11 @@ async def replay_video_start(body: VideoExportInput):
                 label = d["label"]
                 break
     else:
+        # Champ de vue = rayon de détection du Replay (70 km min) autour de la
+        # ZONE SURVEILLÉE — le cercle dessiné reste le rayon utilisateur.
+        fetch_radius = max(body.radius_km, 70.0)
         strikes = await lightning_mod.store.recent(
-            body.lat, body.lon, body.radius_km * 1.2,
+            body.lat, body.lon, fetch_radius * 1.2,
             since_ts=body.start_ts, until_ts=body.end_ts,
         )
     if len(strikes) < 3:
@@ -825,6 +828,7 @@ async def replay_video_start(body: VideoExportInput):
         center_lon=body.lon,
         radius_km=body.radius_km,
         label=label,
+        view_radius_km=max(body.radius_km, 70.0),
     )
     return {"job_id": job_id, "status": "queued"}
 

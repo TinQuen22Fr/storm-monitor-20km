@@ -113,22 +113,17 @@ async def _build_basemap(
 
     projector(lat, lon) → (px, py) pixel coordinates on the returned image.
     """
-    # Compute a safe bbox extending ~1.4x the radius in all directions
-    extra = radius_km * 1.4
-    dlat = extra / 111.0
-    cos_lat = math.cos(math.radians(center_lat))
-    dlon = extra / (111.0 * cos_lat)
-
-    south, north = center_lat - dlat, center_lat + dlat
-    west, east = center_lon - dlon, center_lon + dlon
-
-    # Tile range
-    tx0, ty1 = _lonlat_to_tile(west, south, zoom)
-    tx1, ty0 = _lonlat_to_tile(east, north, zoom)
-    tx0 = min(tx0, tx1)
-    tx1 = max(tx0, tx1)
-    ty0 = min(ty0, ty1)
-    ty1 = max(ty0, ty1)
+    # Tile range derived from the PIXEL bbox of the final crop (± 1 tile margin)
+    # so the composite always fully covers the frame — no black bands, center
+    # guaranteed at the middle of the image.
+    cx, cy = _lonlat_to_pixel(center_lon, center_lat, zoom)
+    tx0 = int((cx - width / 2) // 256) - 1
+    tx1 = int((cx + width / 2) // 256) + 1
+    ty0 = int((cy - height / 2) // 256) - 1
+    ty1 = int((cy + height / 2) // 256) + 1
+    n_max = 2 ** zoom - 1
+    tx0, ty0 = max(0, tx0), max(0, ty0)
+    tx1, ty1 = min(n_max, tx1), min(n_max, ty1)
 
     # Assemble tiles
     tiles_w = tx1 - tx0 + 1
@@ -148,7 +143,6 @@ async def _build_basemap(
     origin_y = ty0 * 256
 
     # Project center in composite coords
-    cx, cy = _lonlat_to_pixel(center_lon, center_lat, zoom)
     cx_comp = cx - origin_x
     cy_comp = cy - origin_y
 
@@ -305,6 +299,7 @@ async def start_job(
     center_lon: float,
     radius_km: float,
     label: str,
+    view_radius_km: float | None = None,
 ) -> str:
     job_id = f"vid-{uuid.uuid4().hex[:10]}"
     job: Dict[str, Any] = {
@@ -320,7 +315,7 @@ async def start_job(
     async with _JOB_LOCK:
         _JOBS[job_id] = job
     asyncio.create_task(
-        _run_job(job_id, strikes, start_ts, end_ts, center_lat, center_lon, radius_km, label)
+        _run_job(job_id, strikes, start_ts, end_ts, center_lat, center_lon, radius_km, label, view_radius_km)
     )
     return job_id
 
@@ -334,6 +329,7 @@ async def _run_job(
     center_lon: float,
     radius_km: float,
     label: str,
+    view_radius_km: float | None = None,
 ) -> None:
     job = _JOBS[job_id]
     job["status"] = "running"
@@ -341,8 +337,17 @@ async def _run_job(
         if not shutil.which("ffmpeg"):
             raise RuntimeError("ffmpeg not installed on this server — run install.sh to provision it")
 
+        # radius_km = cercle de la zone surveillée ; view_radius_km = champ de vue
+        # (>= rayon de détection pour que les impacts en périphérie restent visibles)
+        view_radius = view_radius_km if view_radius_km is not None else max(radius_km, 70.0)
         width, height = 720, 720
-        zoom = 9 if radius_km <= 50 else 8
+        # Zoom auto : le plus grand zoom où le champ de vue tient dans le cadre
+        zoom = 11
+        while zoom > 7:
+            ppk = 256.0 * (2 ** zoom) / (40075.016 * math.cos(math.radians(center_lat)))
+            if 2 * view_radius * ppk * 1.15 <= min(width, height):
+                break
+            zoom -= 1
         duration = max(60.0, end_ts - start_ts)
 
         # 1 frame every 30 s event time
@@ -351,7 +356,7 @@ async def _run_job(
         fps = 24
 
         # Build basemap once
-        base, project = await _build_basemap(center_lat, center_lon, radius_km, width, height, zoom)
+        base, project = await _build_basemap(center_lat, center_lon, view_radius, width, height, zoom)
 
         strikes_sorted = sorted(strikes, key=lambda s: s["ts"])
         frames_dir = OUTPUT_DIR / job_id

@@ -13,8 +13,9 @@ import { api } from "@/lib/api";
  *   - onClose()
  *   - event: { start_ts, end_ts, label, center_lat, center_lon, id }
  *   - isDemo (bool) — if true, sends demo_id=event.id
+ *   - zone: { lat, lon, name } — zone surveillée (centre vidéo pour les vrais épisodes)
  */
-export default function VideoExportDialog({ open, onClose, event, isDemo = false }) {
+export default function VideoExportDialog({ open, onClose, event, isDemo = false, zone = null }) {
   const [job, setJob] = useState(null);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
@@ -27,12 +28,19 @@ export default function VideoExportDialog({ open, onClose, event, isDemo = false
       setError(null);
       setJob(null);
       try {
+        // Vrais épisodes : vidéo centrée sur la ZONE SURVEILLÉE avec le rayon
+        // choisi au Dashboard. Démos : centrées sur l'orage reconstitué.
+        let userRadius = 20;
+        try { userRadius = parseInt(localStorage.getItem("storm.radius"), 10) || 20; } catch { /* défaut */ }
+        const center = !isDemo && zone
+          ? { lat: zone.lat, lon: zone.lon, radius: userRadius }
+          : { lat: event.center_lat || 43.0951, lon: event.center_lon || -0.0434, radius: 70 };
         const { data } = await api.post("/replay/video", {
           start_ts: event.start_ts,
           end_ts: event.end_ts,
-          lat: event.center_lat || 43.0951,
-          lon: event.center_lon || -0.0434,
-          radius_km: 70,
+          lat: center.lat,
+          lon: center.lon,
+          radius_km: center.radius,
           label: event.label || "Replay Storm Monitoring",
           demo_id: isDemo ? event.id : null,
         });

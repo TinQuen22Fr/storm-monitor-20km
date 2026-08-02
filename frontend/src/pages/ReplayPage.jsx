@@ -185,7 +185,7 @@ export default function ReplayPage() {
                 </span>
               </div>
               <div className="text-[11px] text-slate-500 mb-3 leading-relaxed">
-                Épisodes scénarisés (données plausibles reconstruites) pour tester le Replay et l'export vidéo même en temps calme.
+                Épisodes scénarisés (données plausibles reconstruites) pour tester le Replay et l'export vidéo même en temps calme — accessibles quelle que soit votre zone de surveillance (vidéo centrée sur l'orage reconstitué, dans les Pyrénées).
               </div>
               <div className="flex flex-col gap-3">
                 {demos.map((dem, idx) => (
@@ -365,6 +365,7 @@ export default function ReplayPage() {
         onClose={() => setVideoOpen(false)}
         event={videoEvent}
         isDemo={videoIsDemo}
+        zone={zone}
       />
     </div>
   );

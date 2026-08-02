@@ -37,7 +37,15 @@ export default function Dashboard() {
   const { user } = useAuth();
   const [center, setCenter] = useState({ lat: LOURDES.lat, lon: LOURDES.lon, name: "Lourdes" });
   const [centerAutoLoaded, setCenterAutoLoaded] = useState(false);
-  const [radius, setRadius] = useState(DEFAULT_RADIUS);
+  const [radius, setRadius] = useState(() => {
+    try {
+      const v = parseInt(localStorage.getItem("storm.radius"), 10);
+      return v >= 20 && v <= 60 ? v : DEFAULT_RADIUS;
+    } catch { return DEFAULT_RADIUS; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("storm.radius", String(radius)); } catch { /* ignore */ }
+  }, [radius]);
   const [current, setCurrent] = useState(null);
   const [forecast, setForecast] = useState(null);
   const [history, setHistory] = useState(null);
