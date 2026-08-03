@@ -28,15 +28,16 @@ export default function VigilanceBanner() {
 
   if (!data) return null;
 
-  const level = data.overall_level;
-  const color = data.overall_color;
-  const label = data.overall_label;
+  // La bannière reflète le NIVEAU DU DÉPARTEMENT SURVEILLÉ (65), pas le max
+  // des voisins (un voisin orange ne doit pas afficher « orange » pour Lourdes)
+  const lourdes = data.departements.find((d) => d.id === "65") || data.departements[0];
+  const level = lourdes.max_level;
+  const color = lourdes.max_color;
+  const label = lourdes.max_label;
 
   // Never hide: even "vert" is shown so users know we checked
   const headerBg = level === 1 ? "#F0FDF4" : level === 2 ? "#FFFBEB" : level === 3 ? "#FFF7ED" : "#FEF2F2";
   const headerText = level >= 3 ? "#991B1B" : level === 2 ? "#78350F" : "#166534";
-
-  const lourdes = data.departements.find((d) => d.id === "65") || data.departements[0];
 
   return (
     <div
@@ -56,7 +57,7 @@ export default function VigilanceBanner() {
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2">
             <span className="font-mono text-[10px] uppercase tracking-[0.2em] font-semibold" style={{ color: headerText }}>
-              Vigilance · {data.overall_level_fr}
+              Vigilance · {lourdes.max_level_fr}
             </span>
             <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-slate-400 hidden sm:inline">
               Lourdes · Pyrénées
@@ -94,12 +95,12 @@ export default function VigilanceBanner() {
                     </span>
                   </div>
                   <div className="font-mono text-[10px] tabular-nums text-slate-700">
-                    Auj. <span style={{ color: p.today >= 3 ? "#DC2626" : p.today === 2 ? "#D97706" : "#10B981" }}>{
+                    Auj. <span style={{ color: p.today >= 3 ? "#DC2626" : p.today === 2 ? "#CC9F00" : "#10B981" }}>{
                       ["-", "vert", "jaune", "orange", "rouge"][p.today]
                     }</span>
                   </div>
                   <div className="font-mono text-[10px] tabular-nums text-slate-700">
-                    Dem. <span style={{ color: p.tomorrow >= 3 ? "#DC2626" : p.tomorrow === 2 ? "#D97706" : "#10B981" }}>{
+                    Dem. <span style={{ color: p.tomorrow >= 3 ? "#DC2626" : p.tomorrow === 2 ? "#CC9F00" : "#10B981" }}>{
                       ["-", "vert", "jaune", "orange", "rouge"][p.tomorrow]
                     }</span>
                   </div>

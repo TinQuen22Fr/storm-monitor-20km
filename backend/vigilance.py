@@ -26,7 +26,7 @@ METEOALARM_URL = "https://feeds.meteoalarm.org/api/v1/warnings/feeds-france"
 LEVELS_FR = {1: "vert", 2: "jaune", 3: "orange", 4: "rouge"}
 LEVEL_COLORS = {
     1: "#10B981",
-    2: "#F59E0B",
+    2: "#FFCC00",
     3: "#EA580C",
     4: "#DC2626",
 }

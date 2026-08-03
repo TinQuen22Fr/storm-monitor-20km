@@ -7,7 +7,7 @@ import { fmtLocal } from "@/lib/timeFormat";
 
 const LEVEL_STYLE = {
   1: { fillColor: "#10B981", fillOpacity: 0.05, color: "#94A3B8", weight: 0.6 },
-  2: { fillColor: "#F59E0B", fillOpacity: 0.55, color: "#D97706", weight: 1 },
+  2: { fillColor: "#FFCC00", fillOpacity: 0.55, color: "#CC9F00", weight: 1 },
   3: { fillColor: "#EA580C", fillOpacity: 0.65, color: "#C2410C", weight: 1.4 },
   4: { fillColor: "#DC2626", fillOpacity: 0.72, color: "#991B1B", weight: 1.8 },
 };
