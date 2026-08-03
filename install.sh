@@ -10,7 +10,7 @@
 #   /var/www/storm-monitor   (APP_DIR)   — Runtime : venv, build, .env, data
 #
 # What it does (idempotent, sûr à relancer) :
-#   1. Installe Python 3.11+, Node.js 20, Yarn, MongoDB, Nginx 1.30+
+#   1. Installe Python 3.11+, Node.js 22, Yarn, MongoDB, Nginx 1.30+
 #   2. Clone le repo dans /opt/storm-monitor (ou pull si déjà présent)
 #   3. Synchronise /opt → /var/www en PRÉSERVANT : .env, venv/, cache/,
 #      storm_data.json, frontend/build/ (rebuildés ensuite)
@@ -124,10 +124,10 @@ if ! grep -q "sites-enabled" /etc/nginx/nginx.conf; then
   sed -i '/include \/etc\/nginx\/conf.d\/\*.conf;/a\    include /etc/nginx/sites-enabled/*;' /etc/nginx/nginx.conf
 fi
 
-# Node.js 20
-if ! command -v node >/dev/null || [[ "$(node -v)" != v20* ]]; then
-  echo "==> Installing Node.js 20..."
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+# Node.js 22 (Vite 8 exige Node >= 20.19 ou >= 22.12)
+if ! command -v node >/dev/null || [[ "$(node -v)" != v22* ]]; then
+  echo "==> Installing Node.js 22..."
+  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
   apt-get install -y nodejs
 fi
 

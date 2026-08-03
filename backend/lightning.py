@@ -219,6 +219,7 @@ async def _listen_forever(simulated_only: bool = False) -> None:
                 logger.info("Blitzortung: connecting to %s", url)
                 async with websockets.connect(
                     url,
+                    origin="https://map.blitzortung.org",
                     open_timeout=15,
                     ping_interval=20,
                     ping_timeout=20,

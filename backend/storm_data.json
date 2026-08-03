@@ -169,5 +169,59 @@
     "received_at": "2026-08-03T06:43:16.586667+00:00",
     "kind": "lightning",
     "device_id": null
+  },
+  {
+    "id": "0370a3ee-7059-48f8-a392-ecfd2a308b3c",
+    "distance": 7.5,
+    "energy": 33.2,
+    "timestamp": "2026-01-21T12:00:00Z",
+    "received_at": "2026-08-03T16:40:00.570179+00:00",
+    "kind": "lightning",
+    "device_id": null
+  },
+  {
+    "id": "6b20a603-491d-427e-bd56-efc06bd0f62b",
+    "distance": 2.1,
+    "energy": 15.0,
+    "timestamp": "2026-08-03T16:40:00.708852+00:00",
+    "received_at": "2026-08-03T16:40:00.708863+00:00",
+    "kind": "lightning",
+    "device_id": null
+  },
+  {
+    "id": "cd86741c-7d90-48ac-bcfb-aac029ea40a9",
+    "distance": 99.7392246723175,
+    "energy": 88.8,
+    "timestamp": "2026-01-15T10:00:00Z",
+    "received_at": "2026-08-03T16:40:00.827342+00:00",
+    "kind": "lightning",
+    "device_id": null
+  },
+  {
+    "id": "96bd4808-da98-4510-a713-43d8eca7914f",
+    "distance": 7.5,
+    "energy": 33.2,
+    "timestamp": "2026-01-04T12:00:00Z",
+    "received_at": "2026-08-03T16:47:39.926852+00:00",
+    "kind": "lightning",
+    "device_id": null
+  },
+  {
+    "id": "396a72d5-0638-4ef2-8140-f2b23c59d63d",
+    "distance": 2.1,
+    "energy": 15.0,
+    "timestamp": "2026-08-03T16:47:40.091453+00:00",
+    "received_at": "2026-08-03T16:47:40.091463+00:00",
+    "kind": "lightning",
+    "device_id": null
+  },
+  {
+    "id": "403effd4-0033-4b11-b116-e30a8769f2e0",
+    "distance": 99.12309956550598,
+    "energy": 88.8,
+    "timestamp": "2026-01-15T10:00:00Z",
+    "received_at": "2026-08-03T16:47:40.215947+00:00",
+    "kind": "lightning",
+    "device_id": null
   }
 ]

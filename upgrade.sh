@@ -288,6 +288,21 @@ fi
 # ---------------------------------------------------------------------------
 # 6. Frontend deps (yarn install) — seulement si package.json/yarn.lock changé
 # ---------------------------------------------------------------------------
+# Garde-fou Vite 8 : exige Node >= 20.19 ou >= 22.x. Un Node trop vieux fait
+# planter yarn install (check engines) ET yarn build (après avoir vidé build/
+# → site blanc). On échoue ICI avec un message clair, AVANT de toucher au build.
+NODE_V="$(node -v 2>/dev/null || echo v0.0.0)"
+NODE_MAJOR="${NODE_V#v}"; NODE_MAJOR="${NODE_MAJOR%%.*}"
+NODE_MINOR="${NODE_V#v*.}"; NODE_MINOR="${NODE_MINOR%%.*}"
+if (( NODE_MAJOR < 20 )) || { (( NODE_MAJOR == 20 )) && (( NODE_MINOR < 19 )); } || (( NODE_MAJOR == 21 )); then
+  echo "ERROR: Node $NODE_V trop ancien pour Vite 8 (requis : >= 20.19 ou >= 22)." >&2
+  echo "       Mets à jour Node.js 22 :" >&2
+  echo "         curl -fsSL https://deb.nodesource.com/setup_22.x | bash -" >&2
+  echo "         apt-get install -y nodejs" >&2
+  echo "       puis relance : bash upgrade.sh" >&2
+  exit 1
+fi
+
 cd "$APP_DIR/frontend"
 if [[ $PKG_CHANGED -eq 1 ]]; then
   echo ""
@@ -321,10 +336,22 @@ fi
 if [[ $FRONTEND_CHANGED -eq 1 ]]; then
   echo ""
   echo "==> Étape 7 — Build du frontend (RAM plafonnée pour éviter l'OOM Killer)..."
-  # Kimsufi Atom : limite la heap Node à 1 Go pour ne pas déclencher l'OOM Killer
-  NODE_OPTIONS="--max-old-space-size=1024" GENERATE_SOURCEMAP=false yarn build
+  # Build dans un dossier temporaire puis swap atomique : si le build plante,
+  # l'ancien build/ reste intact → le site ne devient JAMAIS blanc.
+  rm -rf build.new
+  NODE_OPTIONS="--max-old-space-size=1024" GENERATE_SOURCEMAP=false \
+    yarn build --outDir build.new --emptyOutDir
+  if [[ ! -f build.new/index.html ]]; then
+    echo "ERROR: build.new/index.html absent — build incomplet, ancien build conservé." >&2
+    rm -rf build.new
+    exit 1
+  fi
   # Empreinte du build : permet aux runs suivants de détecter un build périmé
-  echo "$FRONTEND_COMMIT" > build/.build-commit
+  echo "$FRONTEND_COMMIT" > build.new/.build-commit
+  rm -rf build.old
+  [[ -d build ]] && mv build build.old
+  mv build.new build
+  rm -rf build.old
 else
   echo ""
   echo "==> Étape 7 — yarn build skip (aucun fichier frontend modifié)"
