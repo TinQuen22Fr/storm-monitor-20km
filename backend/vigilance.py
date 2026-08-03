@@ -18,7 +18,13 @@ from typing import Any, Dict, List
 import httpx
 
 from weather import _cached, OPEN_METEO_BASE, get_with_retry
-import geo
+try:
+    import geo
+except Exception as _geo_err:  # noqa: BLE001
+    logging.getLogger(__name__).warning(
+        "vigilance: geo module unavailable (%s) — dynamic vigilance disabled", _geo_err,
+    )
+    geo = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -398,7 +404,7 @@ async def compute_vigilance_for_point(
     departements sharing a border with the primary. If no departement can be
     located (point outside FR), we fall back to the historical Lourdes view.
     """
-    primary_code = geo.find_departement(lat, lon)
+    primary_code = geo.find_departement(lat, lon) if geo is not None else None
     if not primary_code or primary_code not in INSEE_TO_NUTS3:
         return await compute_vigilance()
 
