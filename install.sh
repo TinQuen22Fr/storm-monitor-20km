@@ -124,9 +124,15 @@ if ! grep -q "sites-enabled" /etc/nginx/nginx.conf; then
   sed -i '/include \/etc\/nginx\/conf.d\/\*.conf;/a\    include /etc/nginx/sites-enabled/*;' /etc/nginx/nginx.conf
 fi
 
-# Node.js 20 — NE PAS MONTER : binaire prouvé sur l'Atom D425 (Node 22 risque
-# "Illegal instruction"). Vite est pinné en v5, compatible Node 20 sans minor requis.
-if ! command -v node >/dev/null || [[ "$(node -v)" != v20* ]]; then
+# Node.js — on GARDE le node existant s'il est >= 18 (ex: v26.5.0 déjà en place
+# sur le Kimsufi, prouvé fonctionnel sur l'Atom). JAMAIS de downgrade forcé.
+# On n'installe Node 20 QUE si node est absent ou < 18.
+NODE_OK=0
+if command -v node >/dev/null; then
+  NV="$(node -v 2>/dev/null || echo v0)"; NM="${NV#v}"; NM="${NM%%.*}"
+  [[ "$NM" =~ ^[0-9]+$ ]] && (( NM >= 18 )) && NODE_OK=1 && echo "==> Node.js $NV déjà présent — conservé tel quel"
+fi
+if [[ $NODE_OK -eq 0 ]]; then
   echo "==> Installing Node.js 20..."
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
   apt-get install -y nodejs

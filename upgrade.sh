@@ -64,10 +64,15 @@ if [[ ! -d "$APP_DIR/backend" || ! -d "$APP_DIR/frontend" ]]; then
 fi
 
 START_TS=$(date +%s)
+CPU_MODEL="$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | xargs || echo inconnu)"
+CPU_FLAGS="$(grep -m1 '^flags' /proc/cpuinfo 2>/dev/null || true)"
+HAS_SSE42=$(echo "$CPU_FLAGS" | grep -qw sse4_2 && echo oui || echo NON)
+HAS_AVX=$(echo "$CPU_FLAGS" | grep -qw avx && echo oui || echo NON)
 echo "==> Storm Monitor — UPGRADE rapide sur $(hostname)"
 echo "    Work dir : $WORK_DIR"
 echo "    App dir  : $APP_DIR"
 echo "    Branch   : $BRANCH"
+echo "    CPU      : $CPU_MODEL (SSE4.2: $HAS_SSE42 · AVX: $HAS_AVX)"
 
 # ---------------------------------------------------------------------------
 # 1. Git pull dans WORK_DIR (avec stash auto si modifs locales)
@@ -92,6 +97,16 @@ fi
 git -C "$WORK_DIR" remote set-url origin "$REPO_URL"
 git -C "$WORK_DIR" fetch --prune origin
 
+# Auto-heal : si un run précédent a laissé des conflits git (stash pop raté),
+# on repart proprement de la branche distante. Les fichiers runtime (.env,
+# proxies.json, storm_data.json…) ne sont pas trackés → intacts.
+if [[ -n "$(git -C "$WORK_DIR" ls-files -u 2>/dev/null)" ]]; then
+  echo "    Conflits git résiduels détectés — reset hard sur origin/$BRANCH"
+  git -C "$WORK_DIR" reset --hard "origin/$BRANCH"
+  git -C "$WORK_DIR" stash drop >/dev/null 2>&1 || true
+  STASH_CREATED=0
+fi
+
 if [[ "$CURRENT_BRANCH" != "$BRANCH" ]]; then
   echo "    Switch de branche : $CURRENT_BRANCH → $BRANCH"
   git -C "$WORK_DIR" checkout -B "$BRANCH" "origin/$BRANCH"
@@ -105,15 +120,29 @@ fi
 NEW_COMMIT="$(git -C "$WORK_DIR" rev-parse HEAD)"
 
 if [[ $STASH_CREATED -eq 1 ]]; then
-  git -C "$WORK_DIR" stash pop >/dev/null 2>&1 || \
-    echo "    WARN: conflits au stash pop — voir 'git stash list'"
+  if ! git -C "$WORK_DIR" stash pop >/dev/null 2>&1; then
+    # Un pop en conflit laisse des marqueurs <<<<<<< dans les fichiers → pip
+    # et yarn plantent. On abandonne les modifs locales : la vérité = le dépôt.
+    echo "    WARN: conflits au stash pop — abandon des modifs locales (reset origin/$BRANCH)"
+    git -C "$WORK_DIR" reset --hard "origin/$BRANCH"
+    git -C "$WORK_DIR" stash drop >/dev/null 2>&1 || true
+  fi
 fi
 
 # Les fichiers de dépendances doivent TOUJOURS être ceux du dépôt : une modif
 # locale (npm install parasite, merge raté…) casse `yarn --frozen-lockfile`
 # et fausse la détection pip. On les restaure d'office après le stash pop.
-git -C "$WORK_DIR" checkout -- frontend/yarn.lock frontend/package.json backend/requirements.txt 2>/dev/null || true
+# `checkout HEAD --` fonctionne même sur un fichier en état de conflit.
+git -C "$WORK_DIR" checkout HEAD -- frontend/yarn.lock frontend/package.json backend/requirements.txt 2>/dev/null || true
 rm -f "$WORK_DIR/package-lock.json"   # artefact npm à la racine, jamais légitime ici
+
+# Ceinture + bretelles : aucun marqueur de conflit ne doit subsister dans les
+# fichiers de deps, sinon pip/yarn exploseront plus loin.
+if grep -qE '^(<<<<<<<|=======|>>>>>>>)' "$WORK_DIR/backend/requirements.txt" "$WORK_DIR/frontend/package.json" 2>/dev/null; then
+  echo "ERROR: marqueurs de conflit git dans requirements.txt/package.json." >&2
+  echo "       Répare avec : git -C $WORK_DIR reset --hard origin/$BRANCH  puis relance." >&2
+  exit 1
+fi
 
 if [[ "$OLD_COMMIT" == "$NEW_COMMIT" ]]; then
   echo "    ✓ Déjà à jour sur $(git -C "$WORK_DIR" rev-parse --short HEAD) — rien à puller"
@@ -274,6 +303,29 @@ if [[ $REQ_CHANGED -eq 1 && $WITH_DEPS -eq 1 ]]; then
   pip install --upgrade pip wheel setuptools >/dev/null
   pip install -r requirements.txt
   deactivate
+  # Contrôle compatibilité CPU : chaque module binaire est importé — un paquet
+  # compilé avec des instructions absentes de ce processeur meurt en
+  # "Illegal instruction" (rc=132). On échoue ICI avec le nom exact du coupable
+  # au lieu de laisser le service boucler en silence.
+  echo "    Vérification compatibilité CPU des modules binaires..."
+  CPU_CHECK_FAIL=""
+  for m in pydantic fastapi motor pymongo shapely PIL reportlab firebase_admin websockets httpx bcrypt jwt cryptography; do
+    set +e
+    venv/bin/python -c "import $m" >/dev/null 2>&1
+    rc=$?
+    set -e
+    if [[ $rc -eq 132 ]]; then
+      echo "ERROR: module Python '$m' → Illegal instruction sur ce CPU ($CPU_MODEL)." >&2
+      CPU_CHECK_FAIL=1
+    elif [[ $rc -ne 0 ]]; then
+      echo "    WARN: import $m en erreur (rc=$rc) — détail : venv/bin/python -c 'import $m'"
+    fi
+  done
+  if [[ -n "$CPU_CHECK_FAIL" ]]; then
+    echo "ERROR: paquet(s) incompatible(s) CPU détecté(s) — il faut pinner une version plus ancienne dans requirements.txt." >&2
+    exit 1
+  fi
+  echo "    ✓ Tous les modules binaires passent sur ce CPU"
   cd - >/dev/null
 elif [[ $REQ_CHANGED -eq 1 ]]; then
   echo ""
@@ -364,10 +416,32 @@ echo "==> Étape 8 — Restart du service backend..."
 systemctl restart storm-monitor.service
 sleep 2
 if systemctl is-active --quiet storm-monitor.service; then
-  echo "    ✓ storm-monitor.service est actif"
+  echo "    ✓ storm-monitor.service est actif (systemd)"
 else
   echo "ERROR: storm-monitor.service n'a pas redémarré correctement." >&2
   systemctl status storm-monitor.service --no-pager -n 20 || true
+  exit 1
+fi
+
+# Sonde santé RÉELLE : systemd peut dire "active" alors que le process boucle
+# en crash silencieux (ex: Illegal instruction). On exige une vraie réponse HTTP.
+SVC_PORT="$(grep -oP -- '--port \K[0-9]+' /etc/systemd/system/storm-monitor.service 2>/dev/null | head -1)"
+SVC_PORT="${SVC_PORT:-8001}"
+echo "    Sonde santé : attente d'une réponse de l'API (127.0.0.1:$SVC_PORT/api/health)..."
+HEALTH_OK=0
+for _ in $(seq 1 12); do
+  sleep 2
+  if curl -fsS -m 4 "http://127.0.0.1:${SVC_PORT}/api/health" >/dev/null 2>&1; then
+    HEALTH_OK=1
+    break
+  fi
+done
+if [[ $HEALTH_OK -eq 1 ]]; then
+  echo "    ✓ Le backend répond RÉELLEMENT sur /api/health"
+else
+  echo "ERROR: le backend ne répond PAS sur /api/health après 24 s (systemd 'active' ne suffit pas)." >&2
+  echo "       Dernières lignes de /var/log/storm-monitor.err.log :" >&2
+  tail -n 25 /var/log/storm-monitor.err.log >&2 || true
   exit 1
 fi
 

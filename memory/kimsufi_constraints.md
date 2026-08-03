@@ -12,9 +12,9 @@ et le service systemd boucle en silence (logs figés, status "running" mensonger
 2. **JAMAIS de paquets propriétaires sandbox dans requirements.txt**
    (`emergentintegrations`, `litellm`, `boto3`, etc. → introuvables sur PyPI ou inutiles).
    requirements.txt = UNIQUEMENT les deps réelles du backend, jamais un `pip freeze`.
-3. **JAMAIS de Node.js récent** : le serveur tourne en Node 20 (binaire prouvé sur l'Atom).
-   Vite est PINNÉ en v5 (compatible Node 18/20 sans exigence de minor).
-   Ne JAMAIS remonter Vite ≥7 (exige Node 20.19+/22) ni installer Node 22 sur l'Atom.
+3. **Node.js : NE JAMAIS Y TOUCHER.** Le Kimsufi tourne en **Node v26.5.0, prouvé
+   fonctionnel sur l'Atom** (info utilisateur 03/08). install.sh conserve tout node ≥18,
+   aucun downgrade/upgrade forcé. Vite est pinné en v5 (compatible Node 18→26).
 4. **Un test sandbox validé NE confirme PAS le fonctionnement sur le Kimsufi.**
    Toute modif risquée doit être accompagnée d'un bloc de commandes de vérification
    que l'utilisateur exécute lui-même sur son serveur (je n'ai pas d'accès SSH).

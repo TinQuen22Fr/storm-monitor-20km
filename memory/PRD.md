@@ -192,6 +192,18 @@ L'utilisateur a finalisé lui-même la mise en production (install manuelle de f
 3. **Testé sandbox avec ces versions exactes** : login JWT ✅, vigilance dynamique 22 ✅, 25 zones (fallback Xweather) ✅, PDF bulletin ✅, severe ✅, Blitzortung websockets 12 + origin ✅ (319 strikes), build Vite 5 en 10 s ✅, page Replay Lourdes-only ✅.
 **Procédure user** : Save to GitHub → `bash /opt/storm-monitor/upgrade.sh --with-deps` (pip DOWNGRADE le venv vers les versions sûres). Bloc diagnostic SIGILL fourni dans kimsufi_constraints.md si ça persiste.
 
+## [2026-08-03 nuit] FIX DÉFINITIF upgrade.sh — conflit stash pop + exigences user (PRÊT À PUSHER)
+**Panne** : sur le Kimsufi, le `stash pop` d'upgrade.sh est entré en conflit → marqueurs `<<<<<<<` laissés dans requirements.txt ; l'ancienne restauration `git checkout -- fichier` échoue silencieusement sur un fichier en conflit (`2>/dev/null || true`) → rsync a propagé le fichier corrompu → pip a explosé à l'étape 5.
+**Correctifs upgrade.sh (tous simulés/prouvés en repo git de test)** :
+1. Auto-heal au démarrage : `git ls-files -u` non vide → `reset --hard origin/BRANCH` + stash drop (le clone /opt de l'utilisateur actuellement en conflit sera réparé automatiquement au prochain run).
+2. Stash pop en conflit → reset hard + drop (plus jamais de marqueurs laissés en place).
+3. Restauration deps via `git checkout HEAD --` (fonctionne sur fichiers unmerged).
+4. Garde anti-marqueurs de conflit sur requirements.txt/package.json avant pip/yarn.
+5. **Contrôle CPU demandé par l'utilisateur** : affichage CPU+flags (SSE4.2/AVX) en en-tête ; après pip, import de chaque module binaire — rc=132 (Illegal instruction) → ERROR nommant le paquet exact incompatible CPU.
+6. **Sonde santé réelle** post-restart : curl /api/health (12×2 s) — systemd "active" ne suffit plus ; échec → dump des 25 dernières lignes du err.log.
+**install.sh** : Node existant ≥18 CONSERVÉ (le Kimsufi tourne en **Node v26.5.0 prouvé fonctionnel** — info user ; plus aucun downgrade forcé). NB : install.sh détectait déjà l'AVX pour choisir MongoDB 8 vs 4.4.
+**Réclamation user** transmise : coordonnées support fournies (support@emergent.sh + Job ID).
+
 ## 🟡 Backlog
 - **P1** — Sécurité (EN PAUSE demande user) : injection Mongo unsubscribe, endpoints test publics, rate-limit subscribe, admin email exposé dans /api/health
 - **P2** — Partage bulletin (WhatsApp/lien direct) — reporté par l'utilisateur (« on verra plus tard »)
