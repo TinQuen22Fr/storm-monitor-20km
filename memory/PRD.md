@@ -219,6 +219,14 @@ Suite au relevé réel des flags CPU par l'utilisateur (plafond **SSSE3** — au
 **Directive utilisateur consignée** (kimsufi_constraints.md règle 0) : aucune intervention non sollicitée, modifications minimales, l'utilisateur menace de résilier.
 **Réparation immédiate donnée à l'utilisateur** (sans dépendre du script) : `venv/bin/pip install --prefer-binary -r requirements.txt` (pins sûrs déjà rsyncés dans /var/www) + boucle diagnostic import par module + restart + journalctl. Plan B si shapely 2.0.7 encore ILL : suppression totale de shapely → point-in-polygon pur Python.
 
+## [2026-08-04] SHAPELY SUPPRIMÉ — geo.py réécrit 100% Python pur (PRÊT À PUSHER)
+**Verdict du diagnostic sur le serveur** : `shapely -> ILLEGAL INSTRUCTION` (2.1.2 ET 2.0.7 — GEOS compilé avec SSE4), TOUS les autres paquets pinnés « ok ». Sur ordre utilisateur (règle n°0) :
+- `geo.py` réécrit sans AUCUNE extension binaire : point-in-polygon par ray casting (bbox prefilter), repli côtier par distance point-segment en degrés (seuil 0.3° identique), Polygon+MultiPolygon+trous gérés.
+- Adjacence des départements PRÉ-CALCULÉE une fois en sandbox → fichier statique `data/departements-adjacence.json` (474 entrées) chargé au boot — zéro géométrie lourde sur l'Atom.
+- `shapely==2.0.7` retiré de requirements.txt et de la liste check_cpu_binaries d'upgrade.sh.
+- **Prouvé sandbox SANS shapely installé** (pip uninstall) : tests 5/5 (test_vigilance_point.py), API live 6 villes (Lourdes 65/3 voisins, Saint-Brieuc 22, Rennes 35/6, Paris 75, Nice 06, Londres None), comportement historique sans params intact (65 + 6 statiques), perf 100 lookups = 2 ms.
+- Nettoyage optionnel serveur : `venv/bin/pip uninstall -y shapely google-genai` (google-genai = reliquat du freeze, source des warnings pip).
+
 ## 🟡 Backlog
 - **P1** — Sécurité (EN PAUSE demande user) : injection Mongo unsubscribe, endpoints test publics, rate-limit subscribe, admin email exposé dans /api/health
 - **P2** — Partage bulletin (WhatsApp/lien direct) — reporté par l'utilisateur (« on verra plus tard »)

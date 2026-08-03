@@ -35,10 +35,14 @@ un IMPORT RÉEL sur la machine fait foi → upgrade.sh exécute `check_cpu_binar
 6. Le backend doit TOUJOURS avoir des imports défensifs (try/except ImportError)
    pour tout nouveau paquet Python.
 
-## Versions Python verrouillées (prouvées génération Atom, wheels manylinux2014)
+## Versions Python verrouillées (prouvées sur l'Atom par le diagnostic user du 03/08)
 Voir /app/backend/requirements.txt : pydantic 2.6.4, websockets 12.0, pillow 10.4.0,
-shapely 2.0.7, cryptography 42.0.8, pywebpush 1.14.1, reportlab 4.2.5, httpx 0.27.2.
-firebase-admin 7.5.0 conservé (installé et prouvé par l'utilisateur en juin 2026).
+cryptography 42.0.8, pywebpush 1.14.1, reportlab 4.2.5, httpx 0.28.1 → tous « ok »
+au test d'import réel sur le serveur. firebase-admin 7.5.0 conservé (prouvé).
+**SHAPELY = BANNI DÉFINITIVEMENT** : SIGILL confirmé sur le serveur (2.1.2 ET 2.0.7,
+GEOS compilé SSE4). Remplacé le 03/08 par du Python pur dans geo.py (ray casting +
+adjacence pré-calculée dans data/departements-adjacence.json). Ne JAMAIS réintroduire
+shapely ni aucune lib géométrique binaire (GEOS/GDAL/pyproj/rtree).
 
 ## Diagnostic SIGILL sur le serveur
 ```

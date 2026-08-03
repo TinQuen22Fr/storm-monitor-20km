@@ -100,7 +100,7 @@ check_cpu_binaries() {
   fi
   echo "    Contrôle CPU : import réel de chaque module binaire ($CPU_MODEL)..."
   local fail=0 m rc
-  for m in pydantic fastapi motor pymongo shapely PIL reportlab firebase_admin websockets httpx bcrypt jwt cryptography; do
+  for m in pydantic fastapi motor pymongo PIL reportlab firebase_admin websockets httpx bcrypt jwt cryptography; do
     set +e
     "$venv_py" -c "import $m" >/dev/null 2>&1
     rc=$?
