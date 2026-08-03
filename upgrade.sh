@@ -100,7 +100,9 @@ check_cpu_binaries() {
   fi
   echo "    Contrôle CPU : import réel de chaque module binaire ($CPU_MODEL)..."
   local fail=0 m rc
-  for m in pydantic fastapi motor pymongo PIL reportlab firebase_admin websockets httpx bcrypt jwt cryptography; do
+  # numpy : non requis par le projet, mais s'il traîne dans le venv (reliquat)
+  # et qu'il est incompatible CPU, tout module qui l'importe opportunément meurt.
+  for m in pydantic fastapi motor pymongo numpy PIL reportlab firebase_admin websockets httpx bcrypt jwt cryptography; do
     set +e
     "$venv_py" -c "import $m" >/dev/null 2>&1
     rc=$?
@@ -109,16 +111,38 @@ check_cpu_binaries() {
       echo "ERROR: module Python '$m' → Illegal instruction/segfault sur ce CPU." >&2
       fail=1
     elif [[ $rc -ne 0 ]]; then
-      echo "    WARN: import $m en erreur (rc=$rc) — détail : $venv_py -c 'import $m'"
+      echo "    (module $m absent ou erreur d'import bénigne, rc=$rc — toléré)"
     fi
   done
   if [[ $fail -eq 1 ]]; then
     echo "ERROR: paquet(s) incompatible(s) avec ce processeur — pinner une version" >&2
-    echo "       plus ancienne dans requirements.txt. Le service N'A PAS été redémarré" >&2
-    echo "       (l'ancien process continue de tourner)." >&2
+    echo "       plus ancienne (ou désinstaller le reliquat : venv/bin/pip uninstall <paquet>)." >&2
+    echo "       UPGRADE BLOQUÉ — le service N'A PAS été redémarré." >&2
     exit 1
   fi
-  echo "    ✓ Tous les modules binaires passent réellement sur ce CPU"
+  # GARANTIE FINALE : import de la chaîne COMPLÈTE de l'application (server.py
+  # tire reports, weather, geo, push, fcm… exactement comme uvicorn au boot).
+  # C'est le seul test qui attrape TOUT — y compris un import opportuniste
+  # d'un reliquat du venv (cas vécu : reports → numpy 2.4.4 → SIGILL).
+  echo "    Test d'import COMPLET de l'application (chaîne réelle de server.py)..."
+  local out rc2
+  set +e
+  out="$(cd "$APP_DIR/backend" && timeout 180 venv/bin/python -c 'import server' 2>&1)"
+  rc2=$?
+  set -e
+  if [[ $rc2 -eq 0 ]]; then
+    echo "    ✓ 'import server' passe — chaîne complète compatible avec ce CPU"
+  else
+    if [[ $rc2 -eq 132 || $rc2 -eq 139 || "$out" == *"Illegal instruction"* ]]; then
+      echo "ERROR: 'import server' meurt en Illegal instruction sur ce CPU." >&2
+    else
+      echo "ERROR: 'import server' échoue (rc=$rc2) :" >&2
+    fi
+    echo "$out" | tail -n 15 >&2
+    echo "ERROR: UPGRADE BLOQUÉ — le service N'A PAS été redémarré (l'ancien process reste en place)." >&2
+    exit 1
+  fi
+  echo "    ✓ Tous les contrôles CPU passent réellement sur cette machine"
 }
 
 # ---------------------------------------------------------------------------

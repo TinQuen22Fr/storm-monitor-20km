@@ -43,6 +43,12 @@ au test d'import réel sur le serveur. firebase-admin 7.5.0 conservé (prouvé).
 GEOS compilé SSE4). Remplacé le 03/08 par du Python pur dans geo.py (ray casting +
 adjacence pré-calculée dans data/departements-adjacence.json). Ne JAMAIS réintroduire
 shapely ni aucune lib géométrique binaire (GEOS/GDAL/pyproj/rtree).
+**NUMPY = BANNI AUSSI** : numpy 2.4.4 (reliquat orphelin du freeze, ex-dep shapely)
+→ SIGILL sur le serveur via un import opportuniste dans la chaîne de reports.py
+(numpy._core.multiarray). Rien dans le projet n'a besoin de numpy. S'il devenait
+un jour indispensable : pin 1.26.4 max + test d'import réel sur le serveur d'abord.
+upgrade.sh fait désormais un `import server` complet (chaîne réelle) et BLOQUE
+l'upgrade sans redémarrer le service si quoi que ce soit meurt en SIGILL.
 
 ## Diagnostic SIGILL sur le serveur
 ```

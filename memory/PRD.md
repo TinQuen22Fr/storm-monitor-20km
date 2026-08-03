@@ -227,6 +227,13 @@ Suite au relevé réel des flags CPU par l'utilisateur (plafond **SSSE3** — au
 - **Prouvé sandbox SANS shapely installé** (pip uninstall) : tests 5/5 (test_vigilance_point.py), API live 6 villes (Lourdes 65/3 voisins, Saint-Brieuc 22, Rennes 35/6, Paris 75, Nice 06, Londres None), comportement historique sans params intact (65 + 6 statiques), perf 100 lookups = 2 ms.
 - Nettoyage optionnel serveur : `venv/bin/pip uninstall -y shapely google-genai` (google-genai = reliquat du freeze, source des warnings pip).
 
+## [2026-08-04] 2e tueur : numpy — garde-fou TOTAL dans upgrade.sh (PRÊT À PUSHER)
+**Info user (réparé avec l'aide de Gemini)** : après suppression de shapely, nouveau SIGILL au boot via `reports` → `numpy._core.multiarray`. numpy 2.4.4 = reliquat ORPHELIN du vieux freeze (ex-dep de shapely), importé opportunément dans la chaîne — rien dans le projet n'importe numpy directement (vérifié grep).
+**Correctifs upgrade.sh (exigences user)** :
+1. `numpy` ajouté à la liste de contrôle (SIGILL → bloque ; absent → toléré silencieusement).
+2. **Garantie finale** : `import server` COMPLET (la chaîne réelle qu'uvicorn exécute au boot — attrape TOUT, y compris les imports opportunistes de reliquats). rc 132/139 ou tout échec → **UPGRADE BLOQUÉ, service PAS redémarré, prod intacte**, traceback affiché (15 dernières lignes).
+**Prouvé** : sandbox `import server` OK (positif) ; simulation SIGILL → upgrade bloqué exit 1 avec message clair (négatif). numpy banni dans kimsufi_constraints.md (si un jour indispensable : 1.26.4 max + test serveur).
+
 ## 🟡 Backlog
 - **P1** — Sécurité (EN PAUSE demande user) : injection Mongo unsubscribe, endpoints test publics, rate-limit subscribe, admin email exposé dans /api/health
 - **P2** — Partage bulletin (WhatsApp/lien direct) — reporté par l'utilisateur (« on verra plus tard »)
