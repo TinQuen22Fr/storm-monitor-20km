@@ -211,6 +211,14 @@ Suite au relevé réel des flags CPU par l'utilisateur (plafond **SSSE3** — au
 - pip : `--prefer-binary` (jamais de compilation source lourde sur l'Atom).
 - Prouvé par simulation : module simulé en SIGILL → détecté nommément, restart bloqué (exit 1) ; cas nominal → ✓ et poursuite.
 
+## [2026-08-03 nuit-3] Diagnostic DÉFINITIF via screenshots user : SIGILL confirmé + 2 défauts upgrade.sh corrigés (PRÊT À PUSHER)
+**Preuve (journalctl)** : `Main process exited, code=dumped, status=4/ILL` en boucle (restart counter 28+) — un paquet Python du venv crashe en Illegal instruction sur le SSSE3. **Le venv contient encore les wheels récentes du 1er --with-deps** (pydantic 2.12.5, shapely 2.1.2, pillow 12…) car le run suivant (32 s, OK) a SAUTÉ pip : récap sans « deps Python ».
+**Défaut 1 corrigé** : pip était gaté sur `REQ_CHANGED && WITH_DEPS` → si requirements.txt inchangé dans LE pull courant, pip sautait même avec --with-deps explicite. Désormais `--with-deps` ⇒ pip TOUJOURS exécuté.
+**Défaut 2 corrigé** : upgrade.sh se met à jour lui-même via git pull EN COURS d'exécution (bash lit le fichier au fil de l'eau → la suite du run utilisait l'ancienne version, d'où check_cpu_binaries/sonde santé inopérants sur ce run). Désormais : si upgrade.sh change dans le pull → `exec` immédiat de la NOUVELLE version avec `STORM_UPGRADE_BASE=<ancien commit>` pour préserver la détection des changements.
+**Info serveur** : uvicorn tourne sur port 8003 (la sonde santé lit le port depuis l'unit — OK).
+**Directive utilisateur consignée** (kimsufi_constraints.md règle 0) : aucune intervention non sollicitée, modifications minimales, l'utilisateur menace de résilier.
+**Réparation immédiate donnée à l'utilisateur** (sans dépendre du script) : `venv/bin/pip install --prefer-binary -r requirements.txt` (pins sûrs déjà rsyncés dans /var/www) + boucle diagnostic import par module + restart + journalctl. Plan B si shapely 2.0.7 encore ILL : suppression totale de shapely → point-in-polygon pur Python.
+
 ## 🟡 Backlog
 - **P1** — Sécurité (EN PAUSE demande user) : injection Mongo unsubscribe, endpoints test publics, rate-limit subscribe, admin email exposé dans /api/health
 - **P2** — Partage bulletin (WhatsApp/lien direct) — reporté par l'utilisateur (« on verra plus tard »)

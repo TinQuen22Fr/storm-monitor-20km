@@ -176,6 +176,17 @@ if [[ $STASH_CREATED -eq 1 ]]; then
   fi
 fi
 
+# Si upgrade.sh lui-même a changé dans ce pull, on RELANCE immédiatement la
+# nouvelle version : bash lit le script au fil de l'exécution, continuer avec
+# l'ancienne version en mémoire après un pull = comportement imprévisible
+# (c'est pour ça que les correctifs du script ne prenaient effet qu'au run suivant).
+if [[ "${STORM_UPGRADE_REEXEC:-0}" != "1" && "$OLD_COMMIT" != "$NEW_COMMIT" ]]; then
+  if git -C "$WORK_DIR" diff --name-only "$OLD_COMMIT" "$NEW_COMMIT" 2>/dev/null | grep -qx 'upgrade.sh'; then
+    echo "    upgrade.sh mis à jour dans ce pull — relance avec la NOUVELLE version..."
+    exec env STORM_UPGRADE_REEXEC=1 STORM_UPGRADE_BASE="$OLD_COMMIT" bash "$WORK_DIR/upgrade.sh" "$@"
+  fi
+fi
+
 # Les fichiers de dépendances doivent TOUJOURS être ceux du dépôt : une modif
 # locale (npm install parasite, merge raté…) casse `yarn --frozen-lockfile`
 # et fausse la détection pip. On les restaure d'office après le stash pop.
@@ -208,6 +219,13 @@ fi
 # quand même (au cas où des fichiers de /var/www auraient été touchés à la main).
 echo ""
 echo "==> Étape 2 — Détection des changements..."
+
+# Après un re-exec (upgrade.sh auto-mis à jour), la base de comparaison est le
+# commit d'AVANT le pull du premier passage, sinon tout serait vu "inchangé".
+if [[ -n "${STORM_UPGRADE_BASE:-}" ]]; then
+  OLD_COMMIT="$STORM_UPGRADE_BASE"
+  ALREADY_UP_TO_DATE=0
+fi
 
 REQ_CHANGED=0
 PKG_CHANGED=0
@@ -338,9 +356,11 @@ EOF
 # ---------------------------------------------------------------------------
 # 5. Backend deps (pip install) — seulement si requirements changé
 # ---------------------------------------------------------------------------
-if [[ $REQ_CHANGED -eq 1 && $WITH_DEPS -eq 1 ]]; then
+if [[ $WITH_DEPS -eq 1 ]]; then
   echo ""
-  echo "==> Étape 5 — Mise à jour des deps Python (--with-deps demandé)..."
+  echo "==> Étape 5 — Deps Python (--with-deps : pip TOUJOURS exécuté, même si"
+  echo "    requirements.txt semble inchangé — c'est la seule façon de garantir"
+  echo "    que le venv correspond EXACTEMENT aux versions pinnées)..."
   cd "$APP_DIR/backend"
   if [[ ! -d venv ]]; then
     python3 -m venv venv

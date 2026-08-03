@@ -13,7 +13,11 @@ Les wheels manylinux standard visent la baseline x86-64 (SSE2) = OK, mais seul
 un IMPORT RÉEL sur la machine fait foi → upgrade.sh exécute `check_cpu_binaries`
 (import de chaque module binaire du venv) SYSTÉMATIQUEMENT avant tout restart.
 
-## RÈGLES ABSOLUES (ordre utilisateur du 03/08/2026)
+## RÈGLES ABSOLUES (ordres utilisateur des 03/08/2026)
+0. **AUCUNE intervention non sollicitée.** Le projet fonctionnait en production avant
+   les mises à jour. Modifications MINIMALES, uniquement ce qui est demandé,
+   zéro proposition spontanée, zéro "amélioration" non requise. L'utilisateur menace
+   de résilier — chaque changement doit être justifié et prouvé.
 1. **JAMAIS de paquets récents nécessitant des instructions CPU modernes.**
    Toujours des versions stables, légères, wheels précompilées manylinux2014
    (baseline x86-64), AUCUNE compilation lourde depuis les sources.
