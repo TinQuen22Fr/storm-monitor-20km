@@ -3,10 +3,11 @@ import { AlertTriangle, ChevronDown, ChevronUp } from "lucide-react";
 import { api } from "@/lib/api";
 
 /**
- * Vigilance banner (Météo-France-style) computed locally from Open-Meteo.
- * Shows overall color for Lourdes dept + click-to-expand per-phenomenon grid.
+ * Vigilance banner (MeteoAlarm → Météo-France) centred on the currently
+ * watched zone. When `lat` / `lon` are provided the banner shows the dept
+ * containing the point plus its real bordering departements.
  */
-export default function VigilanceBanner() {
+export default function VigilanceBanner({ lat, lon, zoneName }) {
   const [data, setData] = useState(null);
   const [expanded, setExpanded] = useState(false);
 
@@ -14,7 +15,13 @@ export default function VigilanceBanner() {
     let cancel = false;
     const load = async () => {
       try {
-        const { data } = await api.get("/weather/vigilance");
+        const params = {};
+        if (typeof lat === "number" && typeof lon === "number") {
+          params.lat = lat;
+          params.lon = lon;
+          if (zoneName) params.zone = zoneName;
+        }
+        const { data } = await api.get("/weather/vigilance", { params });
         if (!cancel) setData(data);
       } catch { /* ignore */ }
     };
@@ -24,16 +31,20 @@ export default function VigilanceBanner() {
       cancel = true;
       clearInterval(t);
     };
-  }, []);
+  }, [lat, lon, zoneName]);
 
   if (!data) return null;
 
-  // La bannière reflète le NIVEAU DU DÉPARTEMENT SURVEILLÉ (65), pas le max
-  // des voisins (un voisin orange ne doit pas afficher « orange » pour Lourdes)
-  const lourdes = data.departements.find((d) => d.id === "65") || data.departements[0];
-  const level = lourdes.max_level;
-  const color = lourdes.max_color;
-  const label = lourdes.max_label;
+  // The banner reflects the LEVEL OF THE WATCHED DEPARTEMENT — not the max
+  // across neighbours. `primary_id` is set when the API is called with lat/lon;
+  // otherwise we fall back to the historical Lourdes view (dept 65).
+  const primaryId = data.primary_id || "65";
+  const primary =
+    data.departements.find((d) => d.id === primaryId) || data.departements[0];
+  const level = primary.max_level;
+  const color = primary.max_color;
+  const label = primary.max_label;
+  const zoneLabel = data.zone_name || zoneName || "Lourdes";
 
   // Never hide: even "vert" is shown so users know we checked
   const headerBg = level === 1 ? "#F0FDF4" : level === 2 ? "#FFFBEB" : level === 3 ? "#FFF7ED" : "#FEF2F2";
@@ -57,10 +68,10 @@ export default function VigilanceBanner() {
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2">
             <span className="font-mono text-[10px] uppercase tracking-[0.2em] font-semibold" style={{ color: headerText }}>
-              Vigilance · {lourdes.max_level_fr}
+              Vigilance · {primary.max_level_fr}
             </span>
             <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-slate-400 hidden sm:inline">
-              Lourdes · Pyrénées
+              {zoneLabel} · {primary.name}
             </span>
           </div>
           <div className="text-sm font-medium truncate" style={{ color: headerText }}>
@@ -73,13 +84,13 @@ export default function VigilanceBanner() {
 
       {expanded && (
         <div className="px-6 pb-4 border-t border-slate-200/60 bg-white/40" data-testid="vigilance-expanded">
-          {/* Phenomena grid for Lourdes (65) */}
+          {/* Phenomena grid for the watched departement */}
           <div className="mt-3">
             <div className="font-mono text-[9px] uppercase tracking-[0.2em] text-slate-500 mb-2">
-              Phénomènes · {lourdes.name} ({lourdes.id})
+              Phénomènes · {primary.name} ({primary.id})
             </div>
             <div className="grid grid-cols-3 gap-2">
-              {lourdes.phenomena.map((p) => (
+              {primary.phenomena.map((p) => (
                 <div
                   key={p.key}
                   className="border border-slate-200 bg-white p-2"
@@ -110,33 +121,35 @@ export default function VigilanceBanner() {
           </div>
 
           {/* Neighbouring depts */}
-          <div className="mt-4">
-            <div className="font-mono text-[9px] uppercase tracking-[0.2em] text-slate-500 mb-2">
-              Départements voisins
+          {data.departements.length > 1 && (
+            <div className="mt-4">
+              <div className="font-mono text-[9px] uppercase tracking-[0.2em] text-slate-500 mb-2">
+                Départements voisins
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {data.departements
+                  .filter((d) => d.id !== primaryId)
+                  .map((d) => (
+                    <div
+                      key={d.id}
+                      className="flex items-center gap-2 border border-slate-200 bg-white px-2 py-1.5"
+                      data-testid={`vigilance-dept-${d.id}`}
+                    >
+                      <span
+                        className="w-2 h-2 rounded-full shrink-0"
+                        style={{
+                          background:
+                            data.levels_meta.find((l) => l.level === d.max_level)?.color,
+                        }}
+                      />
+                      <span className="font-mono text-[10px] text-slate-700">
+                        {d.name} ({d.id})
+                      </span>
+                    </div>
+                  ))}
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {data.departements
-                .filter((d) => d.id !== "65")
-                .map((d) => (
-                  <div
-                    key={d.id}
-                    className="flex items-center gap-2 border border-slate-200 bg-white px-2 py-1.5"
-                    data-testid={`vigilance-dept-${d.id}`}
-                  >
-                    <span
-                      className="w-2 h-2 rounded-full shrink-0"
-                      style={{
-                        background:
-                          data.levels_meta.find((l) => l.level === d.max_level)?.color,
-                      }}
-                    />
-                    <span className="font-mono text-[10px] text-slate-700">
-                      {d.name} ({d.id})
-                    </span>
-                  </div>
-                ))}
-            </div>
-          </div>
+          )}
 
           <div className="mt-3 font-mono text-[9px] text-slate-400 leading-relaxed">
             {data.disclaimer}

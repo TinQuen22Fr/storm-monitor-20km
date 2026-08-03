@@ -72,7 +72,7 @@ class TestHautesPyrenees:
         # Live expectation per task: level=2 (jaune)
         assert orage["level"] == 2, f"Expected jaune (2) for dept 65 orages, got {orage['level']}"
         assert orage["level_fr"] == "jaune"
-        assert orage["color"] == "#F59E0B"
+        assert orage["color"] == "#FFCC00"
         assert d65["max_level"] == 2
 
 

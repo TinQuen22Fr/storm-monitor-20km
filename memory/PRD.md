@@ -196,3 +196,21 @@ L'utilisateur a finalisé lui-même la mise en production (install manuelle de f
 
 ## Notes déploiement
 La prochaine MAJ sur Kimsufi doit utiliser `install.sh` une fois pour initialiser, puis `upgrade.sh` pour les MAJ suivantes.
+
+## [2026-08-03] Vigilance dynamique par zone surveillée
+- **Nouveauté** : la bannière de vigilance affiche désormais le département de la ville actuellement surveillée (et pas Lourdes/65 par défaut) + les vrais départements limitrophes.
+- **Backend** :
+  - Nouveau module `/app/backend/geo.py` : chargement au démarrage d'un GeoJSON simplifié (`data/departements-fr.geojson`, ~350 Ko) des contours des 96 dép. métropolitains via Shapely.
+  - `find_departement(lat, lon)` : point-in-polygon (avec fallback nearest ≤30 km pour zones côtières).
+  - `find_neighbours(code)` : adjacence pré-calculée au démarrage (polygones qui s'intersectent/touchent).
+  - `vigilance.compute_vigilance_for_point(lat, lon, zone_name)` : renvoie primaire + jusqu'à 6 voisins réels avec `primary_id`, `primary_name`, `zone_name`.
+  - `GET /api/weather/vigilance?lat=&lon=&zone=` : endpoint accepte désormais les params ; sans params → comportement historique préservé (65 + voisins statiques).
+- **Frontend** :
+  - `VigilanceBanner.jsx` accepte les props `lat`, `lon`, `zoneName` et refetch quand la zone change.
+  - Label dynamique : "Saint-Brieuc · Côtes-d'Armor", "Rennes · Ille-et-Vilaine", etc.
+  - Le primaire est piloté par `data.primary_id` (fallback 65 pour compat).
+  - `Dashboard.jsx` passe `center.lat/lon/name` au composant.
+- **Tests** :
+  - Nouveau `tests/test_vigilance_point.py` (5 sous-tests, 100% passants) : Lourdes/Saint-Brieuc/Rennes/Paris/Nice + adjacence symétrique + fallback hors-France.
+  - `tests/test_vigilance_full.py` mis à jour (`#F59E0B` → `#FFCC00` pour aligner sur la palette actuelle).
+

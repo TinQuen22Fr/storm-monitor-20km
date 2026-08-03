@@ -18,6 +18,7 @@ from typing import Any, Dict, List
 import httpx
 
 from weather import _cached, OPEN_METEO_BASE, get_with_retry
+import geo
 
 logger = logging.getLogger(__name__)
 
@@ -382,6 +383,77 @@ async def compute_vigilance() -> Dict[str, Any]:
         except Exception as e2:
             logger.error("Both vigilance sources failed: %s / %s", e, e2)
             raise
+
+
+async def compute_vigilance_for_point(
+    lat: float,
+    lon: float,
+    zone_name: str | None = None,
+    max_neighbours: int = 6,
+) -> Dict[str, Any]:
+    """Return vigilance centred on the departement containing (lat, lon).
+
+    The primary departement is the one strictly containing the point (or the
+    nearest one within ~30 km for coastal points). Neighbours are the
+    departements sharing a border with the primary. If no departement can be
+    located (point outside FR), we fall back to the historical Lourdes view.
+    """
+    primary_code = geo.find_departement(lat, lon)
+    if not primary_code or primary_code not in INSEE_TO_NUTS3:
+        return await compute_vigilance()
+
+    neighbour_codes = geo.find_neighbours(primary_code)[:max_neighbours]
+
+    try:
+        data = await _fetch_meteoalarm()
+    except Exception as e:
+        logger.warning("MeteoAlarm fetch failed for point (%s,%s): %s", lat, lon, e)
+        # Coastal fallback: return primary as vert without neighbours
+        data = {"warnings": []}
+
+    def _build_dept_entry(code: str) -> Dict[str, Any]:
+        nuts3 = INSEE_TO_NUTS3.get(code, "")
+        per_phen = _extract_dept_alerts(data, nuts3) if nuts3 else {}
+        phenomena = _build_phenomena(per_phen)
+        max_level = max((p["level"] for p in phenomena), default=1)
+        return {
+            "id": code,
+            "name": INSEE_TO_NAME.get(code, code),
+            "nuts3": nuts3,
+            "phenomena": phenomena,
+            "max_level": max_level,
+            "max_level_fr": LEVELS_FR[max_level],
+            "max_color": LEVEL_COLORS[max_level],
+            "max_label": LEVEL_LABELS[max_level],
+        }
+
+    primary = _build_dept_entry(primary_code)
+    neighbours = [_build_dept_entry(c) for c in neighbour_codes]
+
+    # `departements` = primary first, then neighbours (frontend picks primary via `primary_id`).
+    results = [primary] + neighbours
+    overall = max((r["max_level"] for r in results), default=1)
+
+    return {
+        "updated_at": int(time.time()),
+        "source": "meteoalarm",
+        "source_label": "Météo-France (via MeteoAlarm)",
+        "source_url": "https://vigilance.meteofrance.fr/",
+        "disclaimer": "Vigilance officielle Météo-France agrégée par MeteoAlarm (EUMETNET).",
+        "phenomena_meta": [{"key": k, "label": label, "icon": icon} for k, label, icon in PHENOMENA_META],
+        "levels_meta": [
+            {"level": lv, "name": LEVELS_FR[lv], "color": LEVEL_COLORS[lv], "label": LEVEL_LABELS[lv]}
+            for lv in (1, 2, 3, 4)
+        ],
+        "departements": results,
+        "primary_id": primary_code,
+        "primary_name": primary["name"],
+        "zone_name": zone_name,
+        "overall_level": overall,
+        "overall_level_fr": LEVELS_FR[overall],
+        "overall_color": LEVEL_COLORS[overall],
+        "overall_label": LEVEL_LABELS[overall],
+    }
 
 
 

@@ -142,5 +142,32 @@
     "received_at": "2026-06-10T17:49:42.302349+00:00",
     "kind": "heartbeat",
     "device_id": "as3935-lourdes-01"
+  },
+  {
+    "id": "b4cf9ea4-c700-4982-a43b-c176be342ab8",
+    "distance": 7.5,
+    "energy": 33.2,
+    "timestamp": "2026-01-01T12:00:00Z",
+    "received_at": "2026-08-03T06:43:16.386040+00:00",
+    "kind": "lightning",
+    "device_id": null
+  },
+  {
+    "id": "4126e36c-a44f-4ebc-aacc-a6b328a0859d",
+    "distance": 2.1,
+    "energy": 15.0,
+    "timestamp": "2026-08-03T06:43:16.480516+00:00",
+    "received_at": "2026-08-03T06:43:16.480526+00:00",
+    "kind": "lightning",
+    "device_id": null
+  },
+  {
+    "id": "64af8d9d-4943-4e79-bd70-ff87a3dad689",
+    "distance": 99.49782371520996,
+    "energy": 88.8,
+    "timestamp": "2026-01-15T10:00:00Z",
+    "received_at": "2026-08-03T06:43:16.586667+00:00",
+    "kind": "lightning",
+    "device_id": null
   }
 ]

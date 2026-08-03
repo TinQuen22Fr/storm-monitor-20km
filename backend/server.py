@@ -632,8 +632,14 @@ async def weather_severe_profile(lat: float = LOURDES_LAT, lon: float = LOURDES_
 
 
 @api_router.get("/weather/vigilance")
-async def weather_vigilance():
-    """Vigilance météo calculée localement (Open-Meteo) pour Lourdes + départements voisins."""
+async def weather_vigilance(
+    lat: float | None = None,
+    lon: float | None = None,
+    zone: str | None = None,
+):
+    """Vigilance officielle MeteoAlarm centrée sur (lat, lon) si fournis, sinon Lourdes."""
+    if lat is not None and lon is not None:
+        return await vigilance_mod.compute_vigilance_for_point(lat, lon, zone_name=zone)
     return await vigilance_mod.compute_vigilance()
 
 

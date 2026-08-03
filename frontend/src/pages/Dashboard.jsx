@@ -544,7 +544,7 @@ export default function Dashboard() {
           </button>
         )}
 
-        <VigilanceBanner />
+        <VigilanceBanner lat={center.lat} lon={center.lon} zoneName={center.name} />
 
         {(current?.degraded || zones?.degraded) && (
           <div
