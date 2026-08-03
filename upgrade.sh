@@ -288,17 +288,14 @@ fi
 # ---------------------------------------------------------------------------
 # 6. Frontend deps (yarn install) — seulement si package.json/yarn.lock changé
 # ---------------------------------------------------------------------------
-# Garde-fou Vite 8 : exige Node >= 20.19 ou >= 22.x. Un Node trop vieux fait
-# planter yarn install (check engines) ET yarn build (après avoir vidé build/
-# → site blanc). On échoue ICI avec un message clair, AVANT de toucher au build.
+# Garde-fou : Vite 5 exige Node >= 18. NE PAS installer Node 22 sur l'Atom D425
+# (risque "Illegal instruction") — Node 20 du serveur est la référence.
 NODE_V="$(node -v 2>/dev/null || echo v0.0.0)"
 NODE_MAJOR="${NODE_V#v}"; NODE_MAJOR="${NODE_MAJOR%%.*}"
-NODE_MINOR="${NODE_V#v*.}"; NODE_MINOR="${NODE_MINOR%%.*}"
-if (( NODE_MAJOR < 20 )) || { (( NODE_MAJOR == 20 )) && (( NODE_MINOR < 19 )); } || (( NODE_MAJOR == 21 )); then
-  echo "ERROR: Node $NODE_V trop ancien pour Vite 8 (requis : >= 20.19 ou >= 22)." >&2
-  echo "       Mets à jour Node.js 22 :" >&2
-  echo "         curl -fsSL https://deb.nodesource.com/setup_22.x | bash -" >&2
-  echo "         apt-get install -y nodejs" >&2
+if (( NODE_MAJOR < 18 )); then
+  echo "ERROR: Node $NODE_V trop ancien (requis : >= 18, Node 20 recommandé)." >&2
+  echo "       curl -fsSL https://deb.nodesource.com/setup_20.x | bash -" >&2
+  echo "       apt-get install -y nodejs" >&2
   echo "       puis relance : bash upgrade.sh" >&2
   exit 1
 fi

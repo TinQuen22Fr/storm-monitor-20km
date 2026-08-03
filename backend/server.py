@@ -685,8 +685,6 @@ async def lightning_status():
 
 @api_router.get("/replay/events")
 async def replay_events(
-    lat: float = LOURDES_LAT,
-    lon: float = LOURDES_LON,
     radius_km: float = 70.0,
     min_strikes: int = 5,
     gap_min: int = 15,
@@ -700,20 +698,9 @@ async def replay_events(
       - A burst is kept only if it contains >= `min_strikes` strikes and spans >= 5 min.
       - Each event exposes start/end timestamps, peak 10-min rate, and centroid.
     """
-    # Vérification de couverture : la collecte Blitzortung est limitée à un rayon
-    # autour de Lourdes — au-delà, le Replay serait partiellement aveugle.
-    dist_lourdes = lightning_mod._haversine_km(LOURDES_LAT, LOURDES_LON, lat, lon)
-    covered = (dist_lourdes + radius_km) <= lightning_mod.COLLECT_RADIUS_KM
-    coverage = {
-        "covered": covered,
-        "collect_radius_km": lightning_mod.COLLECT_RADIUS_KM,
-        "distance_from_lourdes_km": round(dist_lourdes, 1),
-    }
-    if not covered:
-        return {"events": [], "source_window_h": 24, "coverage": coverage}
-    strikes = await lightning_mod.store.recent(lat, lon, radius_km, since_ts=None)
+    strikes = await lightning_mod.store.recent(LOURDES_LAT, LOURDES_LON, radius_km, since_ts=None)
     if not strikes:
-        return {"events": [], "source_window_h": 24, "coverage": coverage}
+        return {"events": [], "source_window_h": 24}
 
     strikes.sort(key=lambda s: s["ts"])
     gap_s = gap_min * 60.0
@@ -765,7 +752,7 @@ async def replay_events(
 
     # 3. Sort by intensity (peak rate then strike_count) descending, then recency
     events.sort(key=lambda e: (-e["peak_count_10min"], -e["strike_count"], -e["start_ts"]))
-    return {"events": events, "source_window_h": 24, "coverage": coverage}
+    return {"events": events, "source_window_h": 24}
 
 
 @api_router.get("/replay/demos")

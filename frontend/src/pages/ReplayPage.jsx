@@ -3,8 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { ArrowRight, MapPin, PlayCircle, Sparkles, Video, Zap } from "lucide-react";
 import NavTabs from "@/components/NavTabs";
 import VideoExportDialog from "@/components/VideoExportDialog";
-import { api, listFavorites, LOURDES } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
+import { api } from "@/lib/api";
 import { fmtLocal } from "@/lib/timeFormat";
 
 /**
@@ -23,28 +22,7 @@ export default function ReplayPage() {
   const [videoOpen, setVideoOpen] = useState(false);
   const [videoEvent, setVideoEvent] = useState(null);
   const [videoIsDemo, setVideoIsDemo] = useState(false);
-  const [zone, setZone] = useState({ lat: LOURDES.lat, lon: LOURDES.lon, name: "Lourdes" });
-  const [coverage, setCoverage] = useState(null);
-  const { user } = useAuth();
   const navigate = useNavigate();
-
-  // Zone active = premier favori de l'utilisateur connecté (comme le Dashboard)
-  useEffect(() => {
-    if (!user) {
-      setZone({ lat: LOURDES.lat, lon: LOURDES.lon, name: "Lourdes" });
-      return;
-    }
-    let cancel = false;
-    (async () => {
-      try {
-        const favs = await listFavorites();
-        if (!cancel && favs && favs.length > 0) {
-          setZone({ lat: favs[0].lat, lon: favs[0].lon, name: favs[0].name });
-        }
-      } catch { /* garde Lourdes */ }
-    })();
-    return () => { cancel = true; };
-  }, [user]);
 
   useEffect(() => {
     let cancel = false;
@@ -53,12 +31,11 @@ export default function ReplayPage() {
       setError(null);
       try {
         const [evRes, demosRes] = await Promise.all([
-          api.get("/replay/events", { params: { lat: zone.lat, lon: zone.lon } }),
+          api.get("/replay/events"),
           api.get("/replay/demos"),
         ]);
         if (!cancel) {
           setEvents(evRes.data.events || []);
-          setCoverage(evRes.data.coverage || null);
           setDemos(demosRes.data.demos || []);
         }
       } catch (e) {
@@ -69,7 +46,7 @@ export default function ReplayPage() {
     };
     load();
     return () => { cancel = true; };
-  }, [zone.lat, zone.lon]);
+  }, []);
 
   const playEvent = (ev) => {
     const pre = Math.max(ev.start_ts - 5 * 60, Math.floor(Date.now() / 1000) - 24 * 3600);
@@ -155,22 +132,9 @@ export default function ReplayPage() {
               </span>
             </div>
             <div className="text-xs text-slate-500 leading-relaxed">
-              Basé sur les strikes Blitzortung reçus dans la dernière journée autour de {zone.name}.
+              Basé sur les strikes Blitzortung reçus dans la dernière journée autour de Lourdes.
             </div>
           </div>
-
-          {coverage && !coverage.covered && (
-            <div className="border border-amber-300 bg-amber-50 p-5" data-testid="replay-coverage-warning">
-              <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-amber-700 mb-2">
-                Zone hors couverture
-              </div>
-              <div className="text-xs text-amber-800 leading-relaxed">
-                Le Replay n&apos;est pas disponible pour « {zone.name} » : la collecte des impacts
-                de foudre couvre un rayon de {coverage.collect_radius_km} km autour de Lourdes,
-                et cette zone en est à {coverage.distance_from_lourdes_km} km.
-              </div>
-            </div>
-          )}
         </aside>
 
         {/* Events list */}
@@ -185,7 +149,7 @@ export default function ReplayPage() {
                 </span>
               </div>
               <div className="text-[11px] text-slate-500 mb-3 leading-relaxed">
-                Épisodes scénarisés (données plausibles reconstruites) pour tester le Replay et l'export vidéo même en temps calme — accessibles quelle que soit votre zone de surveillance (vidéo centrée sur l'orage reconstitué, dans les Pyrénées).
+                Épisodes scénarisés (données plausibles reconstruites) pour tester le Replay et l'export vidéo même en temps calme.
               </div>
               <div className="flex flex-col gap-3">
                 {demos.map((dem, idx) => (
@@ -263,7 +227,7 @@ export default function ReplayPage() {
                 {error}
               </div>
             )}
-            {!loading && !error && events?.length === 0 && (coverage?.covered ?? true) && (
+            {!loading && !error && events?.length === 0 && (
               <div
                 className="border border-dashed border-slate-300 bg-white p-10 text-center"
                 data-testid="replay-empty"
@@ -273,7 +237,7 @@ export default function ReplayPage() {
                   Aucun épisode réel détecté
                 </div>
                 <div className="text-sm text-slate-500 leading-relaxed max-w-md mx-auto">
-                  Pas d&apos;orage notable dans les dernières 24 heures autour de {zone.name}.
+                  Pas d&apos;orage notable dans les dernières 24 heures autour de Lourdes.
                   Testez le Replay + MP4 avec les démos ci-dessus, ou consultez la{" "}
                   <Link to="/vigilance" className="text-slate-900 font-medium underline underline-offset-2">
                     carte de vigilance
@@ -365,7 +329,6 @@ export default function ReplayPage() {
         onClose={() => setVideoOpen(false)}
         event={videoEvent}
         isDemo={videoIsDemo}
-        zone={zone}
       />
     </div>
   );

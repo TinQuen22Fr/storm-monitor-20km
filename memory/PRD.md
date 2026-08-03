@@ -181,6 +181,17 @@ L'utilisateur a finalisé lui-même la mise en production (install manuelle de f
 4. **Build destructif** : upgrade.sh buildait directement dans build/ → échec = site blanc. Fix : build dans `build.new` + vérif index.html + swap atomique → l'ancien build reste servi si le nouveau échoue. Testé sandbox (build 3.9s, swap OK).
 **Procédure user Kimsufi** : Save to GitHub → `bash /opt/storm-monitor/upgrade.sh --with-deps` (si erreur Node : exécuter les 2 commandes affichées puis relancer).
 
+## [2026-08-03 soir] ORDRES UTILISATEUR APPLIQUÉS — Atom D425 + suppression replay favoris (PRÊT À PUSHER)
+**Contexte** : le serveur a replanté après l'upgrade (logs figés, status "running" mensonger = symptôme typique d'un crash-loop silencieux type `Illegal instruction` sur l'Atom D425, ou build frontend incompatible). L'utilisateur a posé des RÈGLES ABSOLUES → gravées dans `/app/memory/kimsufi_constraints.md` :
+- Kimsufi OVH Intel ATOM D425 (pas de SSE4/AVX) → JAMAIS de paquets récents/binaires modernes, uniquement versions stables précompilées manylinux2014.
+- JAMAIS de paquets sandbox (`emergentintegrations`…) dans requirements.txt.
+- Les tests sandbox ne valident RIEN pour son serveur → toujours fournir un bloc de vérification à exécuter par l'utilisateur (pas d'accès SSH).
+**Actions** :
+1. **Fonctionnalité "replay par ville favorite" SUPPRIMÉE** (ordre user) : ReplayPage.jsx revient à Lourdes-only (plus de listFavorites/zone/coverage), VideoExportDialog sans prop zone (centrage sur le centroïde de l'épisode, rayon 70), backend `/replay/events` sans params lat/lon ni bloc coverage. Le fix Blitzortung Origin est CONSERVÉ (sans lui : zéro impact foudre, prouvé).
+2. **Stack rétrogradée Atom-safe** : Vite 8→**5.4.20** + plugin-react 4.7.0 (compatible Node 20 existant du serveur, **Node 22 banni de l'Atom**) ; install.sh re-pointe Node 20 ; garde upgrade.sh assoupli à Node ≥18. requirements.txt re-pinné génération 2024 éprouvée : pydantic 2.6.4, websockets 12.0, pillow 10.4.0, shapely 2.0.7, cryptography 42.0.8, pywebpush 1.14.1, reportlab 4.2.5, httpx 0.28.1 (exigé par firebase-admin 7.5.0, pur Python), firebase-admin 7.5.0 conservé (prouvé sur son serveur en juin).
+3. **Testé sandbox avec ces versions exactes** : login JWT ✅, vigilance dynamique 22 ✅, 25 zones (fallback Xweather) ✅, PDF bulletin ✅, severe ✅, Blitzortung websockets 12 + origin ✅ (319 strikes), build Vite 5 en 10 s ✅, page Replay Lourdes-only ✅.
+**Procédure user** : Save to GitHub → `bash /opt/storm-monitor/upgrade.sh --with-deps` (pip DOWNGRADE le venv vers les versions sûres). Bloc diagnostic SIGILL fourni dans kimsufi_constraints.md si ça persiste.
+
 ## 🟡 Backlog
 - **P1** — Sécurité (EN PAUSE demande user) : injection Mongo unsubscribe, endpoints test publics, rate-limit subscribe, admin email exposé dans /api/health
 - **P2** — Partage bulletin (WhatsApp/lien direct) — reporté par l'utilisateur (« on verra plus tard »)
