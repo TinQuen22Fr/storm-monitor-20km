@@ -1,9 +1,17 @@
 # ⛔ CONTRAINTES ABSOLUES — Serveur de production/dev de l'utilisateur
 
 ## Matériel : Kimsufi OVH — Intel ATOM D425 (2010)
-CPU ancien : PAS de SSE4.1/SSE4.2, PAS d'AVX, PAS de POPCNT.
-Tout binaire compilé avec des instructions modernes → `Illegal instruction (core dumped)`
+Flags CPU RÉELS (relevé utilisateur 03/08/2026) — plafond SIMD = **SSSE3** :
+`fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush
+dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx lm constant_tsc arch_perfmon
+pebs bts nopl nonstop_tsc cpuid aperfmperf pni dtes64 monitor ds_cpl est tm2
+ssse3 cx16 xtpr pdcm movbe lahf_lm dtherm arat`
+→ PAS de sse4_1, PAS de sse4_2, PAS de popcnt, PAS d'avx.
+Tout binaire compilé avec ces instructions → `Illegal instruction (core dumped)`
 et le service systemd boucle en silence (logs figés, status "running" mensonger).
+Les wheels manylinux standard visent la baseline x86-64 (SSE2) = OK, mais seul
+un IMPORT RÉEL sur la machine fait foi → upgrade.sh exécute `check_cpu_binaries`
+(import de chaque module binaire du venv) SYSTÉMATIQUEMENT avant tout restart.
 
 ## RÈGLES ABSOLUES (ordre utilisateur du 03/08/2026)
 1. **JAMAIS de paquets récents nécessitant des instructions CPU modernes.**

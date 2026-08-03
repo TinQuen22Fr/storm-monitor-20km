@@ -204,6 +204,13 @@ L'utilisateur a finalisé lui-même la mise en production (install manuelle de f
 **install.sh** : Node existant ≥18 CONSERVÉ (le Kimsufi tourne en **Node v26.5.0 prouvé fonctionnel** — info user ; plus aucun downgrade forcé). NB : install.sh détectait déjà l'AVX pour choisir MongoDB 8 vs 4.4.
 **Réclamation user** transmise : coordonnées support fournies (support@emergent.sh + Job ID).
 
+## [2026-08-03 nuit-2] Contrôle CPU EMPIRIQUE systématique (PRÊT À PUSHER)
+Suite au relevé réel des flags CPU par l'utilisateur (plafond **SSSE3** — aucun sse4_1/sse4_2/popcnt/avx, consigné dans kimsufi_constraints.md) :
+- upgrade.sh n'affiche plus une supposition mais le **plafond SIMD réellement détecté** (`sse2/ssse3/sse4_2/avx` depuis /proc/cpuinfo) + bannière « MODE CPU ANCIEN » si sse4_2 absent.
+- Nouvelle fonction `check_cpu_binaries()` : import réel de chaque module binaire avec le python du venv déployé, rc=132/139 → ERROR nommant le paquet + **exit AVANT le systemctl restart** (l'ancien process reste vivant, le site ne tombe pas). Appelée SYSTÉMATIQUEMENT à l'étape 8 (avec ou sans --with-deps).
+- pip : `--prefer-binary` (jamais de compilation source lourde sur l'Atom).
+- Prouvé par simulation : module simulé en SIGILL → détecté nommément, restart bloqué (exit 1) ; cas nominal → ✓ et poursuite.
+
 ## 🟡 Backlog
 - **P1** — Sécurité (EN PAUSE demande user) : injection Mongo unsubscribe, endpoints test publics, rate-limit subscribe, admin email exposé dans /api/health
 - **P2** — Partage bulletin (WhatsApp/lien direct) — reporté par l'utilisateur (« on verra plus tard »)

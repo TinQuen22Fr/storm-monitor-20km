@@ -66,13 +66,60 @@ fi
 START_TS=$(date +%s)
 CPU_MODEL="$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | xargs || echo inconnu)"
 CPU_FLAGS="$(grep -m1 '^flags' /proc/cpuinfo 2>/dev/null || true)"
-HAS_SSE42=$(echo "$CPU_FLAGS" | grep -qw sse4_2 && echo oui || echo NON)
-HAS_AVX=$(echo "$CPU_FLAGS" | grep -qw avx && echo oui || echo NON)
+# Niveau SIMD réellement supporté par CE processeur (aucune supposition) :
+# Atom D425 = plafond SSSE3 → tout binaire compilé SSE4.x/AVX meurt en SIGILL.
+CPU_SIMD="sse2"
+echo "$CPU_FLAGS" | grep -qw ssse3  && CPU_SIMD="ssse3"
+echo "$CPU_FLAGS" | grep -qw sse4_2 && CPU_SIMD="sse4_2"
+echo "$CPU_FLAGS" | grep -qw avx    && CPU_SIMD="avx"
+CPU_OLD=0
+if ! echo "$CPU_FLAGS" | grep -qw sse4_2; then
+  CPU_OLD=1
+fi
 echo "==> Storm Monitor — UPGRADE rapide sur $(hostname)"
 echo "    Work dir : $WORK_DIR"
 echo "    App dir  : $APP_DIR"
 echo "    Branch   : $BRANCH"
-echo "    CPU      : $CPU_MODEL (SSE4.2: $HAS_SSE42 · AVX: $HAS_AVX)"
+echo "    CPU      : $CPU_MODEL — plafond SIMD réel : $CPU_SIMD"
+if [[ $CPU_OLD -eq 1 ]]; then
+  echo "    MODE CPU ANCIEN : pas de SSE4.x/AVX — chaque module binaire sera testé"
+  echo "    par import réel sur CE processeur avant tout redémarrage du service."
+fi
+
+# ---------------------------------------------------------------------------
+# Contrôle CPU : importe chaque module binaire avec le python du venv déployé.
+# rc=132 = Illegal instruction = paquet compilé avec des instructions absentes
+# de ce processeur. Appelé APRÈS pip et AVANT tout restart — on ne tue jamais
+# un service qui tourne pour le remplacer par un binaire qui crashe.
+# ---------------------------------------------------------------------------
+check_cpu_binaries() {
+  local venv_py="$APP_DIR/backend/venv/bin/python"
+  if [[ ! -x "$venv_py" ]]; then
+    echo "    WARN: venv absent — contrôle CPU des modules sauté"
+    return 0
+  fi
+  echo "    Contrôle CPU : import réel de chaque module binaire ($CPU_MODEL)..."
+  local fail=0 m rc
+  for m in pydantic fastapi motor pymongo shapely PIL reportlab firebase_admin websockets httpx bcrypt jwt cryptography; do
+    set +e
+    "$venv_py" -c "import $m" >/dev/null 2>&1
+    rc=$?
+    set -e
+    if [[ $rc -eq 132 || $rc -eq 139 ]]; then
+      echo "ERROR: module Python '$m' → Illegal instruction/segfault sur ce CPU." >&2
+      fail=1
+    elif [[ $rc -ne 0 ]]; then
+      echo "    WARN: import $m en erreur (rc=$rc) — détail : $venv_py -c 'import $m'"
+    fi
+  done
+  if [[ $fail -eq 1 ]]; then
+    echo "ERROR: paquet(s) incompatible(s) avec ce processeur — pinner une version" >&2
+    echo "       plus ancienne dans requirements.txt. Le service N'A PAS été redémarré" >&2
+    echo "       (l'ancien process continue de tourner)." >&2
+    exit 1
+  fi
+  echo "    ✓ Tous les modules binaires passent réellement sur ce CPU"
+}
 
 # ---------------------------------------------------------------------------
 # 1. Git pull dans WORK_DIR (avec stash auto si modifs locales)
@@ -301,31 +348,10 @@ if [[ $REQ_CHANGED -eq 1 && $WITH_DEPS -eq 1 ]]; then
   # shellcheck disable=SC1091
   source venv/bin/activate
   pip install --upgrade pip wheel setuptools >/dev/null
-  pip install -r requirements.txt
+  # --prefer-binary : toujours des wheels précompilées, jamais de compilation
+  # lourde depuis les sources sur l'Atom.
+  pip install --prefer-binary -r requirements.txt
   deactivate
-  # Contrôle compatibilité CPU : chaque module binaire est importé — un paquet
-  # compilé avec des instructions absentes de ce processeur meurt en
-  # "Illegal instruction" (rc=132). On échoue ICI avec le nom exact du coupable
-  # au lieu de laisser le service boucler en silence.
-  echo "    Vérification compatibilité CPU des modules binaires..."
-  CPU_CHECK_FAIL=""
-  for m in pydantic fastapi motor pymongo shapely PIL reportlab firebase_admin websockets httpx bcrypt jwt cryptography; do
-    set +e
-    venv/bin/python -c "import $m" >/dev/null 2>&1
-    rc=$?
-    set -e
-    if [[ $rc -eq 132 ]]; then
-      echo "ERROR: module Python '$m' → Illegal instruction sur ce CPU ($CPU_MODEL)." >&2
-      CPU_CHECK_FAIL=1
-    elif [[ $rc -ne 0 ]]; then
-      echo "    WARN: import $m en erreur (rc=$rc) — détail : venv/bin/python -c 'import $m'"
-    fi
-  done
-  if [[ -n "$CPU_CHECK_FAIL" ]]; then
-    echo "ERROR: paquet(s) incompatible(s) CPU détecté(s) — il faut pinner une version plus ancienne dans requirements.txt." >&2
-    exit 1
-  fi
-  echo "    ✓ Tous les modules binaires passent sur ce CPU"
   cd - >/dev/null
 elif [[ $REQ_CHANGED -eq 1 ]]; then
   echo ""
@@ -413,6 +439,9 @@ cd - >/dev/null
 # ---------------------------------------------------------------------------
 echo ""
 echo "==> Étape 8 — Restart du service backend..."
+# Contrôle CPU SYSTÉMATIQUE (avec ou sans --with-deps) : on ne redémarre le
+# service QUE si tous les modules binaires passent sur ce processeur.
+check_cpu_binaries
 systemctl restart storm-monitor.service
 sleep 2
 if systemctl is-active --quiet storm-monitor.service; then
