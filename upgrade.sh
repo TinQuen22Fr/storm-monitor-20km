@@ -47,7 +47,9 @@ RUN_USER="root"
 # 0. Pre-flight
 # ---------------------------------------------------------------------------
 if [[ $EUID -ne 0 ]]; then
-  echo "ERROR: ce script doit être lancé en root (bash upgrade.sh)" >&2
+  echo "ERROR: privilèges root requis." >&2
+  echo "       Kimsufi (root direct) : bash upgrade.sh" >&2
+  echo "       Dedibox (compte quentin) : sudo bash upgrade.sh" >&2
   exit 1
 fi
 
@@ -55,6 +57,13 @@ if [[ ! -d "$WORK_DIR/.git" ]]; then
   echo "ERROR: $WORK_DIR n'est pas un clone git." >&2
   echo "       Première installation requise : lance d'abord 'bash install.sh'." >&2
   exit 1
+fi
+
+# Dedibox : si le clone /opt a été fait par un utilisateur (ex: quentin) et que
+# le script tourne en sudo/root, git refuse d'opérer ("dubious ownership").
+# On déclare le dépôt sûr pour root — idempotent.
+if ! git config --global --get-all safe.directory 2>/dev/null | grep -qx "$WORK_DIR"; then
+  git config --global --add safe.directory "$WORK_DIR"
 fi
 
 if [[ ! -d "$APP_DIR/backend" || ! -d "$APP_DIR/frontend" ]]; then
@@ -160,7 +169,7 @@ rm -f "$WORK_DIR/backend/.stale_cache.pkl"
 STASH_CREATED=0
 if ! git -C "$WORK_DIR" diff --quiet || ! git -C "$WORK_DIR" diff --cached --quiet; then
   echo "    Modifs locales détectées — stash automatique..."
-  if git -C "$WORK_DIR" stash push -u -m "upgrade.sh auto-stash $(date -u +%FT%TZ)" >/dev/null 2>&1; then
+  if git -C "$WORK_DIR" -c user.name="upgrade.sh" -c user.email="upgrade@storm-monitor.local" stash push -u -m "upgrade.sh auto-stash $(date -u +%FT%TZ)" >/dev/null 2>&1; then
     STASH_CREATED=1
   fi
 fi

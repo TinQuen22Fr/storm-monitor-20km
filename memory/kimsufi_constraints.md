@@ -8,6 +8,11 @@
 - Le dépôt (branche Version_With_Detector) doit rester INSTALLABLE SUR LES DEUX.
   Règle de compatibilité = le plus faible des deux : **tout doit passer sur le D425**.
 - DNS storm-monitor.quentin-astro.fr géré chez Ionos → pointera vers le serveur actif.
+- **Accès SSH** : Kimsufi = root direct (pas de sudo). Dedibox = compte `quentin` + sudo
+  (root SSH interdit) → toutes les commandes serveur données à l'utilisateur doivent
+  être préfixées `sudo` pour la Dedibox. Les scripts détectent EUID et affichent
+  la bonne syntaxe ; guard `git safe.directory` intégré (clone /opt fait par quentin,
+  scripts exécutés en sudo/root).
 
 ## Matériel critique : Kimsufi — Intel ATOM D425 (2010)
 Flags CPU RÉELS (relevé utilisateur 03/08/2026) — plafond SIMD = **SSSE3** :

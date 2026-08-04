@@ -244,6 +244,11 @@ Nouveau serveur principal : Dedibox Scaleway, Intel C2350 Avoton (SSE4.2 oui / A
 Testé : bash -n OK ×2, select_python → python3.11 en sandbox.
 **Reste côté user (procédure donnée)** : DNS avant install (certbot), copie .env (MÊMES clés VAPID sinon les subscriptions push meurent) + firebase-admin.json + proxies.json, mongodump/restore 4.4→4.4.
 
+## [2026-08-04] Support sudo Dedibox (compte quentin, root SSH interdit) (PRÊT À PUSHER)
+- Messages EUID des 2 scripts : affichent désormais la syntaxe par machine (Kimsufi `bash …` / Dedibox `sudo bash …`).
+- **Guard `git safe.directory`** dans install.sh ET upgrade.sh : si le clone /opt appartient à quentin et que le script tourne en sudo/root, git refusait tout (« dubious ownership ») — reproduit en simulation (chown uid 1000 + accès root refusé), guard validé (accès OK après). Idempotent.
+- `git stash push` avec identité inline (`-c user.name/email`) : un root/sudo sans .gitconfig ne peut pas créer les commits du stash sinon.
+
 ## 🟡 Backlog
 - **P1** — Sécurité (EN PAUSE demande user) : injection Mongo unsubscribe, endpoints test publics, rate-limit subscribe, admin email exposé dans /api/health
 - **P2** — Partage bulletin (WhatsApp/lien direct) — reporté par l'utilisateur (« on verra plus tard »)

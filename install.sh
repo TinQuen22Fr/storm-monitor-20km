@@ -48,7 +48,9 @@ RUN_USER="root"
 # 0. Pre-flight
 # ---------------------------------------------------------------------------
 if [[ $EUID -ne 0 ]]; then
-  echo "ERROR: this script must be run as root (bash install.sh)" >&2
+  echo "ERROR: privilèges root requis." >&2
+  echo "       Kimsufi (root direct) : bash install.sh" >&2
+  echo "       Dedibox (compte quentin) : sudo bash install.sh" >&2
   exit 1
 fi
 
@@ -248,6 +250,11 @@ systemctl enable --now mongod
 mkdir -p /opt /var/www
 
 # --- 2a. WORK_DIR: clone OR pull ---
+# Dedibox : si le clone /opt a été fait par l'utilisateur (ex: quentin) et que
+# le script tourne en sudo/root, git refuse d'opérer ("dubious ownership").
+if ! git config --global --get-all safe.directory 2>/dev/null | grep -qx "$WORK_DIR"; then
+  git config --global --add safe.directory "$WORK_DIR"
+fi
 if [[ -d "$WORK_DIR/.git" ]]; then
   echo "==> Existing clone detected at $WORK_DIR — pulling latest..."
 
@@ -263,7 +270,7 @@ if [[ -d "$WORK_DIR/.git" ]]; then
   STASH_CREATED=0
   if ! git -C "$WORK_DIR" diff --quiet || ! git -C "$WORK_DIR" diff --cached --quiet; then
     echo "    Local changes detected — stashing..."
-    if git -C "$WORK_DIR" stash push -u -m "install.sh auto-stash $(date -u +%FT%TZ)" >/dev/null 2>&1; then
+    if git -C "$WORK_DIR" -c user.name="install.sh" -c user.email="install@storm-monitor.local" stash push -u -m "install.sh auto-stash $(date -u +%FT%TZ)" >/dev/null 2>&1; then
       STASH_CREATED=1
     fi
   fi
