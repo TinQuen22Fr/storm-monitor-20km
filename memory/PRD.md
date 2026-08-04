@@ -252,6 +252,9 @@ Testé : bash -n OK ×2, select_python → python3.11 en sandbox.
 ## [2026-08-05] install.sh : --frozen-lockfile supprimé (ordre user, yarn plantait sur la Dedibox)
 `yarn install` simple désormais (ligne build + texte d'aide). upgrade.sh inchangé : il tente frozen puis retombe automatiquement en mode normal (jamais bloquant).
 
+## [2026-08-05] install.sh : auto-mise-à-jour en cours de run corrigée (cause du frozen-lockfile persistant)
+L'erreur `--frozen-lockfile` persistait car install.sh fait son propre `git pull` EN COURS d'exécution → bash continuait avec l'ANCIENNE version en mémoire (celle d'avant le fix). Correctifs (parité avec upgrade.sh) : re-exec de la nouvelle version si install.sh change dans le pull (`STORM_INSTALL_REEXEC`) + durcissement du stash pop (reset origin + drop en cas de conflit). Contournement immédiat donné à l'utilisateur : relancer install.sh (le /opt local contient déjà la version corrigée après le pull du run raté) ou `yarn install && yarn build` à la main.
+
 ## 🟡 Backlog
 - **P1** — Sécurité (EN PAUSE demande user) : injection Mongo unsubscribe, endpoints test publics, rate-limit subscribe, admin email exposé dans /api/health
 - **P2** — Partage bulletin (WhatsApp/lien direct) — reporté par l'utilisateur (« on verra plus tard »)

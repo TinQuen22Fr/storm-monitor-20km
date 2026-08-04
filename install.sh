@@ -298,7 +298,21 @@ if [[ -d "$WORK_DIR/.git" ]]; then
   fi
 
   if [[ $STASH_CREATED -eq 1 ]]; then
-    git -C "$WORK_DIR" stash pop >/dev/null 2>&1 || echo "    WARN: stash conflicts — see 'git stash list'"
+    if ! git -C "$WORK_DIR" stash pop >/dev/null 2>&1; then
+      echo "    WARN: conflits au stash pop — abandon des modifs locales (reset origin/$BRANCH)"
+      git -C "$WORK_DIR" reset --hard "origin/$BRANCH"
+      git -C "$WORK_DIR" stash drop >/dev/null 2>&1 || true
+    fi
+  fi
+
+  # Si install.sh lui-même a changé dans ce pull, on RELANCE immédiatement la
+  # nouvelle version : bash lit le script au fil de l'exécution — continuer
+  # avec l'ancienne version en mémoire après un pull = comportement imprévisible.
+  if [[ "${STORM_INSTALL_REEXEC:-0}" != "1" && "$CURRENT_COMMIT" != "$NEW_COMMIT" ]]; then
+    if git -C "$WORK_DIR" diff --name-only "$CURRENT_COMMIT" "$NEW_COMMIT" 2>/dev/null | grep -qx 'install.sh'; then
+      echo "    install.sh mis à jour dans ce pull — relance avec la NOUVELLE version..."
+      exec env STORM_INSTALL_REEXEC=1 bash "$WORK_DIR/install.sh" "$@"
+    fi
   fi
 else
   if [[ -d "$WORK_DIR" ]]; then
