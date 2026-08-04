@@ -234,6 +234,16 @@ Suite au relevé réel des flags CPU par l'utilisateur (plafond **SSSE3** — au
 2. **Garantie finale** : `import server` COMPLET (la chaîne réelle qu'uvicorn exécute au boot — attrape TOUT, y compris les imports opportunistes de reliquats). rc 132/139 ou tout échec → **UPGRADE BLOQUÉ, service PAS redémarré, prod intacte**, traceback affiché (15 dernières lignes).
 **Prouvé** : sandbox `import server` OK (positif) ; simulation SIGILL → upgrade bloqué exit 1 avec message clair (négatif). numpy banni dans kimsufi_constraints.md (si un jour indispensable : 1.26.4 max + test serveur).
 
+## [2026-08-04] Portage bi-serveurs : Dedibox Scaleway C2350 (principal) + Kimsufi (secours) (PRÊT À PUSHER)
+Nouveau serveur principal : Dedibox Scaleway, Intel C2350 Avoton (SSE4.2 oui / AVX NON), IP 51.158.154.131, Python système 3.14.4, Node 26 NodeSource, nginx préinstallé. DNS Ionos à repointer. Exigence : dépôt installable sur LES DEUX machines.
+**Analyse install.sh** : Mongo AVX→4.4 déjà géré ✅ (avec workaround libssl1.1 focal) ; Node ≥18 conservé ✅ ; contrôle CPU empirique `import server` ✅.
+**Blocage trouvé et corrigé** : Python 3.14.4 → AUCUNE wheel cp314 pour pydantic-core 2.16.3/pymongo 4.5/pillow 10.4 (prouvé par `pip download --python-version 3.14` → PAS DE WHEEL ; 3.12 → OK). Correctifs :
+- install.sh : `select_python()` (python3.12 > python3.11, tentative apt sinon, ERROR claire sinon) ; venv existant en python incompatible (ex 3.14) **recréé** automatiquement ; `--prefer-binary` sur pip.
+- upgrade.sh : même garde à la création de venv (refuse un python ≥3.13, renvoie vers install.sh).
+- install.sh : gate `import server` avant démarrage + sonde santé /api/health après restart (parité avec upgrade.sh).
+Testé : bash -n OK ×2, select_python → python3.11 en sandbox.
+**Reste côté user (procédure donnée)** : DNS avant install (certbot), copie .env (MÊMES clés VAPID sinon les subscriptions push meurent) + firebase-admin.json + proxies.json, mongodump/restore 4.4→4.4.
+
 ## 🟡 Backlog
 - **P1** — Sécurité (EN PAUSE demande user) : injection Mongo unsubscribe, endpoints test publics, rate-limit subscribe, admin email exposé dans /api/health
 - **P2** — Partage bulletin (WhatsApp/lien direct) — reporté par l'utilisateur (« on verra plus tard »)

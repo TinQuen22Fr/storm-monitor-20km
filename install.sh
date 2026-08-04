@@ -358,14 +358,58 @@ chown -R "$RUN_USER":"$RUN_USER" "$APP_DIR/cache"
 # 3. Backend — Python venv, dependencies, .env
 # ---------------------------------------------------------------------------
 echo "==> Setting up backend..."
+
+# --- Sélection de l'interpréteur Python pour le venv -----------------------
+# Les versions pinnées (éprouvées sur le Kimsufi Atom) ont des wheels
+# cp311/cp312 UNIQUEMENT. Python 3.13/3.14 : pas de wheel pour pydantic-core
+# 2.16.3 / pymongo 4.5 / pillow 10.4 → compilation source vouée à l'échec
+# (PyO3 de cette génération ne supporte pas ces ABI). On impose 3.11 ou 3.12.
+select_python() {
+  local cand ver
+  for cand in python3.12 python3.11 python3; do
+    if command -v "$cand" >/dev/null 2>&1; then
+      ver="$("$cand" -c 'import sys;print("%d.%d"%sys.version_info[:2])' 2>/dev/null || echo 0)"
+      case "$ver" in
+        3.11|3.12) command -v "$cand"; return 0 ;;
+      esac
+    fi
+  done
+  return 1
+}
+PYTHON_BIN="$(select_python || true)"
+if [[ -z "$PYTHON_BIN" ]]; then
+  echo "==> Aucun Python 3.11/3.12 trouvé — tentative d'installation apt..."
+  apt-get install -y python3.12 python3.12-venv python3.12-dev >/dev/null 2>&1 || \
+    apt-get install -y python3.11 python3.11-venv python3.11-dev >/dev/null 2>&1 || true
+  PYTHON_BIN="$(select_python || true)"
+fi
+if [[ -z "$PYTHON_BIN" ]]; then
+  echo "ERROR: Python 3.11 ou 3.12 requis pour le venv (le python3 système est $(python3 --version 2>/dev/null))." >&2
+  echo "       Les dépendances pinnées n'ont pas de wheels pour Python >= 3.13." >&2
+  echo "       Installe python3.12 (paquet distro, ou deadsnakes PPA sur Ubuntu) puis relance." >&2
+  exit 1
+fi
+echo "    Venv Python : $PYTHON_BIN ($("$PYTHON_BIN" --version 2>&1))"
+
 cd "$APP_DIR/backend"
+# Un venv existant créé avec un python incompatible (ex: 3.14) est recréé.
+if [[ -x venv/bin/python ]]; then
+  VENV_VER="$(venv/bin/python -c 'import sys;print("%d.%d"%sys.version_info[:2])' 2>/dev/null || echo 0)"
+  case "$VENV_VER" in
+    3.11|3.12) : ;;
+    *)
+      echo "    venv existant en Python $VENV_VER (incompatible) — recréation avec $PYTHON_BIN"
+      rm -rf venv
+      ;;
+  esac
+fi
 if [ ! -d venv ]; then
-  python3 -m venv venv
+  "$PYTHON_BIN" -m venv venv
 fi
 # shellcheck disable=SC1091
 source venv/bin/activate
 pip install --upgrade pip wheel setuptools
-pip install -r requirements.txt
+pip install --prefer-binary -r requirements.txt
 deactivate
 cd -
 
@@ -710,8 +754,48 @@ systemctl daemon-reload
 # pick up freshly rsync'd Python files when it's already up. We must force
 # a hard restart so uvicorn re-imports the new server.py / severe.py.
 systemctl enable storm-monitor.service
+# Contrôle CPU EMPIRIQUE avant de lancer le service : import de la chaîne
+# COMPLÈTE de l'application avec le python du venv. Un paquet binaire compilé
+# avec des instructions absentes de CE processeur (SSE4/AVX sur vieux Atom)
+# meurt en 'Illegal instruction' — on refuse de démarrer un service cassé.
+echo "==> Contrôle CPU : import complet de l'application sur ce processeur..."
+set +e
+IMPORT_OUT="$(cd "$APP_DIR/backend" && timeout 180 venv/bin/python -c 'import server' 2>&1)"
+IMPORT_RC=$?
+set -e
+if [[ $IMPORT_RC -ne 0 ]]; then
+  if [[ $IMPORT_RC -eq 132 || $IMPORT_RC -eq 139 || "$IMPORT_OUT" == *"Illegal instruction"* ]]; then
+    echo "ERROR: 'import server' meurt en Illegal instruction sur ce CPU." >&2
+  else
+    echo "ERROR: 'import server' échoue (rc=$IMPORT_RC) :" >&2
+  fi
+  echo "$IMPORT_OUT" | tail -n 15 >&2
+  echo "ERROR: INSTALLATION INTERROMPUE avant le démarrage du service." >&2
+  exit 1
+fi
+echo "    ✓ Chaîne d'import complète compatible avec ce CPU"
+
 systemctl restart storm-monitor.service
 echo "    Restarted storm-monitor service to pick up new code."
+
+# Sonde santé réelle : une vraie réponse HTTP, pas juste un status systemd.
+echo "==> Sonde santé : attente d'une réponse de l'API (127.0.0.1:${BACKEND_PORT}/api/health)..."
+HEALTH_OK=0
+for _ in $(seq 1 12); do
+  sleep 2
+  if curl -fsS -m 4 "http://127.0.0.1:${BACKEND_PORT}/api/health" >/dev/null 2>&1; then
+    HEALTH_OK=1
+    break
+  fi
+done
+if [[ $HEALTH_OK -eq 1 ]]; then
+  echo "    ✓ Le backend répond RÉELLEMENT sur /api/health"
+else
+  echo "ERROR: le backend ne répond pas sur /api/health après 24 s." >&2
+  echo "       Dernières lignes de /var/log/storm-monitor.err.log :" >&2
+  tail -n 25 /var/log/storm-monitor.err.log >&2 || true
+  exit 1
+fi
 
 # ---------------------------------------------------------------------------
 # 7. Final report

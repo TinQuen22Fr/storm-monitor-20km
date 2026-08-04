@@ -387,7 +387,19 @@ if [[ $WITH_DEPS -eq 1 ]]; then
   echo "    que le venv correspond EXACTEMENT aux versions pinnées)..."
   cd "$APP_DIR/backend"
   if [[ ! -d venv ]]; then
-    python3 -m venv venv
+    # Le venv DOIT être en Python 3.11/3.12 (les pins n'ont pas de wheels >= 3.13).
+    PY_FOR_VENV=""
+    for cand in python3.12 python3.11 python3; do
+      if command -v "$cand" >/dev/null 2>&1; then
+        v="$("$cand" -c 'import sys;print("%d.%d"%sys.version_info[:2])' 2>/dev/null || echo 0)"
+        case "$v" in 3.11|3.12) PY_FOR_VENV="$cand"; break ;; esac
+      fi
+    done
+    if [[ -z "$PY_FOR_VENV" ]]; then
+      echo "ERROR: aucun Python 3.11/3.12 pour créer le venv — lance 'bash install.sh' (il gère l'installation)." >&2
+      exit 1
+    fi
+    "$PY_FOR_VENV" -m venv venv
   fi
   # shellcheck disable=SC1091
   source venv/bin/activate

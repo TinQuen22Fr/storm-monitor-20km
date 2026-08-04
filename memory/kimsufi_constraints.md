@@ -1,6 +1,15 @@
-# ⛔ CONTRAINTES ABSOLUES — Serveur de production/dev de l'utilisateur
+# ⛔ CONTRAINTES ABSOLUES — Serveurs de l'utilisateur
 
-## Matériel : Kimsufi OVH — Intel ATOM D425 (2010)
+## Architecture cible (04/08/2026) : 2 serveurs, redondance
+- **PRINCIPAL (nouveau)** : Dedibox Scaleway — Intel **C2350 Avoton** (IP 51.158.154.131).
+  SSE4.1/SSE4.2 : OUI · AVX : **NON** (→ MongoDB 4.4 obligatoire).
+  Python système 3.14.4 (⚠ venv forcé en 3.11/3.12 par install.sh), Node 26 (NodeSource), nginx présent.
+- **SECOURS** : Kimsufi OVH — Intel **ATOM D425** (plafond SIMD **SSSE3**, pas de SSE4.x/POPCNT/AVX).
+- Le dépôt (branche Version_With_Detector) doit rester INSTALLABLE SUR LES DEUX.
+  Règle de compatibilité = le plus faible des deux : **tout doit passer sur le D425**.
+- DNS storm-monitor.quentin-astro.fr géré chez Ionos → pointera vers le serveur actif.
+
+## Matériel critique : Kimsufi — Intel ATOM D425 (2010)
 Flags CPU RÉELS (relevé utilisateur 03/08/2026) — plafond SIMD = **SSSE3** :
 `fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush
 dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx lm constant_tsc arch_perfmon
