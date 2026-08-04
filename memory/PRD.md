@@ -249,6 +249,9 @@ Testé : bash -n OK ×2, select_python → python3.11 en sandbox.
 - **Guard `git safe.directory`** dans install.sh ET upgrade.sh : si le clone /opt appartient à quentin et que le script tourne en sudo/root, git refusait tout (« dubious ownership ») — reproduit en simulation (chown uid 1000 + accès root refusé), guard validé (accès OK après). Idempotent.
 - `git stash push` avec identité inline (`-c user.name/email`) : un root/sudo sans .gitconfig ne peut pas créer les commits du stash sinon.
 
+## [2026-08-05] install.sh : --frozen-lockfile supprimé (ordre user, yarn plantait sur la Dedibox)
+`yarn install` simple désormais (ligne build + texte d'aide). upgrade.sh inchangé : il tente frozen puis retombe automatiquement en mode normal (jamais bloquant).
+
 ## 🟡 Backlog
 - **P1** — Sécurité (EN PAUSE demande user) : injection Mongo unsubscribe, endpoints test publics, rate-limit subscribe, admin email exposé dans /api/health
 - **P2** — Partage bulletin (WhatsApp/lien direct) — reporté par l'utilisateur (« on verra plus tard »)

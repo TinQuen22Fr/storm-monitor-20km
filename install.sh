@@ -527,7 +527,7 @@ cd "$APP_DIR/frontend"
 YARN_LOG="/var/log/storm-monitor-yarn-install.log"
 : > "$YARN_LOG"
 set +e
-yarn install --frozen-lockfile 2>&1 | tee "$YARN_LOG" | grep -vE '^warning |^$'
+yarn install 2>&1 | tee "$YARN_LOG" | grep -vE '^warning |^$'
 YARN_RC=${PIPESTATUS[0]}
 set -e
 if [[ $YARN_RC -ne 0 ]]; then
@@ -843,6 +843,6 @@ echo "    To deploy a new version (update mode — clone is preserved):"
 echo "        bash install.sh                # auto-detect existing install → git pull"
 echo "        # OR manually:"
 echo "        cd /var/www/storm-monitor && git pull"
-echo "        cd frontend && yarn install --frozen-lockfile && yarn build"
+echo "        cd frontend && yarn install && yarn build"
 echo "        systemctl restart storm-monitor && systemctl reload nginx"
 echo ""
