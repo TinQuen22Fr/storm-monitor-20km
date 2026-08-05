@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
  * watched zone. When `lat` / `lon` are provided the banner shows the dept
  * containing the point plus its real bordering departements.
  */
-export default function VigilanceBanner({ lat, lon, zoneName }) {
+export default function VigilanceBanner({ lat, lon, zoneName, refreshTick = 0 }) {
   const [data, setData] = useState(null);
   const [expanded, setExpanded] = useState(false);
 
@@ -31,7 +31,7 @@ export default function VigilanceBanner({ lat, lon, zoneName }) {
       cancel = true;
       clearInterval(t);
     };
-  }, [lat, lon, zoneName]);
+  }, [lat, lon, zoneName, refreshTick]);
 
   if (!data) return null;
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { CloudRain, Umbrella } from "lucide-react";
 import { getRainNowcast } from "@/lib/api";
 
-export default function RainNowcastBadge({ lat, lon }) {
+export default function RainNowcastBadge({ lat, lon, refreshTick = 0 }) {
   const [data, setData] = useState(null);
 
   useEffect(() => {
@@ -14,7 +14,7 @@ export default function RainNowcastBadge({ lat, lon }) {
     load();
     const t = setInterval(load, 5 * 60_000);
     return () => { cancel = true; clearInterval(t); };
-  }, [lat, lon]);
+  }, [lat, lon, refreshTick]);
 
   if (!data) return null;
 

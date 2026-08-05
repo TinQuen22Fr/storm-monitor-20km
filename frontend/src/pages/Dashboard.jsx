@@ -19,6 +19,7 @@ import StormRiskDialog from "@/components/StormRiskDialog";
 import AuthDialog from "@/components/AuthDialog";
 import DataSourceBadge from "@/components/DataSourceBadge";
 import FavoritesList from "@/components/FavoritesList";
+import PullToRefresh from "@/components/PullToRefresh";
 import { Slider } from "@/components/ui/slider";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { api, API, getCurrent, getForecast, getHistory, getStrikes, getZones, listFavorites, LOURDES } from "@/lib/api";
@@ -330,6 +331,15 @@ export default function Dashboard() {
     };
   }, [loadWeather, loadStrikes]);
 
+  // Rafraîchissement TOTAL : météo + impacts + vigilance + pluie AROME +
+  // zones favorites (via refreshTick). Déclenché par le bouton « Actualiser »
+  // (desktop) et le tirer-vers-le-bas (mobile/APK).
+  const [refreshTick, setRefreshTick] = useState(0);
+  const fullRefresh = useCallback(async () => {
+    setRefreshTick((t) => t + 1);
+    await Promise.all([loadWeather(), loadStrikes()]);
+  }, [loadWeather, loadStrikes]);
+
   // Fetch zones + strikes for each secondary (non-focus) visible favorite.
   // Refresh every 30s to keep the multi-zone overlay live without hammering the API.
   // Stable signature so we don't re-trigger on object identity changes.
@@ -371,7 +381,7 @@ export default function Dashboard() {
       cancel = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [overlayKey, center.lat, center.lon, radius]);
+  }, [overlayKey, center.lat, center.lon, radius, refreshTick]);
 
   const toggleNotif = async () => {
     if (notifEnabled) {
@@ -544,7 +554,8 @@ export default function Dashboard() {
           </button>
         )}
 
-        <VigilanceBanner lat={center.lat} lon={center.lon} zoneName={center.name} />
+        <PullToRefresh onRefresh={fullRefresh} />
+        <VigilanceBanner lat={center.lat} lon={center.lon} zoneName={center.name} refreshTick={refreshTick} />
 
         {(current?.degraded || zones?.degraded) && (
           <div
@@ -655,7 +666,7 @@ export default function Dashboard() {
 
           <div className="mt-6 flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400">
             <button
-              onClick={loadWeather}
+              onClick={fullRefresh}
               disabled={refreshing}
               className="flex items-center gap-2 hover:text-slate-900 transition-colors disabled:opacity-50"
               data-testid="refresh-button"
@@ -833,7 +844,7 @@ export default function Dashboard() {
         <div className="px-6 py-6 space-y-6 flex-1 shrink-0">
           <div className={noZone ? "opacity-40 pointer-events-none select-none" : ""} aria-hidden={noZone}>
             <div className="mb-4">
-              <RainNowcastBadge lat={center.lat} lon={center.lon} />
+              <RainNowcastBadge lat={center.lat} lon={center.lon} refreshTick={refreshTick} />
             </div>
             <div>
               <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400 mb-3">

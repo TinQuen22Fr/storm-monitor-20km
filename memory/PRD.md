@@ -255,6 +255,14 @@ Testé : bash -n OK ×2, select_python → python3.11 en sandbox.
 ## [2026-08-05] install.sh : auto-mise-à-jour en cours de run corrigée (cause du frozen-lockfile persistant)
 L'erreur `--frozen-lockfile` persistait car install.sh fait son propre `git pull` EN COURS d'exécution → bash continuait avec l'ANCIENNE version en mémoire (celle d'avant le fix). Correctifs (parité avec upgrade.sh) : re-exec de la nouvelle version si install.sh change dans le pull (`STORM_INSTALL_REEXEC`) + durcissement du stash pop (reset origin + drop en cas de conflit). Contournement immédiat donné à l'utilisateur : relancer install.sh (le /opt local contient déjà la version corrigée après le pull du run raté) ou `yarn install && yarn build` à la main.
 
+## [2026-08-05] Actualisation totale : tirer-vers-le-bas (mobile) + bouton complet (desktop)
+Demande user : pouvoir tout réactualiser sans changer le rayon — pull-to-refresh sur mobile/APK, bouton discret sur desktop (pas sur la carte).
+- Nouveau composant `PullToRefresh.jsx` : geste tactile en haut de page (scrollY≤2), seuil 75 px, ignoré si le geste démarre sur `.leaflet-container` (pas de conflit avec la carte), indicateur flottant + spinner pendant l'actualisation.
+- `fullRefresh()` dans Dashboard : Promise.all(loadWeather, loadStrikes) + `refreshTick` propagé à VigilanceBanner, RainNowcastBadge et l'effet des zones favorites → TOUT se recharge (météo, impacts, vigilance, pluie AROME, overlays favoris).
+- Le bouton « Actualiser » existant (sidebar, discret, horodaté) déclenche désormais fullRefresh au lieu du seul loadWeather.
+- Testé : build Vite OK, simulation touch Playwright → indicateur pendant le pull ✓, spinner après release ✓, badge fraîcheur « il y a 0 s » ✓.
+- NB APK : si l'APK Capacitor charge l'URL distante, rien à refaire ; s'il embarque le build, régénérer l'APK.
+
 ## 🟡 Backlog
 - **P1** — Sécurité (EN PAUSE demande user) : injection Mongo unsubscribe, endpoints test publics, rate-limit subscribe, admin email exposé dans /api/health
 - **P2** — Partage bulletin (WhatsApp/lien direct) — reporté par l'utilisateur (« on verra plus tard »)
