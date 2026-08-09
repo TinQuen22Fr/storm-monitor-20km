@@ -8,7 +8,7 @@
 #   DNS_ZONE="quentin-astro.fr"
 #   DNS_RECORD="storm-monitor.quentin-astro.fr"
 #   DEDIBOX_IP="51.158.154.131"
-#   KIMSUFI_IP="91.121.77.xxx"              ← IP publique du Kimsufi
+#   KIMSUFI_IP="5.135.160.56"               ← IP publique du Kimsufi
 #   DNS_TTL="300"
 #
 # Sans ce fichier ou sans clé : le script n'échoue pas, il indique la bascule

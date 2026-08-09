@@ -22,7 +22,7 @@
 set -euo pipefail
 
 # ------------------------- CONFIG (à ajuster) --------------------------------
-KIMSUFI_HOST="${KIMSUFI_HOST:-ns3020148.ip-91-121-77.eu}"   # IP ou hostname du Kimsufi
+KIMSUFI_HOST="${KIMSUFI_HOST:-5.135.160.56}"   # IP ou hostname du Kimsufi (ns3020148.ip-5-135-160.eu)
 KIMSUFI_USER="${KIMSUFI_USER:-root}"
 APP_DIR="/var/www/storm-monitor"
 REMOTE_APP_DIR="/var/www/storm-monitor"
