@@ -271,6 +271,12 @@ Demande user : pouvoir tout réactualiser sans changer le rayon — pull-to-refr
 - `dns-switch.sh` : API DNS Ionos (config /etc/storm-monitor/dns.env avec IONOS_API_KEY, ips, TTL 300) ; sans config → message « bascule manuelle » dans l'email (testé ✓). Q4 retour après panne = option simple (données créées pendant la panne sur le Kimsufi non rapatriées).
 **3. NOTE FUTURE (user)** : migration envisagée vers un autre système de BDD (« genre Tiny… » — nom à préciser avec lui, probablement TinyDB/SQLite). NE RIEN FAIRE maintenant.
 
+## [2026-08-09] Notes user pour la session du soir (rien à faire tout de suite)
+- **Kimsufi multi-vhosts** : un projet **SQM** avec son propre virtual host nginx tourne AUSSI sur le Kimsufi (sera migré plus tard sur le Dedibox). Nos scripts ne touchent que le vhost storm-monitor — vérifier ensemble ce soir que la cohabitation est propre.
+- **DNS** : pointe déjà vers le Dedibox ; TTL déjà à **1 minute** (minimum Ionos) — parfait pour la bascule.
+- **⚠ Certificat TLS Kimsufi** : DNS ne pointant plus vers lui, le renouvellement certbot HTTP de storm-monitor.quentin-astro.fr échouera sur le Kimsufi (~90 j max de validité restante) → en cas de bascule, risque de cert expiré. À traiter ce soir (option simple : sync-to-kimsufi copie aussi /etc/letsencrypt du Dedibox, ou challenge DNS).
+- Vigilance orage en cours ce 09/08 — l'utilisateur teste l'appli en conditions réelles.
+
 ## 🟡 Backlog
 - **P1** — Sécurité (EN PAUSE demande user) : injection Mongo unsubscribe, endpoints test publics, rate-limit subscribe, admin email exposé dans /api/health
 - **P2** — Partage bulletin (WhatsApp/lien direct) — reporté par l'utilisateur (« on verra plus tard »)
