@@ -10,7 +10,7 @@
 #   DEDIBOX_IP="51.158.154.131"
 #   KIMSUFI_IP="5.135.160.56"
 #   DEDIBOX_IP6="2001:0bc8:1600:0004:0208:a2ff:fe0c:6708"   ← IPv6 du Dedibox (champ AAAA)
-#   KIMSUFI_IP6=""                        ← IPv6 du Kimsufi ; VIDE = le AAAA est DÉSACTIVÉ
+#   KIMSUFI_IP6="2001:41d0:8:e338::1"     ← IPv6 du Kimsufi ; si VIDE, le AAAA est DÉSACTIVÉ
 #                                           pendant la bascule (trafic 100% IPv4) puis
 #                                           RÉACTIVÉ vers le Dedibox au retour.
 #   DNS_TTL="60"

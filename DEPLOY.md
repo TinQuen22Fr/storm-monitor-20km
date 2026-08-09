@@ -52,7 +52,7 @@ DNS_RECORD="storm-monitor.quentin-astro.fr"
 DEDIBOX_IP="51.158.154.131"
 KIMSUFI_IP="5.135.160.56"
 DEDIBOX_IP6="2001:0bc8:1600:0004:0208:a2ff:fe0c:6708"
-KIMSUFI_IP6=""
+KIMSUFI_IP6="2001:41d0:8:e338::1"
 DNS_TTL="60"
 EOF
 chmod 600 /etc/storm-monitor/dns.env
