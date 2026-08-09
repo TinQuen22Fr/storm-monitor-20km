@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 #
-# dns-switch.sh — bascule l'enregistrement A du domaine via l'API DNS Ionos.
+# dns-switch.sh — bascule les enregistrements A (+ AAAA) du domaine via l'API DNS Ionos.
 # Appelé par watchdog-dedibox.sh (to-kimsufi / to-dedibox), utilisable à la main.
 #
 # CONFIGURATION (une fois) : créer /etc/storm-monitor/dns.env :
-#   IONOS_API_KEY="publicprefix.secret"     ← https://developer.hosting.ionos.fr (menu API Keys)
+#   IONOS_API_KEY="publicprefix.secret"   ← https://developer.hosting.ionos.fr (menu API Keys)
 #   DNS_ZONE="quentin-astro.fr"
 #   DNS_RECORD="storm-monitor.quentin-astro.fr"
 #   DEDIBOX_IP="51.158.154.131"
-#   KIMSUFI_IP="5.135.160.56"               ← IP publique du Kimsufi
-#   DNS_TTL="300"
+#   KIMSUFI_IP="5.135.160.56"
+#   DEDIBOX_IP6="2001:0bc8:1600:0004:0208:a2ff:fe0c:6708"   ← IPv6 du Dedibox (champ AAAA)
+#   KIMSUFI_IP6=""                        ← IPv6 du Kimsufi ; VIDE = le AAAA est DÉSACTIVÉ
+#                                           pendant la bascule (trafic 100% IPv4) puis
+#                                           RÉACTIVÉ vers le Dedibox au retour.
+#   DNS_TTL="60"
 #
 # Sans ce fichier ou sans clé : le script n'échoue pas, il indique la bascule
 # MANUELLE à faire chez Ionos (l'email du watchdog contient ce message).
@@ -24,14 +28,10 @@ CONF="/etc/storm-monitor/dns.env"
 TARGET="${1:-status}"
 API="https://api.hosting.ionos.com/dns/v1"
 
-manual_msg() {
-  echo "BASCULE MANUELLE REQUISE : chez Ionos, pointer l'enregistrement A de ${DNS_RECORD:-storm-monitor.quentin-astro.fr} vers $1 (API Ionos non configurée — voir /etc/storm-monitor/dns.env)"
-}
-
 case "$TARGET" in
-  to-kimsufi)  WANT_IP="${KIMSUFI_IP:-}";  LABEL="Kimsufi" ;;
-  to-dedibox)  WANT_IP="${DEDIBOX_IP:-}";  LABEL="Dedibox" ;;
-  status)      WANT_IP="" ;;
+  to-kimsufi)  WANT_IP="${KIMSUFI_IP:-}";  WANT_IP6="${KIMSUFI_IP6:-}";  LABEL="Kimsufi" ;;
+  to-dedibox)  WANT_IP="${DEDIBOX_IP:-}";  WANT_IP6="${DEDIBOX_IP6:-}";  LABEL="Dedibox" ;;
+  status)      WANT_IP=""; WANT_IP6="" ;;
   *) echo "usage: dns-switch.sh to-kimsufi|to-dedibox|status" >&2; exit 1 ;;
 esac
 
@@ -39,7 +39,7 @@ if [[ -z "${IONOS_API_KEY:-}" ]]; then
   if [[ "$TARGET" == "status" ]]; then
     echo "API Ionos non configurée ($CONF absent ou incomplet)"
   else
-    manual_msg "$WANT_IP ($LABEL)"
+    echo "BASCULE MANUELLE REQUISE : chez Ionos, pointer A (et AAAA) de ${DNS_RECORD:-storm-monitor.quentin-astro.fr} vers le $TARGET (API Ionos non configurée — voir $CONF)"
   fi
   exit 0
 fi
@@ -52,24 +52,56 @@ zones=json.load(sys.stdin)
 print(next((z['id'] for z in zones if z['name']=='$DNS_ZONE'),''))" )"
 [[ -n "$ZONE_ID" ]] || { echo "ERROR: zone $DNS_ZONE introuvable via l'API Ionos"; exit 1; }
 
-REC_JSON="$(api "$API/zones/$ZONE_ID?recordName=$DNS_RECORD&recordType=A")"
-read -r REC_ID CUR_IP <<< "$(echo "$REC_JSON" | python3 -c "
+# Récupère les enregistrements A et AAAA du sous-domaine : "id type content disabled"
+RECORDS="$(api "$API/zones/$ZONE_ID?recordName=$DNS_RECORD" | python3 -c "
 import json,sys
 z=json.load(sys.stdin)
-recs=[r for r in z.get('records',[]) if r['type']=='A']
-print((recs[0]['id']+' '+recs[0]['content']) if recs else ' ')" )"
-[[ -n "${REC_ID:-}" ]] || { echo "ERROR: enregistrement A $DNS_RECORD introuvable"; exit 1; }
+for r in z.get('records',[]):
+    if r['type'] in ('A','AAAA'):
+        print(r['id'], r['type'], r['content'], str(r.get('disabled', False)).lower())" )"
+
+A_ID=""; A_CUR=""; AAAA_ID=""; AAAA_CUR=""; AAAA_DIS=""
+while read -r rid rtype rcontent rdis; do
+  [[ "$rtype" == "A" ]] && { A_ID="$rid"; A_CUR="$rcontent"; }
+  [[ "$rtype" == "AAAA" ]] && { AAAA_ID="$rid"; AAAA_CUR="$rcontent"; AAAA_DIS="$rdis"; }
+done <<< "$RECORDS"
+[[ -n "$A_ID" ]] || { echo "ERROR: enregistrement A $DNS_RECORD introuvable"; exit 1; }
 
 if [[ "$TARGET" == "status" ]]; then
-  echo "DNS $DNS_RECORD → $CUR_IP (Dedibox=$DEDIBOX_IP · Kimsufi=$KIMSUFI_IP)"
+  echo "A    $DNS_RECORD → $A_CUR (Dedibox=$DEDIBOX_IP · Kimsufi=$KIMSUFI_IP)"
+  if [[ -n "$AAAA_ID" ]]; then
+    echo "AAAA $DNS_RECORD → $AAAA_CUR (disabled=$AAAA_DIS)"
+  else
+    echo "AAAA absent"
+  fi
   exit 0
 fi
 
-if [[ "$CUR_IP" == "$WANT_IP" ]]; then
-  echo "DNS déjà sur $LABEL ($WANT_IP) — rien à faire"
-  exit 0
+put_record() { # id content disabled
+  api -X PUT "$API/zones/$ZONE_ID/records/$1" \
+    -d "{\"content\":\"$2\",\"ttl\":${DNS_TTL:-60},\"disabled\":$3}" >/dev/null
+}
+
+MSG=""
+# --- Champ A -----------------------------------------------------------------
+if [[ "$A_CUR" == "$WANT_IP" ]]; then
+  MSG="A déjà sur $LABEL ($WANT_IP)"
+else
+  put_record "$A_ID" "$WANT_IP" false
+  MSG="A → $WANT_IP ($LABEL)"
 fi
 
-api -X PUT "$API/zones/$ZONE_ID/records/$REC_ID" \
-  -d "{\"content\":\"$WANT_IP\",\"ttl\":${DNS_TTL:-300},\"disabled\":false}" >/dev/null
-echo "DNS basculé automatiquement : $DNS_RECORD → $WANT_IP ($LABEL, TTL ${DNS_TTL:-300}s)"
+# --- Champ AAAA (IPv6) ---------------------------------------------------------
+if [[ -n "$AAAA_ID" ]]; then
+  if [[ -n "$WANT_IP6" ]]; then
+    put_record "$AAAA_ID" "$WANT_IP6" false
+    MSG="$MSG ; AAAA → $WANT_IP6 (actif)"
+  else
+    # Pas d'IPv6 sur la cible : on DÉSACTIVE le AAAA pour ne pas envoyer le
+    # trafic IPv6 vers un serveur mort (il sera réactivé au retour Dedibox).
+    put_record "$AAAA_ID" "$AAAA_CUR" true
+    MSG="$MSG ; AAAA désactivé (pas d'IPv6 sur $LABEL — trafic 100% IPv4)"
+  fi
+fi
+
+echo "DNS basculé automatiquement : $MSG (TTL ${DNS_TTL:-60}s)"

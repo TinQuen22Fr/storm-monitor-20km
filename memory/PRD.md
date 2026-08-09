@@ -282,6 +282,16 @@ Demande user : pouvoir tout réactualiser sans changer le rayon — pull-to-refr
 **Fix** : `frontend/android/debug.keystore` créé (keytool RSA 2048, alias androiddebugkey/android, validité 30 ans, versionné — non gitignoré, vérifié) + `signingConfigs.debug` dans app/build.gradle → signature STABLE pour tous les futurs APK (mise à jour par-dessus, plus de désinstallation).
 **Transition** : l'APK actuellement installé a encore une vieille signature → LE PROCHAIN APK exigera UNE DERNIÈRE désinstallation/réinstallation, puis plus jamais. Pour Glory Fit immédiatement : rouvrir Storm Monitor, réactiver les notifs, ENVOYER UN TEST (certaines apps montre ne listent que les apps ayant déjà posté une notification), puis forcer l'arrêt/relancer Glory Fit.
 
+## [2026-08-09 soir] DÉPLOIEMENT BI-SERVEURS OPÉRATIONNEL ✅ + DEPLOY.md
+- User confirme : upgrade Dedibox + sync-to-kimsufi + watchdog OK après push GitHub, notifications rétablies.
+- **Découverte user (Glory Fit Pro)** : pour que Storm Monitor apparaisse dans « Rappel d'application », le test de notification doit être déclenché depuis la VERSION WEB (navigateur), PAS depuis l'APK. Consigné dans DEPLOY.md.
+- `DEPLOY.md` créé (racine) : architecture bi-serveurs, upgrades, réplication, watchdog, **procédure API Ionos pas-à-pas** (developer.hosting.ionos.fr → clé → /etc/storm-monitor/dns.env sur le Kimsufi → dns-switch.sh status), Glory Fit, signature APK fixe, contraintes CPU.
+- IP Kimsufi corrigée dans sync-to-kimsufi.sh : 5.135.160.56.
+- Resterait à faire par le user : créer la clé API Ionos + dns.env (bascule 100 % auto), supprimer un éventuel AAAA storm-monitor, cron horaire --db-only optionnel.
+
+## [2026-08-09 soir-2] AAAA IPv6 géré dans la bascule DNS (PRÊT À PUSHER)
+User confirme : AAAA storm-monitor = IPv6 du Dedibox (2001:0bc8:1600:0004:0208:a2ff:fe0c:6708). `dns-switch.sh` réécrit : bascule A + AAAA ; vers Kimsufi sans IPv6 (KIMSUFI_IP6 vide) → AAAA **désactivé** (disabled=true, trafic 100% IPv4) puis **réactivé vers le Dedibox** au retour. dns.env enrichi (DEDIBOX_IP6/KIMSUFI_IP6). DEPLOY.md mis à jour (fusionné avec l'ancien guide mono-serveur conservé en annexe + procédure API Ionos pas-à-pas + astuce Glory Fit). Testé : parsing records A/AAAA/ignore-TXT ✓, fallback manuel sans config ✓, bash -n ✓.
+
 ## 🟡 Backlog
 - **P1** — Sécurité (EN PAUSE demande user) : injection Mongo unsubscribe, endpoints test publics, rate-limit subscribe, admin email exposé dans /api/health
 - **P2** — Partage bulletin (WhatsApp/lien direct) — reporté par l'utilisateur (« on verra plus tard »)

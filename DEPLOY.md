@@ -1,16 +1,102 @@
-# Storm Monitoring — Déploiement sur Kimsufi / VPS
+# Storm Monitor — Déploiement & exploitation (BI-SERVEURS)
 
-Guide opérationnel pour installer, mettre à jour la production sur un serveur Ubuntu/Debian.
+Guide opérationnel : installation, mises à jour, réplication, bascule automatique.
 
 **Repo** : https://github.com/TinQuen22Fr/storm-monitor-20km
 **URL prod** : https://storm-monitor.quentin-astro.fr
 **Branche prod (figée)** : `Version_With_Detector`
 
-> Kimsufi (OVH) est déjà en session root par défaut — **aucune commande n'utilise `sudo`** dans ce guide.
+## Architecture bi-serveurs (depuis le 09/08/2026)
+
+| Rôle | Machine | IP | CPU | Accès SSH |
+|---|---|---|---|---|
+| **PRINCIPAL** | Dedibox Scaleway | `51.158.154.131` | Intel C2350 (SSE4.2, pas d'AVX) | `quentin` + **sudo** |
+| **SECOURS** | Kimsufi OVH | `5.135.160.56` | Intel Atom D425 (SSSE3 max) | `root` direct (pas de sudo) |
+
+- DNS `storm-monitor.quentin-astro.fr` (Ionos, TTL 1 min) → serveur actif (Dedibox en temps normal).
+- Le Kimsufi héberge AUSSI le projet SQM (vhost nginx séparé — jamais touché par les scripts).
+- HTTPS obligatoire des deux côtés (certificats gérés manuellement par l'admin).
+
+## Mises à jour courantes (sur le Dedibox)
+```bash
+sudo bash /opt/storm-monitor/upgrade.sh --with-deps
+# puis réplication vers le Kimsufi (code adapté à SON CPU + fichiers runtime + base) :
+sudo bash /opt/storm-monitor/scripts/sync-to-kimsufi.sh
+```
+Options : `--db-only` (base seule, pour cron), `--files-only`.
+Cron horaire optionnel (base du secours à ≤ 1 h près) :
+```bash
+echo '15 * * * * root bash /opt/storm-monitor/scripts/sync-to-kimsufi.sh --db-only >> /var/log/storm-sync.log 2>&1' | sudo tee /etc/cron.d/storm-sync
+```
+
+## Surveillance & bascule automatique (watchdog — sur le KIMSUFI)
+```bash
+bash /opt/storm-monitor/scripts/watchdog-dedibox.sh --install   # timer systemd 1 min
+bash /opt/storm-monitor/scripts/watchdog-dedibox.sh --status    # état courant
+```
+- 3 échecs consécutifs de la sonde `https://…/api/health` (directe sur l'IP Dedibox) → **email + DNS → Kimsufi**
+- 5 succès consécutifs ensuite → **email + retour DNS → Dedibox**
+- Journal : `/var/log/storm-watchdog.log`. Sans clé API Ionos : l'email indique la bascule manuelle.
+
+## Bascule DNS automatique — configuration de l'API Ionos
+1. Se connecter sur **https://developer.hosting.ionos.fr** (identifiants Ionos habituels)
+2. Menu **« API Keys » → « Create Key »** → noter le **préfixe public** et le **secret** ;
+   la clé complète = `prefixe.secret`
+3. Sur le **Kimsufi** (là où tourne le watchdog) :
+```bash
+mkdir -p /etc/storm-monitor
+cat > /etc/storm-monitor/dns.env <<'EOF'
+IONOS_API_KEY="prefixe.secret"
+DNS_ZONE="quentin-astro.fr"
+DNS_RECORD="storm-monitor.quentin-astro.fr"
+DEDIBOX_IP="51.158.154.131"
+KIMSUFI_IP="5.135.160.56"
+DEDIBOX_IP6="2001:0bc8:1600:0004:0208:a2ff:fe0c:6708"
+KIMSUFI_IP6=""
+DNS_TTL="60"
+EOF
+chmod 600 /etc/storm-monitor/dns.env
+```
+4. Test (lecture seule) : `bash /opt/storm-monitor/scripts/dns-switch.sh status`
+5. Bascule manuelle possible : `dns-switch.sh to-kimsufi` / `dns-switch.sh to-dedibox`
+
+### Gestion du champ AAAA (IPv6)
+Le AAAA de storm-monitor pointe vers l'IPv6 du **Dedibox**. Lors d'une bascule vers le
+Kimsufi : si `KIMSUFI_IP6` est vide, le AAAA est **désactivé** (trafic 100 % IPv4 vers le
+Kimsufi) puis **réactivé vers le Dedibox** au retour. Si le Kimsufi a une IPv6, la renseigner
+dans `KIMSUFI_IP6` et le AAAA basculera comme le A.
+
+## Notifications push & montre connectée (Glory Fit Pro)
+### Après (ré)installation d'un APK
+1. Ouvrir l'app → se reconnecter → **désactiver puis réactiver** les notifications
+2. Envoyer un test → doit arriver (le compteur d'appareils se purge seul des tokens morts)
+
+### ⚠️ Faire apparaître Storm Monitor dans Glory Fit Pro (procédure validée le 09/08/2026)
+Pour que Storm Monitor apparaisse dans **Rappel d'application → Plus de rappels**, déclencher
+le test de notification **depuis la version WEB** (navigateur ordinateur ou mobile sur
+https://storm-monitor.quentin-astro.fr) — **PAS depuis l'APK**. Le téléphone enregistré reçoit
+la notification test, et Storm Monitor apparaît ensuite dans la liste des applications du
+menu « Communiquer » de Glory Fit Pro.
+
+### Signature APK
+`frontend/android/debug.keystore` (versionné) = signature FIXE : les APK se mettent à jour
+par-dessus l'existant sans désinstallation. **Ne jamais supprimer ce fichier du dépôt.**
+
+## Contraintes matérielles (rappel vital)
+- **Interdits partout** (SIGILL sur l'Atom D425) : shapely, numpy, toute lib binaire compilée
+  SSE4/AVX. Venv forcé en Python **3.11/3.12**. MongoDB **4.4** (pas d'AVX). Node ≥ 18 conservé.
+- `upgrade.sh`/`install.sh` testent chaque module binaire + `import server` complet sur le CPU
+  réel AVANT tout restart : un upgrade ne peut plus casser la prod.
 
 ---
 
-## Architecture
+# Annexe historique — guide d'origine (mono-serveur)
+
+> Sur le Kimsufi (root direct), retirer `sudo` des commandes ; sur la Dedibox, le garder.
+
+---
+
+## Architecture des dossiers
 
 Deux dossiers, deux rôles **strictement séparés** :
 
