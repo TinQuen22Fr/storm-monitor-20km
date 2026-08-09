@@ -263,6 +263,14 @@ Demande user : pouvoir tout réactualiser sans changer le rayon — pull-to-refr
 - Testé : build Vite OK, simulation touch Playwright → indicateur pendant le pull ✓, spinner après release ✓, badge fraîcheur « il y a 0 s » ✓.
 - NB APK : si l'APK Capacitor charge l'URL distante, rien à refaire ; s'il embarque le build, régénérer l'APK.
 
+## [2026-08-09] Redondance Dedibox→Kimsufi + zone sûre mobile (PRÊT À PUSHER)
+**1. Zone sûre APK (demande user avec capture)** : la carte s'affichait sous la barre d'état Android (heure/batterie). Fix : `viewport-fit=cover` (index.html), variable CSS `--safe-top: env(safe-area-inset-top)` → padding body + bandeau sombre fixe + `.sticky.top-0` décalé (index.css), composant `SafeAreaTop.jsx` (fallback 32 px si WebView native ne remonte pas l'inset — Capacitor only). Testé : web 0px (no-op) ✓, simulé APK 32px + bandeau ✓. **L'APK embarque le build (webDir) → RÉGÉNÉRER L'APK pour en profiter.**
+**2. Redondance (réponses user : pas de Cloudflare payant, bascule auto aller-retour, réplication à chaque upgrade)** — 3 scripts créés dans `/scripts/` :
+- `sync-to-kimsufi.sh` (sur le Dedibox) : upgrade code Kimsufi via SSH (son upgrade.sh adapté à SON CPU) + copie .env/firebase-admin.json/proxies.json/storm_data.json + mongodump→mongorestore --drop + restart + sonde. Flags --db-only/--files-only, ligne cron horaire fournie en commentaire. Prérequis : clé SSH (commandes dans l'en-tête).
+- `watchdog-dedibox.sh` (sur le Kimsufi, timer systemd 1 min via --install) : sonde https --resolve directe sur l'IP Dedibox ; 3 échecs → failover (email Resend + dns-switch to-kimsufi) ; 5 succès → retour (email + to-dedibox). Testé sandbox : cycle complet panne→failover→retour ✓.
+- `dns-switch.sh` : API DNS Ionos (config /etc/storm-monitor/dns.env avec IONOS_API_KEY, ips, TTL 300) ; sans config → message « bascule manuelle » dans l'email (testé ✓). Q4 retour après panne = option simple (données créées pendant la panne sur le Kimsufi non rapatriées).
+**3. NOTE FUTURE (user)** : migration envisagée vers un autre système de BDD (« genre Tiny… » — nom à préciser avec lui, probablement TinyDB/SQLite). NE RIEN FAIRE maintenant.
+
 ## 🟡 Backlog
 - **P1** — Sécurité (EN PAUSE demande user) : injection Mongo unsubscribe, endpoints test publics, rate-limit subscribe, admin email exposé dans /api/health
 - **P2** — Partage bulletin (WhatsApp/lien direct) — reporté par l'utilisateur (« on verra plus tard »)

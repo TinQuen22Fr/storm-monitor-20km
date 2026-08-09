@@ -19,6 +19,35 @@ body,
   height: 100%;
 }
 
+/* Zone sûre mobile/APK : décale tout le contenu (carte comprise) sous la
+   barre d'état Android (heure, batterie…) avec un bandeau sombre. Sur le web
+   desktop, env() vaut 0 → aucun effet. SafeAreaTop.jsx force 32px en natif
+   si la WebView ne remonte pas l'inset. */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+}
+
+body {
+  padding-top: var(--safe-top);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--safe-top);
+  background: #0f172a;
+  z-index: 2147483000;
+  pointer-events: none;
+}
+
+/* Les en-têtes collants doivent s'arrêter sous le bandeau, pas dessous la barre d'état */
+.sticky.top-0 {
+  top: var(--safe-top);
+}
+
 body {
   margin: 0;
   font-family: var(--font-body);

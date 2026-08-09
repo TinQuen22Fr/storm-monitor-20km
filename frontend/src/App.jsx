@@ -14,6 +14,7 @@ import ReplayPage from "@/pages/ReplayPage";
 import { AuthProvider } from "@/lib/auth";
 import { Toaster } from "@/components/ui/sonner";
 import { NativeAppExit } from "@/components/NativeAppExit";
+import { SafeAreaTop } from "@/components/SafeAreaTop";
 
 function App() {
   return (
@@ -33,6 +34,7 @@ function App() {
         </Routes>
       </BrowserRouter>
       <NativeAppExit />
+      <SafeAreaTop />
       <Toaster position="top-right" />
     </AuthProvider>
   );
