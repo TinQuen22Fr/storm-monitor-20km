@@ -277,6 +277,11 @@ Demande user : pouvoir tout réactualiser sans changer le rayon — pull-to-refr
 - **⚠ Certificat TLS Kimsufi** : DNS ne pointant plus vers lui, le renouvellement certbot HTTP de storm-monitor.quentin-astro.fr échouera sur le Kimsufi (~90 j max de validité restante) → en cas de bascule, risque de cert expiré. À traiter ce soir (option simple : sync-to-kimsufi copie aussi /etc/letsencrypt du Dedibox, ou challenge DNS).
 - Vigilance orage en cours ce 09/08 — l'utilisateur teste l'appli en conditions réelles.
 
+## [2026-08-09] Bug Glory Fit Pro : signature APK instable — clé debug fixe ajoutée (PRÊT À PUSHER)
+**Cause** : le workflow GitHub génère un APK debug signé par une clé debug régénérée à CHAQUE build (runner éphémère) → chaque nouvel APK = signature différente → Android force désinstallation/réinstallation → Glory Fit Pro (montre connectée) perd l'application enregistrée et ne la re-liste plus.
+**Fix** : `frontend/android/debug.keystore` créé (keytool RSA 2048, alias androiddebugkey/android, validité 30 ans, versionné — non gitignoré, vérifié) + `signingConfigs.debug` dans app/build.gradle → signature STABLE pour tous les futurs APK (mise à jour par-dessus, plus de désinstallation).
+**Transition** : l'APK actuellement installé a encore une vieille signature → LE PROCHAIN APK exigera UNE DERNIÈRE désinstallation/réinstallation, puis plus jamais. Pour Glory Fit immédiatement : rouvrir Storm Monitor, réactiver les notifs, ENVOYER UN TEST (certaines apps montre ne listent que les apps ayant déjà posté une notification), puis forcer l'arrêt/relancer Glory Fit.
+
 ## 🟡 Backlog
 - **P1** — Sécurité (EN PAUSE demande user) : injection Mongo unsubscribe, endpoints test publics, rate-limit subscribe, admin email exposé dans /api/health
 - **P2** — Partage bulletin (WhatsApp/lien direct) — reporté par l'utilisateur (« on verra plus tard »)
