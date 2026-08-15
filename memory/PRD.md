@@ -360,3 +360,6 @@ La prochaine MAJ sur Kimsufi doit utiliser `install.sh` une fois pour initialise
   - `initNativePush()` appelé au démarrage (`App.jsx`) : ré-arme les listeners natifs (perdus à chaque relance de l'APK) + re-lie le token FCM au compte connecté (header Authorization) → corrige aussi le unicast test.
   - `subscribeNative()` refactoré sur les mêmes listeners partagés (anti-doublons via `removeAllListeners`).
 - **Tests** : build Vite OK, web non régressé (dashboard + `/api/push/test` OK). ⚠️ Le comportement APK premier plan nécessite un test réel sur téléphone après rebuild GitHub Actions (non testable en preview).
+
+## [2026-08-15] Cercle repère fixe 20 km
+- `MapPanel.jsx` : quand le rayon de surveillance dépasse 20 km, un cercle rouge pointillé fixe de 20 km (zone cruciale de protection) reste affiché autour du lieu sélectionné, en plus du cercle de surveillance élargi. Frontend uniquement, vérifié par capture (rayon 40 km).

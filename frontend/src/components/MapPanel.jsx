@@ -196,6 +196,20 @@ export default function MapPanel({
             }}
           />
         )}
+        {/* Repère fixe : zone cruciale des 20 km (rouge), visible dès que le rayon dépasse 20 km */}
+        {!noZone && radiusKm > 20 && (
+          <Circle
+            center={centerLL}
+            radius={20 * 1000}
+            pathOptions={{
+              color: "#DC2626",
+              weight: 2,
+              dashArray: "4 6",
+              fillColor: "#DC2626",
+              fillOpacity: 0.03,
+            }}
+          />
+        )}
         {!noZone && <Marker position={centerLL} icon={centerIcon} />}
         {userPos && <Marker position={userPos} icon={userIcon} />}
         {/* Secondary monitoring zones (multi-favoris) */}
