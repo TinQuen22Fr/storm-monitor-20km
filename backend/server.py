@@ -685,11 +685,15 @@ async def lightning_status():
 
 @api_router.get("/replay/events")
 async def replay_events(
+    lat: float = LOURDES_LAT,
+    lon: float = LOURDES_LON,
     radius_km: float = 70.0,
     min_strikes: int = 5,
     gap_min: int = 15,
 ):
     """Detect contiguous "storm bursts" in the last 24h strike buffer.
+
+    `lat`/`lon` = centre de la zone surveillée (défaut : Lourdes, rétro-compatible).
 
     Algorithm:
       - Fetch all strikes within radius.
@@ -698,7 +702,7 @@ async def replay_events(
       - A burst is kept only if it contains >= `min_strikes` strikes and spans >= 5 min.
       - Each event exposes start/end timestamps, peak 10-min rate, and centroid.
     """
-    strikes = await lightning_mod.store.recent(LOURDES_LAT, LOURDES_LON, radius_km, since_ts=None)
+    strikes = await lightning_mod.store.recent(lat, lon, radius_km, since_ts=None)
     if not strikes:
         return {"events": [], "source_window_h": 24}
 

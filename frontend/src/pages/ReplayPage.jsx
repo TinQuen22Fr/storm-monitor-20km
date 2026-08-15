@@ -3,8 +3,17 @@ import { Link, useNavigate } from "react-router-dom";
 import { ArrowRight, MapPin, PlayCircle, Sparkles, Video, Zap } from "lucide-react";
 import NavTabs from "@/components/NavTabs";
 import VideoExportDialog from "@/components/VideoExportDialog";
-import { api } from "@/lib/api";
+import { api, LOURDES } from "@/lib/api";
 import { fmtLocal } from "@/lib/timeFormat";
+
+// Zone surveillée persistée par le Dashboard (ville choisie par l'utilisateur)
+function getMonitoredCenter() {
+  try {
+    const c = JSON.parse(localStorage.getItem("storm.center"));
+    if (c && Number.isFinite(c.lat) && Number.isFinite(c.lon) && c.name) return c;
+  } catch { /* ignore */ }
+  return { lat: LOURDES.lat, lon: LOURDES.lon, name: "Lourdes" };
+}
 
 /**
  * Replay page — lists detected "storm bursts" from the last 24h strike buffer
@@ -23,6 +32,7 @@ export default function ReplayPage() {
   const [videoEvent, setVideoEvent] = useState(null);
   const [videoIsDemo, setVideoIsDemo] = useState(false);
   const navigate = useNavigate();
+  const [monitorCenter] = useState(getMonitoredCenter);
 
   useEffect(() => {
     let cancel = false;
@@ -31,7 +41,7 @@ export default function ReplayPage() {
       setError(null);
       try {
         const [evRes, demosRes] = await Promise.all([
-          api.get("/replay/events"),
+          api.get("/replay/events", { params: { lat: monitorCenter.lat, lon: monitorCenter.lon } }),
           api.get("/replay/demos"),
         ]);
         if (!cancel) {
@@ -132,7 +142,7 @@ export default function ReplayPage() {
               </span>
             </div>
             <div className="text-xs text-slate-500 leading-relaxed">
-              Basé sur les strikes Blitzortung reçus dans la dernière journée autour de Lourdes.
+              Basé sur les strikes Blitzortung reçus dans la dernière journée autour de {monitorCenter.name}.
             </div>
           </div>
         </aside>
@@ -237,7 +247,7 @@ export default function ReplayPage() {
                   Aucun épisode réel détecté
                 </div>
                 <div className="text-sm text-slate-500 leading-relaxed max-w-md mx-auto">
-                  Pas d&apos;orage notable dans les dernières 24 heures autour de Lourdes.
+                  Pas d&apos;orage notable dans les dernières 24 heures autour de {monitorCenter.name}.
                   Testez le Replay + MP4 avec les démos ci-dessus, ou consultez la{" "}
                   <Link to="/vigilance" className="text-slate-900 font-medium underline underline-offset-2">
                     carte de vigilance

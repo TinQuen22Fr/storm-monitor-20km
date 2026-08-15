@@ -47,6 +47,10 @@ export default function Dashboard() {
   useEffect(() => {
     try { localStorage.setItem("storm.radius", String(radius)); } catch { /* ignore */ }
   }, [radius]);
+  // Persiste la zone surveillée pour que la page Replay se centre sur la bonne ville
+  useEffect(() => {
+    try { localStorage.setItem("storm.center", JSON.stringify(center)); } catch { /* ignore */ }
+  }, [center]);
   const [current, setCurrent] = useState(null);
   const [forecast, setForecast] = useState(null);
   const [history, setHistory] = useState(null);
@@ -194,14 +198,16 @@ export default function Dashboard() {
     let cancel = false;
     const load = async () => {
       try {
-        const { data } = await api.get("/replay/events");
+        const { data } = await api.get("/replay/events", {
+          params: { lat: center.lat, lon: center.lon },
+        });
         if (!cancel) setReplayEventsCount((data.events || []).length);
       } catch { /* ignore */ }
     };
     load();
     const t = setInterval(load, 5 * 60_000);
     return () => { cancel = true; clearInterval(t); };
-  }, []);
+  }, [center.lat, center.lon]);
 
   // Tick cursor forward while live so tiles & strikes stay current
   useEffect(() => {

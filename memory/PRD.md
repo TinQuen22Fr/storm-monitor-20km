@@ -343,3 +343,11 @@ La prochaine MAJ sur Kimsufi doit utiliser `install.sh` une fois pour initialise
   - `approach_active` ne s'arme que dans le rayon → un orage entrant à 20 km déclenche bien la notification (pas « consommée » à 90 km).
   - Alertes impacts (`lightning-strike`, `storm-active`) : déjà strictes à RADIUS_KM via `store.recent` (haversine pur Python, aucune dépendance C — compatible Kimsufi Atom).
 - **Tests** : logique de seuil validée (6/6 : 90 km bloqué, ≤20 km passe, None/absent bloqués) ; replay démo vérifié par captures (carte stable, centrée Lourdes, zoom 11, aucun dézoom pendant lecture).
+
+## [2026-08-15] Replay multi-villes (fin du "tout Lourdes")
+- `GET /api/replay/events` accepte désormais `lat`/`lon` (défaut Lourdes = rétro-compatible, aucun changement pour les appels existants). Détection des épisodes autour de la ville surveillée.
+- `Dashboard.jsx` persiste la zone surveillée dans `localStorage["storm.center"]` et interroge le compteur replay avec `center.lat/lon` (refetch au changement de ville).
+- `ReplayPage.jsx` lit `storm.center` (fallback Lourdes), détecte les épisodes autour de cette ville et affiche son nom dans les textes.
+- Le centrage carte en replay utilisait déjà `center` (favori utilisateur) → Tarbes = carte centrée Tarbes.
+- 100 % Python pur côté backend (haversine existant), zéro nouvelle dépendance — compatible Dedibox + Kimsufi.
+- Tests : filtrage géospatial validé (impacts Tarbes visibles depuis Tarbes/Lourdes r70, invisibles depuis Brest), capture écran "autour de Tarbes" OK, endpoint sans params inchangé.
