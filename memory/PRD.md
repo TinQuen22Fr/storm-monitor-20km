@@ -363,3 +363,4 @@ La prochaine MAJ sur Kimsufi doit utiliser `install.sh` une fois pour initialise
 
 ## [2026-08-15] Cercle repère fixe 20 km
 - `MapPanel.jsx` : quand le rayon de surveillance dépasse 20 km, un cercle rouge pointillé fixe de 20 km (zone cruciale de protection) reste affiché autour du lieu sélectionné, en plus du cercle de surveillance élargi. Frontend uniquement, vérifié par capture (rayon 40 km).
+- [2026-08-15 bis] Cercle repère 20 km étendu aux zones favorites secondaires (overlays) dans `MapPanel.jsx` — vérifié par capture avec 2 zones.

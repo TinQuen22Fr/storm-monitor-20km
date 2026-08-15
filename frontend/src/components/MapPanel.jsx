@@ -227,6 +227,23 @@ export default function MapPanel({
             }}
           />
         ))}
+        {/* Repère fixe 20 km sur chaque zone favorite secondaire */}
+        {overlays
+          .filter((ov) => (ov.radiusKm ?? radiusKm) > 20)
+          .map((ov) => (
+            <Circle
+              key={`ov-circle20-${ov.id}`}
+              center={[ov.lat, ov.lon]}
+              radius={20 * 1000}
+              pathOptions={{
+                color: "#DC2626",
+                weight: 2,
+                dashArray: "4 6",
+                fillColor: "#DC2626",
+                fillOpacity: 0.03,
+              }}
+            />
+          ))}
         {overlays.map((ov) => (
           <Marker
             key={`ov-marker-${ov.id}`}
