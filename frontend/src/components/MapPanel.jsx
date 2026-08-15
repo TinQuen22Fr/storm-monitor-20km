@@ -83,12 +83,12 @@ function buildStrikeIcon(ageSec) {
   });
 }
 
-function FitToRadius({ center, radiusKm }) {
+function FitToRadius({ center, radiusKm, recenterSignal = 0 }) {
   const map = useMap();
   useEffect(() => {
     const zoomForRadius = radiusKm >= 60 ? 9 : radiusKm >= 40 ? 10 : 11;
     map.setView(center, zoomForRadius, { animate: true });
-  }, [center, radiusKm, map]);
+  }, [center, radiusKm, map, recenterSignal]);
   return null;
 }
 
@@ -112,6 +112,7 @@ export default function MapPanel({
   isLive = true,
   overlays = [],
   noZone = false,
+  recenterSignal = 0,
 }) {
   const centerLL = useMemo(() => [center.lat, center.lon], [center.lat, center.lon]);
   const centerIcon = useMemo(() => buildCenterIcon(), []);
@@ -180,7 +181,7 @@ export default function MapPanel({
           cursorTs={cursorTs}
           isLive={isLive}
         />
-        <FitToRadius center={centerLL} radiusKm={radiusKm} />
+        <FitToRadius center={centerLL} radiusKm={radiusKm} recenterSignal={recenterSignal} />
         <InvalidateOnResize trigger={fullscreen} />
         {!noZone && (
           <Circle

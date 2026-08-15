@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import { Circle, CircleMarker, Polygon, Polyline, useMap } from "react-leaflet";
 import { api } from "@/lib/api";
@@ -67,8 +67,14 @@ export default function TrajectoryLayer({ center, enabled = true, fitSignal = 0,
     };
   }, [enabled, center.lat, center.lon, cursorTs, isLive]);
 
+  const lastFitConsumed = useRef(0);
   useEffect(() => {
-    if (!fitSignal || !traj || !traj.waypoints?.length) return;
+    // One-shot : ne cadre que sur un NOUVEAU clic utilisateur (fitSignal incrémenté),
+    // jamais sur les mises à jour de trajectoire (replay/scrub) — la carte reste
+    // centrée sur la ville sélectionnée.
+    if (!fitSignal || fitSignal === lastFitConsumed.current) return;
+    if (!traj || !traj.waypoints?.length) return;
+    lastFitConsumed.current = fitSignal;
     const points = traj.waypoints.map((w) => [w.lat, w.lon]);
     const bounds = L.latLngBounds([...points, [center.lat, center.lon]]);
     map.flyToBounds(bounds, { padding: [60, 60], duration: 0.8, maxZoom: 10 });

@@ -309,7 +309,8 @@ export default function Dashboard() {
         });
         const prev = approach?.approaching;
         setApproach(app.data);
-        if (app.data?.approaching && !prev) {
+        // Notification locale uniquement si l'orage est DANS le rayon surveillé
+        if (app.data?.approaching && !prev && (app.data.min_distance_km ?? Infinity) <= radius) {
           notif.notify(
             "⚠ Orage en approche",
             `Distance ${app.data.min_distance_km} km · ${app.data.speed_kmh} km/h · arrivée ~${Math.round(app.data.eta_min)} min`
@@ -465,6 +466,7 @@ export default function Dashboard() {
             isLive={isLive}
             overlays={visibleOverlays}
             noZone={noZone}
+            recenterSignal={replay ? replay.start_ts : 0}
           />
           {!noZone && <DataFreshnessBadge fetchedAt={zones?.fetched_at} />}
         </div>

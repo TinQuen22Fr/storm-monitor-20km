@@ -1407,10 +1407,16 @@ async def _alert_watcher():
                 )
                 _alerter_state["last_strike_ts"] = max(s["ts"] for s in new_strikes)
 
-            # Storm approach detection (wider 100km radius)
+            # Storm approach detection (analyse large 100km, mais notification
+            # STRICTEMENT limitée au rayon de surveillance configuré)
             approach_strikes = await lightning_mod.store.recent(LOURDES_LAT, LOURDES_LON, 100.0, since_ts=None)
             approach = analysis_mod.analyze_approach(LOURDES_LAT, LOURDES_LON, approach_strikes)
-            if approach.get("approaching") and not _alerter_state["approach_active"]:
+            try:
+                approach_min_km = float(approach.get("min_distance_km") or float("inf"))
+            except (TypeError, ValueError):
+                approach_min_km = float("inf")
+            approach_in_radius = bool(approach.get("approaching")) and approach_min_km <= RADIUS_KM
+            if approach_in_radius and not _alerter_state["approach_active"]:
                 eta = approach.get("eta_min")
                 speed = approach.get("speed_kmh")
                 body = (
@@ -1429,7 +1435,7 @@ async def _alert_watcher():
                     body=body,
                     tag="storm-approach",
                 )
-            _alerter_state["approach_active"] = bool(approach.get("approaching"))
+            _alerter_state["approach_active"] = approach_in_radius
 
             # Vigilance escalation check (every 20 min — vigilance data TTL is 15 min)
             import time as _t

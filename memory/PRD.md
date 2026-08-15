@@ -332,3 +332,14 @@ La prochaine MAJ sur Kimsufi doit utiliser `install.sh` une fois pour initialise
   - Nouveau `tests/test_vigilance_point.py` (5 sous-tests, 100% passants) : Lourdes/Saint-Brieuc/Rennes/Paris/Nice + adjacence symétrique + fallback hors-France.
   - `tests/test_vigilance_full.py` mis à jour (`#F59E0B` → `#FFCC00` pour aligner sur la palette actuelle).
 
+
+## [2026-08-15] Replay : centrage strict ville + Push : rayon strict
+- **Frontend** :
+  - `TrajectoryLayer.jsx` : `flyToBounds` rendu one-shot (ref `lastFitConsumed`) — ne se redéclenche plus à chaque mise à jour de trajectoire pendant le replay/scrub. La carte ne dézoome plus sur la zone englobant les impacts.
+  - `MapPanel.jsx` : prop `recenterSignal` ajoutée à `FitToRadius` → recentrage forcé sur la ville sélectionnée à l'entrée en mode replay (`Dashboard.jsx` passe `replay.start_ts`). Navigation/zoom manuels libres ensuite (choix utilisateur : option a).
+  - `Dashboard.jsx` : notification locale « Orage en approche » émise uniquement si `min_distance_km <= rayon configuré`.
+- **Backend** (`server.py` `_alert_watcher`) :
+  - Alerte push/webhook « Orage en approche » désormais STRICTEMENT limitée au rayon de surveillance (`min_distance_km <= RADIUS_KM`, aucune marge — choix utilisateur : option a). L'analyse 100 km reste disponible pour l'UI (bannière/API), seule la notification est filtrée.
+  - `approach_active` ne s'arme que dans le rayon → un orage entrant à 20 km déclenche bien la notification (pas « consommée » à 90 km).
+  - Alertes impacts (`lightning-strike`, `storm-active`) : déjà strictes à RADIUS_KM via `store.recent` (haversine pur Python, aucune dépendance C — compatible Kimsufi Atom).
+- **Tests** : logique de seuil validée (6/6 : 90 km bloqué, ≤20 km passe, None/absent bloqués) ; replay démo vérifié par captures (carte stable, centrée Lourdes, zoom 11, aucun dézoom pendant lecture).
