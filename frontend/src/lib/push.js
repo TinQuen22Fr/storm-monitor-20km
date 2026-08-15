@@ -40,6 +40,64 @@ export function isPushEnabled() {
   return pushSupported() && localStorage.getItem(LS_ENABLED) === "1";
 }
 
+/** APK au premier plan : Android n'affiche PAS les notifications FCM dans la
+ * barre système — on les rejoue en notification locale (canal storm_alerts)
+ * pour qu'elles apparaissent sur le téléphone ET soient relayées à la montre. */
+async function showForegroundNotification(n) {
+  try {
+    const { LocalNotifications } = await import("@capacitor/local-notifications");
+    await LocalNotifications.schedule({
+      notifications: [
+        {
+          id: Math.floor(Math.random() * 2147483646) + 1,
+          title: n?.title || "Alerte orage",
+          body: n?.body || "",
+          channelId: "storm_alerts",
+        },
+      ],
+    });
+  } catch { /* ignore */ }
+}
+
+async function attachNativeListeners(PushNotifications, { onRegistration } = {}) {
+  await PushNotifications.removeAllListeners();
+  PushNotifications.addListener("pushNotificationReceived", (n) => {
+    showForegroundNotification(n);
+  });
+  PushNotifications.addListener("registration", async ({ value }) => {
+    try {
+      const { data } = await api.post("/push/fcm/subscribe", { token: value });
+      localStorage.setItem(LS_FCM_TOKEN, value);
+      if (data.fcm_available === false) {
+        toast.warning(
+          "Token enregistré, mais FCM est désactivé côté serveur (firebase-admin.json)",
+          { duration: 8000 }
+        );
+      }
+      if (onRegistration) onRegistration(null, value);
+    } catch (e) {
+      if (onRegistration) onRegistration(e, value);
+    }
+  });
+  PushNotifications.addListener("registrationError", () => {
+    if (onRegistration) onRegistration(new Error("registrationError"), null);
+  });
+}
+
+/** À appeler au démarrage de l'app : ré-arme les listeners natifs (perdus à
+ * chaque relance) et re-lie le token FCM au compte connecté (header Authorization). */
+export async function initNativePush() {
+  if (!Capacitor.isNativePlatform()) return;
+  if (localStorage.getItem(LS_ENABLED) !== "1") return;
+  try {
+    const { PushNotifications } = await import("@capacitor/push-notifications");
+    const perm = await PushNotifications.checkPermissions();
+    if (perm.receive !== "granted") return;
+    await attachNativeListeners(PushNotifications);
+    PushNotifications.register();
+  } catch { /* ignore */ }
+}
+
 async function subscribeNative() {
   try {
     const { PushNotifications } = await import("@capacitor/push-notifications");
@@ -58,36 +116,28 @@ async function subscribeNative() {
       vibration: true,
     });
     return await new Promise((resolve) => {
+      let settled = false;
       const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
         toast.error("Délai d'enregistrement FCM dépassé");
         resolve(false);
       }, 15000);
-      PushNotifications.addListener("registration", async ({ value }) => {
-        clearTimeout(timer);
-        try {
-          const { data } = await api.post("/push/fcm/subscribe", { token: value });
-          localStorage.setItem(LS_ENABLED, "1");
-          localStorage.setItem(LS_FCM_TOKEN, value);
-          if (data.fcm_available === false) {
-            toast.warning(
-              "Token enregistré, mais FCM est désactivé côté serveur (firebase-admin.json)",
-              { duration: 8000 }
-            );
-          } else {
-            toast.success("Notifications push activées");
+      attachNativeListeners(PushNotifications, {
+        onRegistration: (err) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          if (err) {
+            toast.error("Échec de l'enregistrement du push");
+            resolve(false);
+            return;
           }
+          localStorage.setItem(LS_ENABLED, "1");
+          toast.success("Notifications push activées");
           resolve(true);
-        } catch {
-          toast.error("Erreur d'enregistrement du push");
-          resolve(false);
-        }
-      });
-      PushNotifications.addListener("registrationError", () => {
-        clearTimeout(timer);
-        toast.error("Échec de l'enregistrement FCM");
-        resolve(false);
-      });
-      PushNotifications.register();
+        },
+      }).then(() => PushNotifications.register());
     });
   } catch {
     toast.error("Push natif indisponible");

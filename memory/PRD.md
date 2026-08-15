@@ -351,3 +351,12 @@ La prochaine MAJ sur Kimsufi doit utiliser `install.sh` une fois pour initialise
 - Le centrage carte en replay utilisait déjà `center` (favori utilisateur) → Tarbes = carte centrée Tarbes.
 - 100 % Python pur côté backend (haversine existant), zéro nouvelle dépendance — compatible Dedibox + Kimsufi.
 - Tests : filtrage géospatial validé (impacts Tarbes visibles depuis Tarbes/Lourdes r70, invisibles depuis Brest), capture écran "autour de Tarbes" OK, endpoint sans params inchangé.
+
+## [2026-08-15] Fix notifications FCM au premier plan (APK)
+- **Cause racine** : Android n'affiche PAS les notifications FCM dans la barre système quand l'app est au premier plan (cas du bouton « Envoyer un test » cliqué depuis l'APK). Aucun listener `pushNotificationReceived` n'existait → notification livrée silencieusement, rien sur téléphone/montre. Depuis Chrome (app en arrière-plan), le système l'affichait → OK.
+- **Fix** :
+  - Ajout `@capacitor/local-notifications@7` (package.json — embarqué automatiquement par `npx cap sync android` du workflow GitHub Actions).
+  - `push.js` : listener `pushNotificationReceived` → rejoue la notif en notification locale (canal `storm_alerts`, visible barre système + relais montre).
+  - `initNativePush()` appelé au démarrage (`App.jsx`) : ré-arme les listeners natifs (perdus à chaque relance de l'APK) + re-lie le token FCM au compte connecté (header Authorization) → corrige aussi le unicast test.
+  - `subscribeNative()` refactoré sur les mêmes listeners partagés (anti-doublons via `removeAllListeners`).
+- **Tests** : build Vite OK, web non régressé (dashboard + `/api/push/test` OK). ⚠️ Le comportement APK premier plan nécessite un test réel sur téléphone après rebuild GitHub Actions (non testable en preview).

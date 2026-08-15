@@ -1,4 +1,5 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { useEffect } from "react";
 import "leaflet/dist/leaflet.css";
 import "@/App.css";
 import AdminPage from "@/pages/AdminPage";
@@ -12,11 +13,18 @@ import VerifyEmailPage from "@/pages/VerifyEmailPage";
 import VigilancePage from "@/pages/VigilancePage";
 import ReplayPage from "@/pages/ReplayPage";
 import { AuthProvider } from "@/lib/auth";
+import { initNativePush } from "@/lib/push";
 import { Toaster } from "@/components/ui/sonner";
 import { NativeAppExit } from "@/components/NativeAppExit";
 import { SafeAreaTop } from "@/components/SafeAreaTop";
 
 function App() {
+  // APK : ré-arme les listeners push natifs à chaque lancement (affichage des
+  // notifications FCM reçues au premier plan + re-liaison du token au compte)
+  useEffect(() => {
+    initNativePush();
+  }, []);
+
   return (
     <AuthProvider>
       <BrowserRouter>
