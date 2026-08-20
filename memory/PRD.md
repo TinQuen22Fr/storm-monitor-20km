@@ -370,3 +370,4 @@ La prochaine MAJ sur Kimsufi doit utiliser `install.sh` une fois pour initialise
 - **Frontend** : nouveau `HourlyForecastPanel.jsx` en tête de la page Prévisions (zone active du sélecteur) : courbe T° avec labels, bande horaire défilable (icône météo lucide, T°, % précip bleu / rouge+⚡ si orage, vent), badge "Orage prévu à HH:MM · X%", 6 cartes stats (UV, Humidité, Ressenti, Vent+direction, Pression, Lever/Coucher).
 - Piège corrigé : les heures Open-Meteo timezone=auto sont déjà locales → extraction directe HH:MM (pas de fmtLocalTime qui redécalait de +2h).
 - Testé : curl endpoint (24 h complètes) + captures écran (heures exactes, rendu OK).
+- [2026-08-20 bis] Corrections panneau horaire : carte Soleil lever/coucher explicite ; ajout `storm_prob` (%) calculé backend (heuristique CAPE + lightning_potential × prob. précip, code orage → ≥60) affiché ⚡x% par heure (ambre ≥30, rouge ≥60) + badge pic ; Brush recharts (zoom tactile par glissement sur tranche horaire).

@@ -270,6 +270,7 @@ async def _fetch_hourly_forecast_impl(lat: float, lon: float) -> Dict[str, Any]:
             "uv_index",
             "surface_pressure",
             "cape",
+            "lightning_potential",
         ]),
         "daily": "sunrise,sunset,uv_index_max,temperature_2m_max,temperature_2m_min",
         "timezone": "auto",
@@ -293,22 +294,41 @@ async def _fetch_hourly_forecast_impl(lat: float, lon: float) -> Dict[str, Any]:
         arr = hourly.get(key) or []
         return arr[i] if i < len(arr) else None
 
+    def _storm_prob(code, precip_prob, cape, lp) -> int:
+        """Probabilité d'orage heuristique (%) — Open-Meteo ne la fournit pas.
+        Code orage explicite → alignée sur la prob. de précip (min 60).
+        Sinon : CAPE (énergie convective) modulé par la prob. de précip (déclencheur)."""
+        if code in THUNDERSTORM_CODES:
+            return int(max(precip_prob or 0, 60))
+        base = 0.0
+        if cape:
+            base = min(90.0, float(cape) / 40.0)  # 2000 J/kg ≈ 50 %
+        if lp and lp > 0:
+            base = max(base, min(90.0, float(lp) * 30.0))
+        if precip_prob is not None:
+            base *= 0.3 + 0.7 * float(precip_prob) / 100.0
+        return int(round(base))
+
     out: List[Dict[str, Any]] = []
     for i in range(start, end):
         code = _v("weather_code", i)
+        cape = _v("cape", i)
+        precip_prob = _v("precipitation_probability", i)
+        lp = _v("lightning_potential", i)
         out.append({
             "time": times[i],
             "temperature": _v("temperature_2m", i),
             "feels_like": _v("apparent_temperature", i),
             "humidity": _v("relative_humidity_2m", i),
-            "precip_prob": _v("precipitation_probability", i),
+            "precip_prob": precip_prob,
             "weather_code": code,
             "is_storm": code in THUNDERSTORM_CODES,
+            "storm_prob": _storm_prob(code, precip_prob, cape, lp),
             "wind_speed": _v("wind_speed_10m", i),
             "wind_dir": _v("wind_direction_10m", i),
             "uv": _v("uv_index", i),
             "pressure": _v("surface_pressure", i),
-            "cape": _v("cape", i),
+            "cape": cape,
         })
     daily = data.get("daily", {})
 
