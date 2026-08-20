@@ -8,7 +8,7 @@ import math
 import os
 import pickle
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Coroutine, Dict, List
 
@@ -246,6 +246,87 @@ async def _fetch_current_impl(lat: float, lon: float) -> Dict[str, Any]:
 
 async def fetch_forecast(lat: float = LOURDES_LAT, lon: float = LOURDES_LON) -> Dict[str, Any]:
     return await _cached(f"forecast:{lat}:{lon}", 600.0, lambda: _fetch_forecast_impl(lat, lon))
+
+
+async def fetch_hourly_forecast(lat: float = LOURDES_LAT, lon: float = LOURDES_LON) -> Dict[str, Any]:
+    return await _cached(f"hourly24:{lat}:{lon}", 600.0, lambda: _fetch_hourly_forecast_impl(lat, lon))
+
+
+async def _fetch_hourly_forecast_impl(lat: float, lon: float) -> Dict[str, Any]:
+    """Prévisions horaires 24 h « grand public » : T°, ressenti, humidité,
+    probabilité de précipitations, code météo (orage), UV, pression, vent
+    + repères du jour (lever/coucher, UV max, min/max)."""
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "hourly": ",".join([
+            "temperature_2m",
+            "apparent_temperature",
+            "relative_humidity_2m",
+            "precipitation_probability",
+            "weather_code",
+            "wind_speed_10m",
+            "wind_direction_10m",
+            "uv_index",
+            "surface_pressure",
+            "cape",
+        ]),
+        "daily": "sunrise,sunset,uv_index_max,temperature_2m_max,temperature_2m_min",
+        "timezone": "auto",
+        "forecast_days": 2,
+        "past_hours": 0,
+    }
+    r = await get_with_retry(OPEN_METEO_BASE, params=params, timeout=15)
+    data = r.json()
+    hourly = data.get("hourly", {})
+    times = hourly.get("time", [])
+    offset = data.get("utc_offset_seconds", 0) or 0
+    now_iso = (datetime.now(timezone.utc) + timedelta(seconds=offset)).strftime("%Y-%m-%dT%H:00")
+    start = 0
+    for i, t in enumerate(times):
+        if t >= now_iso:
+            start = i
+            break
+    end = min(start + 24, len(times))
+
+    def _v(key: str, i: int):
+        arr = hourly.get(key) or []
+        return arr[i] if i < len(arr) else None
+
+    out: List[Dict[str, Any]] = []
+    for i in range(start, end):
+        code = _v("weather_code", i)
+        out.append({
+            "time": times[i],
+            "temperature": _v("temperature_2m", i),
+            "feels_like": _v("apparent_temperature", i),
+            "humidity": _v("relative_humidity_2m", i),
+            "precip_prob": _v("precipitation_probability", i),
+            "weather_code": code,
+            "is_storm": code in THUNDERSTORM_CODES,
+            "wind_speed": _v("wind_speed_10m", i),
+            "wind_dir": _v("wind_direction_10m", i),
+            "uv": _v("uv_index", i),
+            "pressure": _v("surface_pressure", i),
+            "cape": _v("cape", i),
+        })
+    daily = data.get("daily", {})
+
+    def _d(key: str):
+        arr = daily.get(key) or []
+        return arr[0] if arr else None
+
+    return {
+        "hourly": out,
+        "daily": {
+            "sunrise": _d("sunrise"),
+            "sunset": _d("sunset"),
+            "uv_max": _d("uv_index_max"),
+            "tmax": _d("temperature_2m_max"),
+            "tmin": _d("temperature_2m_min"),
+        },
+        "timezone": data.get("timezone"),
+    }
 
 
 async def _fetch_forecast_impl(lat: float, lon: float) -> Dict[str, Any]:

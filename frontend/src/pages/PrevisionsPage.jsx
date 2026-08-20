@@ -3,6 +3,7 @@ import { LineChart, Line, Tooltip, ResponsiveContainer, XAxis, YAxis, CartesianG
 import { Loader2, RefreshCw, TrendingUp, Wind } from "lucide-react";
 import NavTabs from "@/components/NavTabs";
 import FranceMapPanel from "@/components/FranceMapPanel";
+import HourlyForecastPanel from "@/components/HourlyForecastPanel";
 import VerticalProfileChart from "@/components/VerticalProfileChart";
 import AirQualityCard from "@/components/AirQualityCard";
 import ErrorBoundary from "@/components/ErrorBoundary";
@@ -202,6 +203,19 @@ export default function PrevisionsPage() {
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 text-xs text-red-800 font-mono" data-testid="previsions-error">
             {error}
+          </div>
+        )}
+
+        {/* Prévisions horaires 24h grand public (T°, % précip/orage, UV, humidité…) */}
+        {activeZone && (
+          <div className="mb-6">
+            <ErrorBoundary label="Erreur lors du rendu des prévisions horaires.">
+              <HourlyForecastPanel
+                lat={activeZone.lat}
+                lon={activeZone.lon}
+                name={activeZone.name}
+              />
+            </ErrorBoundary>
           </div>
         )}
 

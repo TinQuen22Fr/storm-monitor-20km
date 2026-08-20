@@ -364,3 +364,9 @@ La prochaine MAJ sur Kimsufi doit utiliser `install.sh` une fois pour initialise
 ## [2026-08-15] Cercle repère fixe 20 km
 - `MapPanel.jsx` : quand le rayon de surveillance dépasse 20 km, un cercle rouge pointillé fixe de 20 km (zone cruciale de protection) reste affiché autour du lieu sélectionné, en plus du cercle de surveillance élargi. Frontend uniquement, vérifié par capture (rayon 40 km).
 - [2026-08-15 bis] Cercle repère 20 km étendu aux zones favorites secondaires (overlays) dans `MapPanel.jsx` — vérifié par capture avec 2 zones.
+
+## [2026-08-20] Prévisions horaires 24 h grand public
+- **Backend** : `GET /api/weather/hourly?lat&lon` (weather.py `fetch_hourly_forecast`) — 1 appel Open-Meteo caché 10 min : T°, ressenti, humidité, precipitation_probability, weather_code (is_storm), UV, pression, vent + daily (sunrise/sunset/uv_max/tmin/tmax). 100 % Python pur.
+- **Frontend** : nouveau `HourlyForecastPanel.jsx` en tête de la page Prévisions (zone active du sélecteur) : courbe T° avec labels, bande horaire défilable (icône météo lucide, T°, % précip bleu / rouge+⚡ si orage, vent), badge "Orage prévu à HH:MM · X%", 6 cartes stats (UV, Humidité, Ressenti, Vent+direction, Pression, Lever/Coucher).
+- Piège corrigé : les heures Open-Meteo timezone=auto sont déjà locales → extraction directe HH:MM (pas de fmtLocalTime qui redécalait de +2h).
+- Testé : curl endpoint (24 h complètes) + captures écran (heures exactes, rendu OK).

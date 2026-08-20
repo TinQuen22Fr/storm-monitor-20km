@@ -29,6 +29,7 @@ from weather import (
     RADIUS_KM,
     fetch_current,
     fetch_forecast,
+    fetch_hourly_forecast,
     fetch_history_24h,
     fetch_history_days,
     fetch_rain_nowcast,
@@ -375,6 +376,15 @@ async def weather_forecast(lat: float = LOURDES_LAT, lon: float = LOURDES_LON):
         return await fetch_forecast(lat, lon)
     except Exception as e:
         return _degraded("forecast", e)
+
+
+@api_router.get("/weather/hourly")
+async def weather_hourly(lat: float = LOURDES_LAT, lon: float = LOURDES_LON):
+    """Prévisions horaires 24 h grand public (T°, ressenti, humidité, % précip, orage, UV, pression, vent)."""
+    try:
+        return await fetch_hourly_forecast(lat, lon)
+    except Exception as e:
+        return _degraded("hourly", e)
 
 
 # Seuil « heure orageuse » basé impacts réels — cohérent avec min_strikes du Replay
