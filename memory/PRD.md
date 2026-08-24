@@ -371,3 +371,8 @@ La prochaine MAJ sur Kimsufi doit utiliser `install.sh` une fois pour initialise
 - Piège corrigé : les heures Open-Meteo timezone=auto sont déjà locales → extraction directe HH:MM (pas de fmtLocalTime qui redécalait de +2h).
 - Testé : curl endpoint (24 h complètes) + captures écran (heures exactes, rendu OK).
 - [2026-08-20 bis] Corrections panneau horaire : carte Soleil lever/coucher explicite ; ajout `storm_prob` (%) calculé backend (heuristique CAPE + lightning_potential × prob. précip, code orage → ≥60) affiché ⚡x% par heure (ambre ≥30, rouge ≥60) + badge pic ; Brush recharts (zoom tactile par glissement sur tranche horaire).
+
+## [2026-08-20] Fix export MP4 Replay : cadrage sur la ville
+- Cause : `VideoExportDialog.jsx` envoyait le CENTROÏDE des impacts (`event.center_lat/lon`) comme centre vidéo. Le backend cadre strictement sur le lat/lon reçu.
+- Fix : le dialog lit désormais `localStorage["storm.center"]` (ville surveillée) + `storm.radius` (fallback Lourdes/20). Vidéo cadrée sur la ville, cercle = rayon utilisateur.
+- Testé : génération démo complète via curl (job done 100%) avec centre ville + rayon 20.

@@ -27,7 +27,18 @@ export default function VideoExportDialog({ open, onClose, event, isDemo = false
       setError(null);
       setJob(null);
       try {
-        const center = { lat: event.center_lat || 43.0951, lon: event.center_lon || -0.0434, radius: 70 };
+        // Centre = ville surveillée sélectionnée (persistée par le Dashboard),
+        // PAS le centroïde des impacts — la vidéo reste cadrée sur la ville.
+        let center = { lat: 43.0951, lon: -0.0434, radius: 20 };
+        try {
+          const c = JSON.parse(localStorage.getItem("storm.center"));
+          if (c && Number.isFinite(c.lat) && Number.isFinite(c.lon)) {
+            center.lat = c.lat;
+            center.lon = c.lon;
+          }
+          const r = parseInt(localStorage.getItem("storm.radius"), 10);
+          if (r >= 20 && r <= 60) center.radius = r;
+        } catch { /* fallback Lourdes */ }
         const { data } = await api.post("/replay/video", {
           start_ts: event.start_ts,
           end_ts: event.end_ts,
