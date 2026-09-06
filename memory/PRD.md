@@ -387,3 +387,10 @@ La prochaine MAJ sur Kimsufi doit utiliser `install.sh` une fois pour initialise
 - Attribution mise à jour "Tiles © Esri © OpenStreetMap contributors".
 - Vérifié : Dashboard + Prévisions (carte France) OK, aucun filigrane, labels villes présents.
 - Retour arrière possible : réintroduire URL CARTO + clé API gratuite (carto.com/basemaps/apikey) en suffixe ?key=...
+
+## [2026-06-09] Sélecteur de fond de carte (Dashboard)
+- Ajout d'un contrôle segmenté (haut-droite carte Dashboard, MapPanel.jsx) : Clair / Sombre / Satellite.
+- Tuiles Esri 100% gratuites sans clé : Light Gray / Dark Gray / World_Imagery + labels (Reference/World_Boundaries_and_Places).
+- Choix mémorisé via localStorage ("storm_basemap"). Icônes lucide Sun/Moon/Globe. data-testid: basemap-selector, basemap-clair/sombre/satellite.
+- Badges impacts/erreur repositionnés (top-[188px]/top-48) pour ne pas chevaucher la colonne de contrôles.
+- Testé (captures) : les 3 fonds s'affichent correctement avec cercles/marqueurs.

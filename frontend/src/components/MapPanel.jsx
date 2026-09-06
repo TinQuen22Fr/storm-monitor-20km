@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Circle, MapContainer, Marker, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
-import { Crosshair, Maximize2, Minimize2 } from "lucide-react";
+import { Crosshair, Maximize2, Minimize2, Sun, Moon, Globe } from "lucide-react";
 import { LOURDES } from "@/lib/api";
 import {
   WeatherTileLayer,
@@ -14,6 +14,28 @@ import TrajectoryBadge from "@/components/TrajectoryBadge";
 import { useIsMobile } from "@/lib/useIsMobile";
 
 delete L.Icon.Default.prototype._getIconUrl;
+
+// Fonds de carte Esri (gratuits, sans clé API)
+const BASEMAPS = {
+  clair: {
+    base: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+    labels: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
+    maxNative: 16,
+    attribution: 'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Esri, HERE, Garmin &copy; OpenStreetMap contributors',
+  },
+  sombre: {
+    base: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+    labels: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
+    maxNative: 16,
+    attribution: 'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Esri, HERE, Garmin &copy; OpenStreetMap contributors',
+  },
+  satellite: {
+    base: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    labels: "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+    maxNative: 19,
+    attribution: 'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Source: Esri, Maxar, Earthstar Geographics',
+  },
+};
 
 function buildCenterIcon() {
   return L.divIcon({
@@ -143,6 +165,15 @@ export default function MapPanel({
     );
   };
 
+  const [basemap, setBasemap] = useState(() => {
+    try { return localStorage.getItem("storm_basemap") || "clair"; } catch { return "clair"; }
+  });
+  const bm = BASEMAPS[basemap] || BASEMAPS.clair;
+  const changeBasemap = (k) => {
+    setBasemap(k);
+    try { localStorage.setItem("storm_basemap", k); } catch {}
+  };
+
   const now = Date.now() / 1000;
   const wx = useWeatherLayersState({ cursorTs, isLive });
   const isMobile = useIsMobile();
@@ -162,17 +193,19 @@ export default function MapPanel({
         style={{ height: "100%", width: "100%" }}
       >
         <TileLayer
-          attribution='Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Esri, HERE, Garmin &copy; OpenStreetMap contributors'
-          url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+          key={`base-${basemap}`}
+          attribution={bm.attribution}
+          url={bm.base}
           minZoom={2}
           maxZoom={20}
-          maxNativeZoom={16}
+          maxNativeZoom={bm.maxNative}
         />
         <TileLayer
-          url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}"
+          key={`labels-${basemap}`}
+          url={bm.labels}
           minZoom={2}
           maxZoom={20}
-          maxNativeZoom={16}
+          maxNativeZoom={bm.maxNative}
         />
         <WeatherTileLayer url={wx.url} showClouds={wx.showClouds} showRain={wx.showRain} />
         <WindLayer
@@ -351,7 +384,30 @@ export default function MapPanel({
       </div>
 
       {/* Floating controls - top right */}
-      <div className="absolute top-6 right-6 z-[500] flex flex-col gap-2">
+      <div className="absolute top-6 right-6 z-[500] flex flex-col gap-2 items-end">
+        <div
+          className="flex bg-white border border-slate-200 shadow-[0_2px_16px_rgba(0,0,0,0.04)] overflow-hidden"
+          data-testid="basemap-selector"
+        >
+          {[
+            { k: "clair", Icon: Sun, label: "Clair" },
+            { k: "sombre", Icon: Moon, label: "Sombre" },
+            { k: "satellite", Icon: Globe, label: "Satellite" },
+          ].map(({ k, Icon, label }) => (
+            <button
+              key={k}
+              onClick={() => changeBasemap(k)}
+              className={`w-11 h-11 flex items-center justify-center transition-colors ${
+                basemap === k ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-100"
+              }`}
+              title={`Fond ${label}`}
+              aria-label={`Fond de carte ${label}`}
+              data-testid={`basemap-${k}`}
+            >
+              <Icon className="w-5 h-5" strokeWidth={1.8} />
+            </button>
+          ))}
+        </div>
         <button
           onClick={locate}
           disabled={locating}
@@ -374,13 +430,13 @@ export default function MapPanel({
       </div>
 
       {locError && (
-        <div className="absolute top-20 right-6 z-[500] bg-red-50 border border-red-200 px-4 py-2 text-xs text-red-800 font-mono">
+        <div className="absolute top-48 right-6 z-[500] bg-red-50 border border-red-200 px-4 py-2 text-xs text-red-800 font-mono">
           {locError}
         </div>
       )}
 
       {strikes.length > 0 && (
-        <div className="absolute top-32 right-6 z-[500] bg-white border border-red-200 px-4 py-3 shadow-[0_2px_16px_rgba(0,0,0,0.04)]" data-testid="strikes-badge">
+        <div className="absolute top-[188px] right-6 z-[500] bg-white border border-red-200 px-4 py-3 shadow-[0_2px_16px_rgba(0,0,0,0.04)]" data-testid="strikes-badge">
           <div className="flex items-center gap-3">
             <span className="live-dot" />
             <div>
