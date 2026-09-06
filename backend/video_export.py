@@ -74,7 +74,7 @@ def _lonlat_to_pixel(lon: float, lat: float, z: int) -> tuple[float, float]:
 
 
 # ----- Tile fetching / caching -----
-TILE_URL = "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
+TILE_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
 FALLBACK_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 
 

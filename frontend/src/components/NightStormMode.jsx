@@ -118,9 +118,15 @@ export default function NightStormMode({ open, onClose, center = LOURDES }) {
         style={{ height: "100%", width: "100%", background: "#0F172A" }}
       >
         <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          attribution='&copy; CARTO &copy; OSM'
+          url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+          attribution='Tiles &copy; Esri &copy; OSM'
           maxZoom={19}
+          maxNativeZoom={16}
+        />
+        <TileLayer
+          url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}"
+          maxZoom={19}
+          maxNativeZoom={16}
         />
         <AutoFit strikes={strikes} center={center} />
         <Circle

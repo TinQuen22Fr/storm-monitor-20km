@@ -470,8 +470,9 @@ export default function FranceMapPanel({ favorites = [] }) {
           style={{ height: "100%", width: "100%", background: "#F1F5F9" }}
         >
           <TileLayer
-            attribution="&copy; CARTO &copy; OpenStreetMap"
-            url="https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png"
+            attribution="Tiles &copy; Esri &copy; OpenStreetMap contributors"
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+            maxNativeZoom={16}
           />
           {grid && Array.isArray(grid.lats) && grid.lats.length > 0 && (
             <IdwOverlay
@@ -484,9 +485,10 @@ export default function FranceMapPanel({ favorites = [] }) {
             />
           )}
           <TileLayer
-            url="https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png"
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}"
             zIndex={500}
             opacity={0.85}
+            maxNativeZoom={16}
           />
           {/* Favorite markers with exact interpolated value */}
           {grid && Array.isArray(grid.lats) && grid.lats.length > 0 &&

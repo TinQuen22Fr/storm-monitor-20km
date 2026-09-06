@@ -376,3 +376,14 @@ La prochaine MAJ sur Kimsufi doit utiliser `install.sh` une fois pour initialise
 - Cause : `VideoExportDialog.jsx` envoyait le CENTROÏDE des impacts (`event.center_lat/lon`) comme centre vidéo. Le backend cadre strictement sur le lat/lon reçu.
 - Fix : le dialog lit désormais `localStorage["storm.center"]` (ville surveillée) + `storm.radius` (fallback Lourdes/20). Vidéo cadrée sur la ville, cercle = rayon utilisateur.
 - Testé : génération démo complète via curl (job done 100%) avec centre ville + rayon 20.
+
+## [2026-06-09] Migration fond de carte CARTO → Esri Light Gray (suppression filigrane)
+- CARTO (cartocdn.com) exige désormais une clé API sinon filigrane "API Key" incrusté sur toutes les cartes.
+- Décision utilisateur (Option B) : basculer sur Esri "Light Gray Canvas" (aucune clé, aucune inscription, gratuit).
+- Fichiers modifiés (URL tuiles → server.arcgisonline.com World_Light_Gray_Base/Reference + Dark_Gray pour mode nuit) :
+  - frontend: MapPanel.jsx, FranceMapPanel.jsx, NightStormMode.jsx, pages/VigilancePage.jsx, pages/GrelePage.jsx
+  - backend: video_export.py (TILE_URL) + cache /tmp/storm_videos/tiles vidé
+- maxNativeZoom=16 posé (Esri natif jusqu'au z16, Leaflet upscale au-delà).
+- Attribution mise à jour "Tiles © Esri © OpenStreetMap contributors".
+- Vérifié : Dashboard + Prévisions (carte France) OK, aucun filigrane, labels villes présents.
+- Retour arrière possible : réintroduire URL CARTO + clé API gratuite (carto.com/basemaps/apikey) en suffixe ?key=...

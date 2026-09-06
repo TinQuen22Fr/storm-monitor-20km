@@ -425,14 +425,16 @@ export default function VigilancePage() {
             style={{ height: "100%", width: "100%", background: "#F8FAFC" }}
           >
             <TileLayer
-              url="https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png"
-              attribution='&copy; CARTO &copy; OSM'
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+              attribution='Tiles &copy; Esri &copy; OSM'
               maxZoom={19}
+              maxNativeZoom={16}
             />
             <TileLayer
-              url="https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png"
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}"
               attribution=''
               maxZoom={19}
+              maxNativeZoom={16}
               pane="tooltipPane"
             />
             {franceGeo && vig && (

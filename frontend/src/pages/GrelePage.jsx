@@ -198,8 +198,13 @@ export default function GrelePage() {
               style={{ height: "100%", width: "100%" }}
             >
               <TileLayer
-                attribution='&copy; CARTO &copy; OpenStreetMap'
-                url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+                attribution='Tiles &copy; Esri &copy; OpenStreetMap'
+                url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+                maxNativeZoom={16}
+              />
+              <TileLayer
+                url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}"
+                maxNativeZoom={16}
               />
               {zones.map((z) => {
                 const data = severeByZone[z.id];
