@@ -1,9 +1,31 @@
 import { useEffect, useMemo, useState } from "react";
 import { MapContainer, GeoJSON, TileLayer } from "react-leaflet";
-import { Info, Pin, X } from "lucide-react";
+import { Info, Pin, X, Sun, Moon, Globe } from "lucide-react";
 import NavTabs from "@/components/NavTabs";
 import { api } from "@/lib/api";
 import { fmtLocal } from "@/lib/timeFormat";
+
+// Fonds de carte Esri (gratuits, sans clé API) — identique à MapPanel.jsx
+const BASEMAPS = {
+  clair: {
+    base: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+    labels: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
+    maxNative: 16,
+    attribution: 'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Esri, HERE, Garmin &copy; OpenStreetMap contributors',
+  },
+  sombre: {
+    base: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+    labels: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
+    maxNative: 16,
+    attribution: 'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Esri, HERE, Garmin &copy; OpenStreetMap contributors',
+  },
+  satellite: {
+    base: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    labels: "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+    maxNative: 19,
+    attribution: 'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Source: Esri, Maxar, Earthstar Geographics',
+  },
+};
 
 const LEVEL_STYLE = {
   1: { fillColor: "#10B981", fillOpacity: 0.05, color: "#94A3B8", weight: 0.6 },
@@ -40,6 +62,14 @@ export default function VigilancePage() {
   const [hover, setHover] = useState(null); // ephemeral — follows the cursor
   const [selected, setSelected] = useState(null); // sticky — set on click
   const [filter, setFilter] = useState("all");
+  const [basemap, setBasemap] = useState(() => {
+    try { return localStorage.getItem("storm_basemap") || "clair"; } catch { return "clair"; }
+  });
+  const bm = BASEMAPS[basemap] || BASEMAPS.clair;
+  const changeBasemap = (k) => {
+    setBasemap(k);
+    try { localStorage.setItem("storm_basemap", k); } catch {}
+  };
 
   useEffect(() => {
     fetch("/geo/france-depts.geojson").then((r) => r.json()).then(setFranceGeo).catch(() => {});
@@ -416,6 +446,27 @@ export default function VigilancePage() {
 
         {/* Map */}
         <main className="lg:col-span-3 h-[75vh] border border-slate-200 bg-white relative" data-testid="vigilance-map-container">
+          {/* Sélecteur de fond de carte */}
+          <div className="absolute top-4 right-4 z-[500] flex bg-white border border-slate-200 shadow-[0_2px_16px_rgba(0,0,0,0.04)] overflow-hidden" data-testid="basemap-selector">
+            {[
+              { k: "clair", Icon: Sun, label: "Clair" },
+              { k: "sombre", Icon: Moon, label: "Sombre" },
+              { k: "satellite", Icon: Globe, label: "Satellite" },
+            ].map(({ k, Icon, label }) => (
+              <button
+                key={k}
+                onClick={() => changeBasemap(k)}
+                className={`w-11 h-11 flex items-center justify-center transition-colors ${
+                  basemap === k ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-100"
+                }`}
+                title={label}
+                aria-label={label}
+                data-testid={`basemap-${k}`}
+              >
+                <Icon className="w-5 h-5" strokeWidth={1.8} />
+              </button>
+            ))}
+          </div>
           <MapContainer
             center={[46.5, 2.0]}
             zoom={6}
@@ -425,16 +476,18 @@ export default function VigilancePage() {
             style={{ height: "100%", width: "100%", background: "#F8FAFC" }}
           >
             <TileLayer
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
-              attribution='Tiles &copy; Esri &copy; OSM'
+              key={`base-${basemap}`}
+              url={bm.base}
+              attribution={bm.attribution}
               maxZoom={19}
-              maxNativeZoom={16}
+              maxNativeZoom={bm.maxNative}
             />
             <TileLayer
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}"
-              attribution=''
+              key={`labels-${basemap}`}
+              url={bm.labels}
+              attribution=""
               maxZoom={19}
-              maxNativeZoom={16}
+              maxNativeZoom={bm.maxNative}
               pane="tooltipPane"
             />
             {franceGeo && vig && (

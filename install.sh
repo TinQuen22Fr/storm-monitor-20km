@@ -578,7 +578,7 @@ rm -f /etc/nginx/snippets/storm-monitor-app.conf
 # /index.html) won't see the HTTP/3 advertisement. This is required for
 # external HTTP/3 detection to work.
 cat > /etc/nginx/snippets/storm-monitor-app.conf <<EOF
-root /var/www/storm-monitor/frontend/build;
+root ${APP_DIR}/frontend/build;
 index index.html;
 
 client_max_body_size 25m;

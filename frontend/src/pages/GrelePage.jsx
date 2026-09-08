@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Circle, MapContainer, Marker, TileLayer } from "react-leaflet";
 import L from "leaflet";
 import { LineChart, Line, Tooltip, ResponsiveContainer, XAxis, YAxis, CartesianGrid, ReferenceLine, AreaChart, Area } from "recharts";
-import { AlertTriangle, CloudHail, Loader2, MapPin, RefreshCw, Zap, ZapOff } from "lucide-react";
+import { AlertTriangle, CloudHail, Loader2, MapPin, RefreshCw, Sun, Moon, Globe, Zap, ZapOff } from "lucide-react";
 import NavTabs from "@/components/NavTabs";
 import { useAuth } from "@/lib/auth";
 import { getSevere, listFavorites, LOURDES } from "@/lib/api";
@@ -59,6 +59,28 @@ function HailScale() {
   );
 }
 
+// Fonds de carte Esri (gratuits, sans clé API) — identique à MapPanel.jsx
+const BASEMAPS = {
+  clair: {
+    base: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+    labels: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
+    maxNative: 16,
+    attribution: 'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Esri, HERE, Garmin &copy; OpenStreetMap contributors',
+  },
+  sombre: {
+    base: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+    labels: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
+    maxNative: 16,
+    attribution: 'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Esri, HERE, Garmin &copy; OpenStreetMap contributors',
+  },
+  satellite: {
+    base: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    labels: "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+    maxNative: 19,
+    attribution: 'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Source: Esri, Maxar, Earthstar Geographics',
+  },
+};
+
 export default function GrelePage() {
   const { user } = useAuth();
   const [favs, setFavs] = useState([]);
@@ -66,6 +88,14 @@ export default function GrelePage() {
   const [activeId, setActiveId] = useState("default");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [basemap, setBasemap] = useState(() => {
+    try { return localStorage.getItem("storm_basemap") || "clair"; } catch { return "clair"; }
+  });
+  const bm = BASEMAPS[basemap] || BASEMAPS.clair;
+  const changeBasemap = (k) => {
+    setBasemap(k);
+    try { localStorage.setItem("storm_basemap", k); } catch {}
+  };
 
   // Build the list of zones to monitor (favs cochés OR Lourdes fallback)
   const zones = useMemo(() => {
@@ -189,6 +219,27 @@ export default function GrelePage() {
         {/* Map */}
         <div className="border border-slate-200 bg-white">
           <div className="h-[420px] lg:h-[520px] relative" data-testid="grele-map">
+            {/* Sélecteur de fond de carte */}
+            <div className="absolute top-4 right-4 z-[500] flex bg-white border border-slate-200 shadow-[0_2px_16px_rgba(0,0,0,0.04)] overflow-hidden" data-testid="basemap-selector">
+              {[
+                { k: "clair", Icon: Sun, label: "Clair" },
+                { k: "sombre", Icon: Moon, label: "Sombre" },
+                { k: "satellite", Icon: Globe, label: "Satellite" },
+              ].map(({ k, Icon, label }) => (
+                <button
+                  key={k}
+                  onClick={() => changeBasemap(k)}
+                  className={`w-11 h-11 flex items-center justify-center transition-colors ${
+                    basemap === k ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-100"
+                  }`}
+                  title={label}
+                  aria-label={label}
+                  data-testid={`basemap-${k}`}
+                >
+                  <Icon className="w-5 h-5" strokeWidth={1.8} />
+                </button>
+              ))}
+            </div>
             <MapContainer
               center={mapCenter}
               zoom={zones.length > 1 ? 6 : 9}
@@ -198,13 +249,18 @@ export default function GrelePage() {
               style={{ height: "100%", width: "100%" }}
             >
               <TileLayer
-                attribution='Tiles &copy; Esri &copy; OpenStreetMap'
-                url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
-                maxNativeZoom={16}
+                key={`base-${basemap}`}
+                attribution={bm.attribution}
+                url={bm.base}
+                maxZoom={19}
+                maxNativeZoom={bm.maxNative}
               />
               <TileLayer
-                url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}"
-                maxNativeZoom={16}
+                key={`labels-${basemap}`}
+                url={bm.labels}
+                maxZoom={19}
+                maxNativeZoom={bm.maxNative}
+                pane="tooltipPane"
               />
               {zones.map((z) => {
                 const data = severeByZone[z.id];
