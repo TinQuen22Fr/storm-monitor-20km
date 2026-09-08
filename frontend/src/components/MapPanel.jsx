@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Circle, MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
-import { Crosshair, Maximize2, Minimize2, Sun, Moon, Globe, Radio } from "lucide-react";
-import { LOURDES, getObservations } from "@/lib/api";
+import { Crosshair, Maximize2, Minimize2, Sun, Moon, Globe, Radio, EyeOff } from "lucide-react";
+import { toast } from "sonner";
+import { LOURDES, getObservations, adminUpdateObservationStatus } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import {
   WeatherTileLayer,
   WeatherLayersPanel,
@@ -225,6 +227,7 @@ export default function MapPanel({
   const [fitSignal, setFitSignal] = useState(0);
 
   // Observations terrain communautaires (C2)
+  const { user } = useAuth();
   const [observations, setObservations] = useState([]);
   const [showObservations, setShowObservations] = useState(true);
 
@@ -248,6 +251,16 @@ export default function MapPanel({
       clearInterval(intervalId);
     };
   }, []);
+
+  const handleHideObservation = async (obsId) => {
+    try {
+      await adminUpdateObservationStatus(obsId, "hidden");
+      setObservations((prev) => prev.filter((o) => o.id !== obsId));
+      toast.success("Observation masquée");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Erreur lors de la modération");
+    }
+  };
 
   return (
     <div className="relative h-full w-full flex flex-col" data-testid="map-panel">
@@ -426,6 +439,16 @@ export default function MapPanel({
                     <div className="italic text-slate-600 mt-2 border-t border-slate-200 pt-2">
                       "{obs.comment}"
                     </div>
+                  )}
+                  {user?.is_admin && (
+                    <button
+                      onClick={() => handleHideObservation(obs.id)}
+                      className="mt-3 w-full flex items-center justify-center gap-1.5 border-t border-slate-200 pt-2 text-red-600 hover:text-red-700 hover:bg-red-50 transition-colors text-[10px] uppercase tracking-wider font-mono py-1"
+                      data-testid={`admin-hide-observation-${obs.id}`}
+                    >
+                      <EyeOff className="w-3 h-3" />
+                      Masquer l'observation
+                    </button>
                   )}
                 </div>
               </Popup>

@@ -499,6 +499,13 @@ async def admin_update_observation_status(
     return {"ok": True, "status": payload.status}
 
 
+@api_router.get("/admin/observations")
+async def admin_list_observations(_=Depends(require_admin)):
+    """Liste des observations citoyennes (toutes, visibles + masquées) pour modération."""
+    docs = await db.observations.find({}, {"_id": 0, "expires_at": 0}).sort("timestamp", -1).to_list(200)
+    return docs
+
+
 # ---------- Weather ----------
 def _degraded(kind: str, error: Exception) -> Dict[str, Any]:
     """Return a safe empty payload when upstream is unavailable."""

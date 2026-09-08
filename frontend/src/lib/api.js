@@ -84,6 +84,13 @@ export const postObservation = (payload) =>
 export const getObservations = (params = {}) =>
   api.get("/observations", { params: { window_s: 7200, ...params } }).then((r) => r.data);
 
+/** Modération admin des observations citoyennes (nécessite un compte is_admin). */
+export const adminListObservations = () =>
+  api.get("/admin/observations").then((r) => r.data);
+
+export const adminUpdateObservationStatus = (obsId, status) =>
+  api.patch(`/admin/observations/${obsId}/status`, { status }).then((r) => r.data);
+
 /** Open-Meteo Geocoding API (gratuit, sans clé) */
 export const geocodeSearch = (query) =>
   axios

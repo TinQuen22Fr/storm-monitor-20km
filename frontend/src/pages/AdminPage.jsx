@@ -1,11 +1,26 @@
 import { useCallback, useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
-import { CheckCircle, MailCheck, RefreshCw, Shield, ShieldOff, Trash2, UserX } from "lucide-react";
+import { CheckCircle, CloudLightning, Eye, EyeOff, MailCheck, RefreshCw, Shield, ShieldOff, Trash2, UserX } from "lucide-react";
 import { toast } from "sonner";
 import NavTabs from "@/components/NavTabs";
 import { useAuth } from "@/lib/auth";
-import { adminDeleteUser, adminForceVerify, adminListUsers, adminToggleDisable } from "@/lib/api";
+import {
+  adminDeleteUser,
+  adminForceVerify,
+  adminListObservations,
+  adminListUsers,
+  adminToggleDisable,
+  adminUpdateObservationStatus,
+} from "@/lib/api";
 import { fmtLocal } from "@/lib/timeFormat";
+
+const OBS_TYPE_LABELS = {
+  thunder: "🌩️ Tonnerre",
+  lightning: "⚡ Éclairs",
+  hail: "🧊 Grêle",
+  rain_heavy: "🌧️ Pluie intense",
+  wind_gust: "💨 Fortes rafales",
+};
 
 export default function AdminPage() {
   const { user, loading: authLoading } = useAuth();
@@ -13,6 +28,10 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all"); // all | verified | unverified | disabled
   const [search, setSearch] = useState("");
+
+  const [observations, setObservations] = useState([]);
+  const [obsLoading, setObsLoading] = useState(true);
+  const [obsFilter, setObsFilter] = useState("all"); // all | visible | hidden
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -26,9 +45,37 @@ export default function AdminPage() {
     }
   }, []);
 
+  const loadObservations = useCallback(async () => {
+    setObsLoading(true);
+    try {
+      const data = await adminListObservations();
+      setObservations(Array.isArray(data) ? data : []);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Erreur de chargement des observations");
+    } finally {
+      setObsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    if (user?.is_admin) load();
-  }, [user, load]);
+    if (user?.is_admin) {
+      load();
+      loadObservations();
+    }
+  }, [user, load, loadObservations]);
+
+  const handleToggleObservation = async (obs) => {
+    const nextStatus = obs.status === "hidden" ? "visible" : "hidden";
+    try {
+      await adminUpdateObservationStatus(obs.id, nextStatus);
+      setObservations((prev) =>
+        prev.map((o) => (o.id === obs.id ? { ...o, status: nextStatus } : o))
+      );
+      toast.success(nextStatus === "hidden" ? "Observation masquée" : "Observation rétablie");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Erreur lors de la modération");
+    }
+  };
 
   if (authLoading) return null;
   if (!user || !user.is_admin) return <Navigate to="/" replace />;
@@ -236,6 +283,134 @@ export default function AdminPage() {
               ))}
             </tbody>
           </table>
+        </section>
+
+        {/* Observations citoyennes */}
+        <section className="border border-slate-200 bg-white" data-testid="admin-observations-section">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 px-6 py-4 border-b border-slate-200 bg-slate-50">
+            <div className="flex items-center gap-2">
+              <CloudLightning className="w-4 h-4 text-amber-600" strokeWidth={2.5} />
+              <h2 className="font-heading text-lg font-bold text-slate-900">Observations citoyennes actives</h2>
+              <span className="font-mono text-[10px] uppercase tracking-wider text-slate-400 bg-slate-200 px-2 py-0.5 ml-1">
+                {observations.length}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex border border-slate-300 overflow-hidden text-[10px] font-mono uppercase tracking-wider">
+                {[
+                  { key: "all", label: "Toutes" },
+                  { key: "visible", label: "Visibles" },
+                  { key: "hidden", label: "Masquées" },
+                ].map((f) => (
+                  <button
+                    key={f.key}
+                    onClick={() => setObsFilter(f.key)}
+                    className={`px-3 py-1.5 transition-colors ${
+                      obsFilter === f.key ? "bg-slate-900 text-white" : "bg-white text-slate-500 hover:bg-slate-100"
+                    }`}
+                    data-testid={`admin-obs-filter-${f.key}`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={loadObservations}
+                className="flex items-center gap-2 px-3 h-8 border border-slate-300 bg-white hover:bg-slate-100 text-xs font-mono uppercase tracking-wider text-slate-600"
+                data-testid="admin-observations-refresh"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${obsLoading ? "animate-spin" : ""}`} />
+                Rafraîchir
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 text-[10px] font-mono uppercase tracking-wider text-slate-400 border-b border-slate-200">
+                  <th className="text-left px-6 py-3 font-medium">Date</th>
+                  <th className="text-left px-4 py-3 font-medium">Observateur</th>
+                  <th className="text-left px-4 py-3 font-medium">Types</th>
+                  <th className="text-left px-4 py-3 font-medium">Coordonnées</th>
+                  <th className="text-left px-4 py-3 font-medium">Commentaire</th>
+                  <th className="text-center px-3 py-3 font-medium">Statut</th>
+                  <th className="text-right px-6 py-3 font-medium">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {observations
+                  .filter((o) => obsFilter === "all" || o.status === obsFilter)
+                  .map((o) => (
+                    <tr
+                      key={o.id}
+                      className={`border-t border-slate-100 ${o.status === "hidden" ? "bg-red-50/40" : "hover:bg-slate-50"}`}
+                      data-testid={`admin-observation-row-${o.id}`}
+                    >
+                      <td className="px-6 py-3 text-[11px] text-slate-500 font-mono whitespace-nowrap">
+                        {fmtLocal(o.timestamp * 1000, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">{o.user_name || "Observateur anonyme"}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1">
+                          {(o.types || []).map((t) => (
+                            <span
+                              key={t}
+                              className="font-mono text-[9px] uppercase tracking-wider px-1.5 py-0.5 bg-amber-50 border border-amber-200 text-amber-800 whitespace-nowrap"
+                            >
+                              {OBS_TYPE_LABELS[t] || t}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-[11px] text-slate-500 whitespace-nowrap">
+                        {o.lat?.toFixed(3)}, {o.lon?.toFixed(3)}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 italic text-xs max-w-[220px] truncate">
+                        {o.comment ? `"${o.comment}"` : "—"}
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        {o.status === "hidden" ? (
+                          <span className="font-mono text-[9px] uppercase tracking-wider px-2 py-1 border border-red-300 bg-red-50 text-red-800">Masquée</span>
+                        ) : (
+                          <span className="font-mono text-[9px] uppercase tracking-wider px-2 py-1 border border-emerald-300 bg-emerald-50 text-emerald-800">Visible</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-3 text-right">
+                        <button
+                          onClick={() => handleToggleObservation(o)}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 transition-colors text-[10px] font-mono uppercase tracking-wider ${
+                            o.status === "hidden"
+                              ? "text-emerald-700 hover:bg-emerald-100"
+                              : "text-red-700 hover:bg-red-100"
+                          }`}
+                          data-testid={`admin-obs-toggle-${o.id}`}
+                        >
+                          {o.status === "hidden" ? (
+                            <>
+                              <Eye className="w-3.5 h-3.5" />
+                              Rétablir
+                            </>
+                          ) : (
+                            <>
+                              <EyeOff className="w-3.5 h-3.5" />
+                              Masquer
+                            </>
+                          )}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                {!obsLoading && observations.filter((o) => obsFilter === "all" || o.status === obsFilter).length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="text-center text-slate-400 py-10 font-mono text-xs">
+                      Aucune observation à afficher.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </section>
 
         <footer className="pt-8 border-t border-slate-100 font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400">
