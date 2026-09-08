@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, BellOff, Download, LocateFixed, Map as MapIcon, MapPin, Moon, PlayCircle, RefreshCw, Share2, X, Zap } from "lucide-react";
+import { Bell, BellOff, Sliders, Download, LocateFixed, Map as MapIcon, MapPin, Moon, PlayCircle, RefreshCw, Share2, X, Zap } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import MapPanel from "@/components/MapPanel";
 import DataFreshnessBadge from "@/components/DataFreshnessBadge";
@@ -25,6 +25,8 @@ import { useIsMobile } from "@/lib/useIsMobile";
 import { api, API, getCurrent, getForecast, getHistory, getStrikes, getZones, listFavorites, LOURDES } from "@/lib/api";
 import * as notif from "@/lib/notifications";
 import * as push from "@/lib/push";
+import AlertSettingsDialog from "@/components/AlertSettingsDialog";
+
 import { setLocalTimezone, fmtLocal, fmtLocalTime } from "@/lib/timeFormat";
 import { useAuth } from "@/lib/auth";
 
@@ -62,6 +64,8 @@ export default function Dashboard() {
   const [fullscreen, setFullscreen] = useState(false);
   const [notifEnabled, setNotifEnabled] = useState(notif.isEnabled());
   const [pushEnabled, setPushEnabled] = useState(push.isPushEnabled());
+  const [alertSettingsOpen, setAlertSettingsOpen] = useState(false);
+
   const [approach, setApproach] = useState(null);
   const [cursorTs, setCursorTs] = useState(() => Math.floor(Date.now() / 1000));
   const [playing, setPlaying] = useState(false);
@@ -784,6 +788,23 @@ export default function Dashboard() {
               />
             </span>
           </button>
+
+                    {/* Personnaliser les alertes */}
+          {user && (
+            <button
+              onClick={() => setAlertSettingsOpen(true)}
+              className="mt-2 w-full flex items-center justify-center gap-2 px-4 h-10 border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white transition-colors font-mono text-[10px] uppercase tracking-[0.2em]"
+              data-testid="open-alert-settings"
+            >
+              <Sliders className="w-4 h-4 text-red-500" strokeWidth={1.8} />
+              Personnaliser les alertes
+            </button>
+          )}
+
+          <AlertSettingsDialog
+            isOpen={alertSettingsOpen}
+            onClose={() => setAlertSettingsOpen(false)}
+          />
 
           {/* Send push test (only when push is enabled) */}
           {pushEnabled && (

@@ -113,6 +113,15 @@ class Favorite(BaseModel):
     lon: float
     created_at: str
 
+class UserAlertSettings(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    enabled: bool = True
+    radius_km: int = Field(default=20, ge=5, le=50)
+    min_strikes: int = Field(default=1, ge=1, le=50)
+    quiet_hours_enabled: bool = False
+    quiet_hours_start: str = "23:00"
+    quiet_hours_end: str = "07:00"
+
 
 # ---------- Meta ----------
 @api_router.get("/")
@@ -326,6 +335,25 @@ async def delete_favorite(fav_id: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Favori introuvable")
     return {"ok": True}
 
+
+
+# ---------- Alert Settings ----------
+@api_router.get("/user/alert-settings", response_model=UserAlertSettings)
+async def get_user_alert_settings(user=Depends(get_current_user)):
+    doc = await db.users.find_one({"id": user["id"]}, {"_id": 0, "alert_settings": 1})
+    if not doc or "alert_settings" not in doc:
+        return UserAlertSettings()
+    return UserAlertSettings(**doc["alert_settings"])
+
+
+@api_router.put("/user/alert-settings", response_model=UserAlertSettings)
+async def update_user_alert_settings(payload: UserAlertSettings, user=Depends(get_current_user)):
+    data = payload.model_dump()
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"alert_settings": data}}
+    )
+    return payload
 
 # ---------- Weather ----------
 def _degraded(kind: str, error: Exception) -> Dict[str, Any]:
@@ -1388,12 +1416,13 @@ async def _alert_watcher():
             if storm_now and not was_storm:
                 closest_km = min(s["distance_km"] for s in recent_strikes)
                 body = f"{len(recent_strikes)} impacts de foudre détectés dans le rayon (le plus proche à {closest_km:.1f} km)."
-                await push_mod.send_to_all(
+                await push_mod.send_personalized_storm_alert(
                     db,
+                    recent_strikes=recent_strikes,
                     title="Alerte orage · Lourdes",
-                    body=body,
-                    url="/",
+                    base_url="/",
                     tag="storm-active",
+                    default_radius_km=RADIUS_KM,
                 )
                 await webhooks_mod.dispatch(
                     title="Alerte orage · Lourdes",
@@ -1407,12 +1436,13 @@ async def _alert_watcher():
             new_strikes = [s for s in strikes if s["ts"] > _alerter_state["last_strike_ts"]]
             if new_strikes:
                 closest = min(new_strikes, key=lambda s: s["distance_km"])
-                await push_mod.send_to_all(
+                await push_mod.send_personalized_storm_alert(
                     db,
-                    title=f"⚡ {len(new_strikes)} impact(s) de foudre",
-                    body=f"Le plus proche à {closest['distance_km']:.1f} km de Lourdes.",
-                    url="/",
+                    recent_strikes=new_strikes,
+                    title="⚡ Alerte foudre",
+                    base_url="/",
                     tag="lightning-strike",
+                    default_radius_km=RADIUS_KM,
                 )
                 await webhooks_mod.dispatch(
                     title=f"{len(new_strikes)} impact(s) de foudre",
