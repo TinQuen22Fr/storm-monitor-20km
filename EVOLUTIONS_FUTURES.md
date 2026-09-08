@@ -8,10 +8,17 @@
 
 ## 🤝 Esprit collaboratif
 
-### C1 — Alertes personnalisées par utilisateur *(déjà évoqué, prioritaire)*
-Chaque utilisateur règle son propre rayon d'alerte et ses seuils (nb d'impacts,
+### ~~C1 — Alertes personnalisées par utilisateur *(déjà évoqué, prioritaire)*~~
+~~Chaque utilisateur règle son propre rayon d'alerte et ses seuils (nb d'impacts,
 distance minimale, plage horaire de notification). Les notifications push FCM
-deviennent réellement personnelles au lieu d'être calées sur la zone admin.
+deviennent réellement personnelles au lieu d'être calées sur la zone admin.~~
+
+> **[x] STATUT : Réalisé et validé**  
+> **Date :** 08/09/2026 ~14:15 CEST (`2026-09-08T12:15:00Z`)  
+> **Détails techniques :**
+> - **Backend / API :** Endpoints `/api/user/alert-settings` (GET / PUT) avec persistance MongoDB (`alert_settings`).
+> - **Frontend UI :** Modale `AlertSettingsDialog.jsx` (rayon 5-50 km, seuil 1-20 impacts, activation et plage d'heures silencieuses).
+> - **Moteur Push (`push.py`) :** Validation unitaire du dispatch ciblé par abonné (filtrage rayon, seuil minimal, coupure nocturne et compte désactivé).
 
 ### C2 — Observations terrain communautaires
 Un bouton « Je vois / j'entends l'orage » (grêle, rafales, pluie forte) horodaté et
