@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MapContainer, Marker, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
-import { Loader2 } from "lucide-react";
+import { Loader2, Play, Pause, RotateCcw } from "lucide-react";
 import { getSevereGridBulk, listFavorites, LOURDES } from "@/lib/api";
 
 // =========================================================================
@@ -293,11 +293,40 @@ function valueAt(lat, lon, lats, lons, values) {
 export default function FranceMapPanel({ favorites = [] }) {
   const [param, setParam] = useState("t850");
   const [hour, setHour] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const MAX_HOUR = 47;
   const [bulk, setBulk] = useState(null);  // Full snapshot (all params × all hours)
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const cfg = PARAMS[param];
+
+  // ---------------------------------------------------------------------
+  // Animation de la barre temporelle : setInterval propre, nettoyé au
+  // démontage ou dès que isPlaying repasse à false. Boucle fluide sur
+  // H+47 -> H+0. Cadence ~900ms pour laisser le temps au calque de se
+  // redessiner sans saccade sur du matériel modeste.
+  // ---------------------------------------------------------------------
+  useEffect(() => {
+    if (!isPlaying) return;
+    const id = setInterval(() => {
+      setHour((h) => (h >= MAX_HOUR ? 0 : h + 1));
+    }, 900);
+    return () => clearInterval(id);
+  }, [isPlaying]);
+
+  const togglePlay = () => setIsPlaying((p) => !p);
+
+  const resetHour = () => {
+    setIsPlaying(false);
+    setHour(0);
+  };
+
+  // Manipulation manuelle du slider pendant la lecture -> pause automatique.
+  const handleHourChange = (e) => {
+    setIsPlaying(false);
+    setHour(parseInt(e.target.value, 10));
+  };
 
   // -------------------------------------------------------------------------
   // ONE bulk fetch on mount. The backend returns all 9 params × all 48 hours
@@ -442,13 +471,31 @@ export default function FranceMapPanel({ favorites = [] }) {
 
         {/* Time slider */}
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={togglePlay}
+            className="flex items-center justify-center w-9 h-9 border border-slate-300 bg-white text-slate-700 hover:border-slate-500 hover:text-slate-900 transition-colors shrink-0"
+            title={isPlaying ? "Pause" : "Lecture"}
+            data-testid="map-hour-play-toggle"
+          >
+            {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+          </button>
+          <button
+            type="button"
+            onClick={resetHour}
+            className="flex items-center justify-center w-9 h-9 border border-slate-300 bg-white text-slate-700 hover:border-slate-500 hover:text-slate-900 transition-colors shrink-0"
+            title="Retour à H+0"
+            data-testid="map-hour-reset"
+          >
+            <RotateCcw className="w-4 h-4" />
+          </button>
           <span className="font-mono text-[10px] text-slate-500 shrink-0">H+0</span>
           <input
             type="range"
             min={0}
-            max={47}
+            max={MAX_HOUR}
             value={hour}
-            onChange={(e) => setHour(parseInt(e.target.value))}
+            onChange={handleHourChange}
             className="flex-1 accent-slate-900"
             data-testid="map-hour-slider"
           />
