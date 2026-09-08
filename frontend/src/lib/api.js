@@ -72,6 +72,18 @@ export const listFavorites = () => api.get("/favorites").then((r) => r.data);
 export const createFavorite = (fav) => api.post("/favorites", fav).then((r) => r.data);
 export const deleteFavorite = (id) => api.delete(`/favorites/${id}`).then((r) => r.data);
 
+/**
+ * Observations terrain communautaires (C2).
+ * NB: le token JWT (si présent en localStorage) est déjà injecté automatiquement
+ * dans le header `Authorization: Bearer <token>` par l'intercepteur `api` ci-dessus.
+ * L'API backend accepte toutefois les observations anonymes (user optionnel).
+ */
+export const postObservation = (payload) =>
+  api.post("/observations", payload).then((r) => r.data);
+
+export const getObservations = (params = {}) =>
+  api.get("/observations", { params: { window_s: 7200, ...params } }).then((r) => r.data);
+
 /** Open-Meteo Geocoding API (gratuit, sans clé) */
 export const geocodeSearch = (query) =>
   axios

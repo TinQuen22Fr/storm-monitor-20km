@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 import time
 import uuid
@@ -354,6 +355,149 @@ async def update_user_alert_settings(payload: UserAlertSettings, user=Depends(ge
         {"$set": {"alert_settings": data}}
     )
     return payload
+
+# ---------- Observations terrain (C2) ----------
+OBSERVATION_TYPES = {"thunder", "lightning", "hail", "rain_heavy", "wind_gust"}
+OBSERVATION_TTL_S = 7200  # 2h
+OBSERVATION_RATE_LIMIT_S = 120  # 1 post / 2 min par clé (user_id ou IP)
+
+# Clé (user_id ou IP) -> dernier timestamp epoch de post. En mémoire (process unique).
+_observation_rate_limit: Dict[str, float] = {}
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    r = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+class ObservationCreate(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    types: List[str] = Field(min_length=1)
+    comment: Optional[str] = Field(default=None, max_length=140)
+
+    def clean_types(self) -> List[str]:
+        cleaned = [t for t in self.types if t in OBSERVATION_TYPES]
+        if not cleaned:
+            raise HTTPException(status_code=422, detail="Au moins un type d'observation valide est requis.")
+        # dédoublonne en gardant l'ordre
+        seen = []
+        for t in cleaned:
+            if t not in seen:
+                seen.append(t)
+        return seen
+
+    def clean_comment(self) -> Optional[str]:
+        if not self.comment:
+            return None
+        c = self.comment.strip()
+        return c[:140] if c else None
+
+
+class Observation(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    user_id: Optional[str] = None
+    user_name: str
+    timestamp: int
+    lat: float
+    lon: float
+    types: List[str]
+    comment: Optional[str] = None
+    status: str = "visible"
+
+
+class ObservationStatusUpdate(BaseModel):
+    status: str = Field(pattern="^(visible|hidden)$")
+
+
+@api_router.post("/observations", response_model=Observation, status_code=201)
+async def create_observation(
+    payload: ObservationCreate,
+    request: Request,
+    user=Depends(get_current_user_optional),
+):
+    types = payload.clean_types()
+    comment = payload.clean_comment()
+
+    # Rate limiting : 1 post / 2 min, par user_id si connecté sinon par IP
+    rate_key = f"user:{user['id']}" if user else f"ip:{_client_ip(request)}"
+    now_ts = time.time()
+    last_ts = _observation_rate_limit.get(rate_key)
+    if last_ts is not None and (now_ts - last_ts) < OBSERVATION_RATE_LIMIT_S:
+        wait_s = int(OBSERVATION_RATE_LIMIT_S - (now_ts - last_ts))
+        raise HTTPException(
+            status_code=429,
+            detail=f"Merci de patienter encore {wait_s}s avant de publier une nouvelle observation.",
+        )
+
+    user_name = "Observateur anonyme"
+    if user:
+        udoc = await db.users.find_one({"id": user["id"]}, {"_id": 0, "name": 1})
+        if udoc and udoc.get("name"):
+            user_name = udoc["name"]
+
+    now_dt = datetime.now(timezone.utc)
+    obs = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"] if user else None,
+        "user_name": user_name,
+        "timestamp": int(now_dt.timestamp()),
+        "lat": payload.lat,
+        "lon": payload.lon,
+        "types": types,
+        "comment": comment,
+        "status": "visible",
+        "expires_at": now_dt + timedelta(seconds=OBSERVATION_TTL_S),
+    }
+    await db.observations.insert_one(obs)
+    _observation_rate_limit[rate_key] = now_ts
+    return {k: v for k, v in obs.items() if k not in ("_id", "expires_at")}
+
+
+@api_router.get("/observations", response_model=List[Observation])
+async def list_observations(
+    window_s: int = Query(default=OBSERVATION_TTL_S, ge=1, le=86400),
+    lat: Optional[float] = Query(default=None, ge=-90, le=90),
+    lon: Optional[float] = Query(default=None, ge=-180, le=180),
+    radius_km: Optional[float] = Query(default=None, gt=0, le=1000),
+):
+    since_ts = int(time.time() - window_s)
+    query = {"status": "visible", "timestamp": {"$gte": since_ts}}
+    docs = await db.observations.find(query, {"_id": 0, "expires_at": 0}).sort("timestamp", -1).to_list(200)
+
+    if lat is not None and lon is not None and radius_km is not None:
+        docs = [d for d in docs if _haversine_km(lat, lon, d["lat"], d["lon"]) <= radius_km]
+
+    return docs
+
+
+@api_router.patch("/admin/observations/{obs_id}/status")
+async def admin_update_observation_status(
+    obs_id: str,
+    payload: ObservationStatusUpdate,
+    _=Depends(require_admin),
+):
+    res = await db.observations.update_one(
+        {"id": obs_id},
+        {"$set": {"status": payload.status}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Observation introuvable")
+    return {"ok": True, "status": payload.status}
+
 
 # ---------- Weather ----------
 def _degraded(kind: str, error: Exception) -> Dict[str, Any]:
@@ -1359,12 +1503,25 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 
+async def _init_observations_indexes():
+    """Index TTL (purge auto 2h) + index de requêtage pour la collection observations (C2)."""
+    try:
+        await db.observations.create_index("expires_at", expireAfterSeconds=0)
+        await db.observations.create_index("status")
+        await db.observations.create_index("timestamp")
+        logger.info("Observations: index MongoDB (TTL/status/timestamp) prêts")
+    except Exception as e:
+        logger.warning("Observations: création des index Mongo échouée: %s", e)
+
+
 @app.on_event("startup")
 async def _start_lightning_listener():
     try:
         await lightning_mod.init_db(db)
     except Exception as e:
         logger.warning("Lightning: persistance Mongo indisponible: %s", e)
+
+    await _init_observations_indexes()
     try:
         lightning_mod.start()
         logger.info("Lightning listener started")

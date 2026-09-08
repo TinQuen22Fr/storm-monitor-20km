@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, BellOff, Sliders, Download, LocateFixed, Map as MapIcon, MapPin, Moon, PlayCircle, RefreshCw, Share2, X, Zap } from "lucide-react";
+import { Bell, BellOff, Sliders, Download, LocateFixed, Map as MapIcon, MapPin, Moon, PlayCircle, Radio, RefreshCw, Share2, X, Zap } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import MapPanel from "@/components/MapPanel";
 import DataFreshnessBadge from "@/components/DataFreshnessBadge";
@@ -26,9 +26,11 @@ import { api, API, getCurrent, getForecast, getHistory, getStrikes, getZones, li
 import * as notif from "@/lib/notifications";
 import * as push from "@/lib/push";
 import AlertSettingsDialog from "@/components/AlertSettingsDialog";
+import ObservationDialog from "@/components/ObservationDialog";
 
 import { setLocalTimezone, fmtLocal, fmtLocalTime } from "@/lib/timeFormat";
 import { useAuth } from "@/lib/auth";
+import { toast } from "sonner";
 
 const STRIKES_MS = 15_000;
 const STRIKES_WINDOW_S = 24 * 3600;
@@ -65,6 +67,7 @@ export default function Dashboard() {
   const [notifEnabled, setNotifEnabled] = useState(notif.isEnabled());
   const [pushEnabled, setPushEnabled] = useState(push.isPushEnabled());
   const [alertSettingsOpen, setAlertSettingsOpen] = useState(false);
+  const [observationOpen, setObservationOpen] = useState(false);
 
   const [approach, setApproach] = useState(null);
   const [cursorTs, setCursorTs] = useState(() => Math.floor(Date.now() / 1000));
@@ -806,6 +809,16 @@ export default function Dashboard() {
             onClose={() => setAlertSettingsOpen(false)}
           />
 
+          {/* Signaler un orage (observation communautaire) */}
+          <button
+            onClick={() => setObservationOpen(true)}
+            className="mt-2 w-full flex items-center justify-center gap-2 px-4 h-10 border border-amber-500 bg-amber-500 text-white hover:bg-amber-600 hover:border-amber-600 transition-colors font-mono text-[10px] uppercase tracking-[0.2em]"
+            data-testid="open-observation-dialog"
+          >
+            <Radio className="w-4 h-4" strokeWidth={1.8} />
+            Signaler un orage
+          </button>
+
           {/* Send push test (only when push is enabled) */}
           {pushEnabled && (
             <button
@@ -922,6 +935,16 @@ export default function Dashboard() {
         open={nightMode}
         onClose={() => setNightMode(false)}
         center={center}
+      />
+
+      <ObservationDialog
+        isOpen={observationOpen}
+        onClose={() => setObservationOpen(false)}
+        defaultCoords={center || LOURDES}
+        onSuccess={() => {
+          toast.success("Observation enregistrée !");
+          setRefreshTick((t) => t + 1);
+        }}
       />
     </div>
   );
