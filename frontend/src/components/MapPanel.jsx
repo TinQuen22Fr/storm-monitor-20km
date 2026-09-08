@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Circle, MapContainer, Marker, TileLayer, useMap } from "react-leaflet";
+import { Circle, MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
-import { Crosshair, Maximize2, Minimize2, Sun, Moon, Globe } from "lucide-react";
-import { LOURDES } from "@/lib/api";
+import { Crosshair, Maximize2, Minimize2, Sun, Moon, Globe, Radio } from "lucide-react";
+import { LOURDES, getObservations } from "@/lib/api";
 import {
   WeatherTileLayer,
   WeatherLayersPanel,
@@ -105,6 +105,51 @@ function buildStrikeIcon(ageSec) {
   });
 }
 
+// ---------- Observations terrain communautaires (C2) ----------
+const OBSERVATION_TYPE_PRIORITY = ["hail", "wind_gust", "thunder", "lightning", "rain_heavy"];
+const OBSERVATION_TYPE_META = {
+  thunder: { emoji: "\u{1F329}\uFE0F", label: "Tonnerre" },
+  lightning: { emoji: "\u26A1", label: "\u00C9clairs" },
+  hail: { emoji: "\u{1F9CA}", label: "Gr\u00EAle" },
+  rain_heavy: { emoji: "\u{1F327}\uFE0F", label: "Pluie intense" },
+  wind_gust: { emoji: "\u{1F4A8}", label: "Fortes rafales" },
+};
+
+function pickPriorityObservationType(types = []) {
+  for (const t of OBSERVATION_TYPE_PRIORITY) {
+    if (types.includes(t)) return t;
+  }
+  return types[0];
+}
+
+function buildObservationIcon(obs) {
+  const priorityType = pickPriorityObservationType(obs.types || []);
+  const meta = OBSERVATION_TYPE_META[priorityType];
+  const emoji = meta ? meta.emoji : "\u{1F4E1}";
+  const color = "#F59E0B"; // amber-500
+  const border = "#FFFFFF";
+  return L.divIcon({
+    className: "",
+    html: `<div class="storm-marker-wrapper" style="width:22px;height:22px">
+      <span class="storm-marker-ping" style="background:${color}"></span>
+      <div class="storm-marker-core" style="width:22px;height:22px;background:${color};border:2px solid ${border};box-shadow:0 0 0 1px ${color},0 2px 6px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;font-size:12px;line-height:1">${emoji}</div>
+    </div>`,
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+    popupAnchor: [0, -11],
+  });
+}
+
+function formatRelativeMinutes(timestamp) {
+  const ageSec = Math.max(0, Date.now() / 1000 - timestamp);
+  const minutes = Math.floor(ageSec / 60);
+  if (minutes < 1) return "\u00E0 l'instant";
+  if (minutes < 60) return `il y a ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const restMin = minutes % 60;
+  return `il y a ${hours} h${restMin > 0 ? ` ${restMin} min` : ""}`;
+}
+
 function FitToRadius({ center, radiusKm, recenterSignal = 0 }) {
   const map = useMap();
   useEffect(() => {
@@ -178,6 +223,31 @@ export default function MapPanel({
   const wx = useWeatherLayersState({ cursorTs, isLive });
   const isMobile = useIsMobile();
   const [fitSignal, setFitSignal] = useState(0);
+
+  // Observations terrain communautaires (C2)
+  const [observations, setObservations] = useState([]);
+  const [showObservations, setShowObservations] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadObservations = () => {
+      getObservations({ window_s: 7200 })
+        .then((data) => {
+          if (cancelled) return;
+          const list = Array.isArray(data) ? data : [];
+          setObservations(list.filter((o) => o && typeof o.lat === "number" && typeof o.lon === "number"));
+        })
+        .catch(() => {
+          // Silencieux : on n'interrompt pas la carte si les observations échouent
+        });
+    };
+    loadObservations();
+    const intervalId = setInterval(loadObservations, 45000);
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, []);
 
   return (
     <div className="relative h-full w-full flex flex-col" data-testid="map-panel">
@@ -323,6 +393,44 @@ export default function MapPanel({
             icon={buildStrikeIcon(now - s.ts)}
           />
         ))}
+        {/* Observations terrain communautaires (C2) */}
+        {showObservations &&
+          observations.map((obs) => (
+            <Marker
+              key={`obs-${obs.id}`}
+              position={[obs.lat, obs.lon]}
+              icon={buildObservationIcon(obs)}
+              data-testid="observation-marker"
+            >
+              <Popup>
+                <div className="min-w-[180px] font-mono text-xs">
+                  <div className="font-heading text-sm font-bold text-slate-900">
+                    {obs.user_name || "Observateur local"}
+                  </div>
+                  <div className="text-slate-500 mt-0.5">{formatRelativeMinutes(obs.timestamp)}</div>
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {(obs.types || []).map((t) => {
+                      const meta = OBSERVATION_TYPE_META[t];
+                      if (!meta) return null;
+                      return (
+                        <span
+                          key={t}
+                          className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 text-amber-800 px-2 py-0.5"
+                        >
+                          {meta.emoji} {meta.label}
+                        </span>
+                      );
+                    })}
+                  </div>
+                  {obs.comment && (
+                    <div className="italic text-slate-600 mt-2 border-t border-slate-200 pt-2">
+                      "{obs.comment}"
+                    </div>
+                  )}
+                </div>
+              </Popup>
+            </Marker>
+          ))}
       </MapContainer>
 
       {/* Floating legend - bottom left — DESKTOP ONLY */}
@@ -417,6 +525,25 @@ export default function MapPanel({
           data-testid="geolocate-button"
         >
           <Crosshair className={`w-5 h-5 ${locating ? "animate-spin" : ""}`} strokeWidth={1.8} />
+        </button>
+        <button
+          onClick={() => setShowObservations((v) => !v)}
+          className={`relative w-11 h-11 border transition-colors flex items-center justify-center shadow-[0_2px_16px_rgba(0,0,0,0.04)] ${
+            showObservations
+              ? "bg-amber-500 text-white border-amber-500 hover:bg-amber-600"
+              : "bg-white text-slate-600 border-slate-200 hover:bg-slate-900 hover:text-white hover:border-slate-900"
+          }`}
+          title={showObservations ? "Masquer les observations citoyennes" : "Afficher les observations citoyennes"}
+          aria-label="Observations citoyennes"
+          aria-pressed={showObservations}
+          data-testid="toggle-observations-layer"
+        >
+          <Radio className="w-5 h-5" strokeWidth={1.8} />
+          {showObservations && observations.length > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 bg-slate-900 text-white text-[10px] font-mono font-bold rounded-full flex items-center justify-center border border-white">
+              {observations.length}
+            </span>
+          )}
         </button>
         <button
           onClick={onToggleFullscreen}
